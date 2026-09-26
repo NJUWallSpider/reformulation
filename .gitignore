@@ -6,3 +6,9 @@ build/
 dist/
 .venv/
 data/
+.optional-deps/
+benchmarks/
+!benchmarks/public/
+.ruff_cache/
+evaluation/
+practice/

@@ -1,183 +1,594 @@
-"""Bounded JSON-ready query API. All relation expressions use a restricted AST."""
-import ast,base64,json
-from fractions import Fraction as F
-from collections import Counter
-from .numbers import LPIRError,decimal
-from .store import Model,build
-from .verify import verify,write_model
+"""Public API for the current numerical and structural IR."""
 
-class Relations:
-    def __init__(self,expression):
-        if len(expression)>2000:raise LPIRError('Expression too long')
-        try:self.tree=ast.parse(expression,mode='eval').body
-        except (SyntaxError,RecursionError) as e:raise LPIRError(f'Invalid relation: {e}') from e
-        if len(list(ast.walk(self.tree)))>200:raise LPIRError('Expression too complex')
-        allowed=(ast.Expression,ast.Name,ast.Load,ast.Constant,ast.Subscript,ast.BinOp,ast.Add,ast.Sub,ast.UnaryOp,ast.UAdd,ast.USub,ast.Compare,ast.Eq,ast.NotEq,ast.Lt,ast.LtE,ast.Gt,ast.GtE,ast.BoolOp,ast.And,ast.Or,ast.Not)
-        for node in ast.walk(self.tree):
-            if not isinstance(node,allowed):raise LPIRError(f'Unsupported relation operation: {type(node).__name__}')
-    def __call__(self,context):
-        def evaluate(node):
-            if isinstance(node,ast.Name):
-                if node.id not in context:raise LPIRError(f'Unknown relation name: {node.id}')
-                return context[node.id]
-            if isinstance(node,ast.Constant):
-                if type(node.value) is int:return F(node.value)
-                if isinstance(node.value,str):
-                    try:return F(node.value)
-                    except ValueError as e:raise LPIRError('String literals must contain exact numbers') from e
-                raise LPIRError('Use integers or quoted decimal strings, not floating literals')
-            if isinstance(node,ast.Subscript):
-                mapping=evaluate(node.value);key=evaluate(node.slice)
-                if not isinstance(mapping,dict) or key not in mapping:raise LPIRError('Missing parameter index')
-                return mapping[key]
-            if isinstance(node,ast.BinOp):
-                a,b=evaluate(node.left),evaluate(node.right)
-                if a is None or b is None:raise LPIRError('Relation uses an infinite/missing bound')
-                return a+b if isinstance(node.op,ast.Add) else a-b
-            if isinstance(node,ast.UnaryOp):
-                x=evaluate(node.operand)
-                return -x if isinstance(node.op,ast.USub) else not x if isinstance(node.op,ast.Not) else x
-            if isinstance(node,ast.BoolOp):
-                return all(evaluate(v) for v in node.values) if isinstance(node.op,ast.And) else any(evaluate(v) for v in node.values)
-            if isinstance(node,ast.Compare):
-                left=evaluate(node.left)
-                for op,rightnode in zip(node.ops,node.comparators):
-                    right=evaluate(rightnode)
-                    if left is None or right is None:raise LPIRError('Relation uses an infinite/missing bound')
-                    ok=left==right if isinstance(op,ast.Eq) else left!=right if isinstance(op,ast.NotEq) else left<right if isinstance(op,ast.Lt) else left<=right if isinstance(op,ast.LtE) else left>right if isinstance(op,ast.Gt) else left>=right
-                    if not ok:return False
-                    left=right
-                return True
-            raise LPIRError('Unsupported relation node')
-        try:return bool(evaluate(self.tree))
-        except (TypeError,ValueError,KeyError,RecursionError) as e:raise LPIRError(f'Invalid relation evaluation: {e}') from e
+from collections import Counter
+import json
+from .numbers import LPIRError, decimal
+from .storage import Model, build
+from .semantic import connect
+from .jobs import analyze, result_page, require_current_assignments, ASSIGNMENT_VERSION
+
 
 class IR:
-    def __init__(self,path):
-        self.model=Model(path)
-        self.structures=json.loads((self.model.path/'structures.json').read_text())
+    def __init__(self, path):
+        self.model = Model(path)
+
+    def close(self):
+        self.model.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
     @classmethod
-    def build(cls,source,out):
-        build(source,out);return cls(out)
-    def envelope(self,items,total,offset=0,limit=20,scope=None,handle=None,**extra):
-        return {'model_version':self.model.manifest['model_version'],'exactness':'exact','scope':scope,'total':total,'offset':offset,'limit':limit,'truncated':offset+len(items)<total,'next_offset':offset+len(items) if offset+len(items)<total else None,'handle':handle,'items':items,**extra}
-    def overview(self):
-        m=self.model;c=m.compressed;t=self.structures['temporal']
-        fs=[{'id':f['id'],'kind':f['kind'],'formula':f['formula'],'rows':len(f['instances']),'estimated_encoding':f['encoding_estimate']} for f in c['families']]
-        return {'model_version':m.manifest['model_version'],'exactness':'exact','scope':'model','variables':len(m.variables),'variable_types':dict(Counter(v[2] for v in m.variables)),'rows':len(m.rows),'nonzeros':len(m.col_idx),'objective_nonzeros':sum(bool(m.num(v[5])) for v in m.variables),'objective_sense':c['sense'],'objective_constant':decimal(m.num(c['objective_constant'])),'families':fs[:20],'family_count':len(fs),'family_list_truncated':len(fs)>20,'templated_rows':sum(len(f['instances']) for f in c['families']),'residual_rows':len(c['residual']),'reconstruction_coverage':(sum(len(f['instances']) for f in c['families'])+len(c['residual']))/len(m.rows) if m.rows else 1.0,'assignment_blocks':[{'id':b['id'],'shape':b['shape'],'complete':b['complete'],'missing_pairs':b['missing_pairs'],'duplicate_pair_count':len(b['duplicate_pairs'])} for b in self.structures['assignments'][:20]],'assignment_block_count':len(self.structures['assignments']),'temporal_rows':len(t['rows']),'temporal_exceptions':len(t['exceptions']),'time_variables':len(t['time_bounds']),'wl_rounds':self.structures['wl_rounds'],'metrics':{k:m.manifest[k] for k in ('timings','peak_rss_bytes','peak_rss_scope','artifact_bytes') if k in m.manifest}}
+    def build(cls, source, out, **options):
+        m = build(source, out, **options)
+        m.close()
+        return cls(out)
+
     @staticmethod
-    def page(offset,limit):
-        if offset<0 or limit<1 or limit>1000:raise LPIRError('offset >= 0 and 1 <= limit <= 1000 required')
-    def resolve(self,kind,value):
-        lookup=self.model.var_names if kind=='variable' else self.model.row_names
-        if isinstance(value,str) and value in lookup:return lookup[value]
-        try:i=int(value)
-        except (TypeError,ValueError) as e:raise LPIRError(f'Unknown {kind}: {value}') from e
-        n=len(self.model.variables) if kind=='variable' else len(self.model.rows)
-        if not 0<=i<n:raise LPIRError(f'Invalid {kind} ID {i}')
+    def page(offset, limit):
+        if offset < 0 or not 1 <= limit <= 1000:
+            raise LPIRError("offset >= 0 and 1 <= limit <= 1000 required")
+
+    def envelope(self, items, total, offset=0, limit=20, scope=None, **extra):
+        return {
+            "model_version": self.model.manifest["model_version"],
+            "analysis_version": "2.0",
+            "exactness": "exact",
+            "verification": "verified",
+            "completeness": "complete",
+            "scope": scope,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "truncated": offset + len(items) < total,
+            "next_offset": offset + len(items) if offset + len(items) < total else None,
+            "items": items,
+            "provenance": {"artifact": "numerical IR / analysis.sqlite"},
+            **extra,
+        }
+
+    def resolve(self, kind, key):
+        m = self.model
+        table = m.variables if kind == "variable" else m.rows
+        names = m.var_names if kind == "variable" else m.row_names
+        if isinstance(key, str) and key in names:
+            return names[key]
+        try:
+            i = int(key)
+        except (ValueError, TypeError) as e:
+            raise LPIRError(f"Unknown {kind}: {key}") from e
+        if not 0 <= i < len(table):
+            raise LPIRError(f"Invalid {kind}: {i}")
         return i
-    def inspect(self,kind,key=None,offset=0,limit=20):
-        self.page(offset,limit);m=self.model
-        fmt=lambda i:decimal(m.num(i)) if i is not None else None
-        if kind=='row':
-            r=self.resolve('row',key);meta=m.rows[r];terms=m.row_ids(r)
-            return self.envelope([{'variable':v,'name':m.variables[v][1],'coefficient':fmt(c)} for v,c in terms[offset:offset+limit]],len(terms),offset,limit,scope={'row':r},name=meta[1],lower=fmt(meta[2]),upper=fmt(meta[3]),source_line=meta[4])
-        if kind=='variable':
-            v=m.variables[self.resolve('variable',key)]
-            return self.envelope([{'id':v[0],'name':v[1],'kind':v[2],'lower':fmt(v[3]),'upper':fmt(v[4]),'objective':fmt(v[5]),'source_line':v[6]}],1,scope={'variable':v[0]})
-        if kind=='template':
-            families=m.compressed['families'];ff=[f for f in families if key is None or f['id']==key]
-            if not ff:raise LPIRError(f'Unknown template {key}')
-            if key is None:return self.envelope([{'id':f['id'],'kind':f['kind'],'formula':f['formula'],'instances':len(f['instances'])} for f in ff[offset:offset+limit]],len(ff),offset,limit,'templates')
-            f=ff[0];records=[]
-            for inst in f['instances'][offset:offset+limit]:
-                rec=dict(inst);rec['variable_count']=len(rec['variables']);rec['variables']=rec['variables'][:20];rec['bindings_truncated']=rec['variable_count']>20
-                if 'parameters' in rec:
-                    rec['parameter_count']=len(rec['parameters']);rec['parameters']=[fmt(x) for x in rec['parameters'][:20]]
-                for name in ('q','negative_M','lower','upper'):
-                    if name in rec:rec[name]=fmt(rec[name])
-                records.append(rec)
-            return self.envelope(records,len(f['instances']),offset,limit,{'template':key},formula=f['formula'],definition={k:v for k,v in f.items() if k not in ('instances','exceptions','coefficients')},coefficient_slots=f.get('coefficients',[])[:20],coefficient_slot_count=len(f.get('coefficients',[])),exceptions=f['exceptions'][:20],exception_count=len(f['exceptions']))
-        if kind in ('assignment','residual','exceptions'):
-            if kind=='assignment':
-                blocks=[b for b in self.structures['assignments'] if key is None or b['id']==key]
+
+    def overview(self):
+        m = self.model
+        db = connect(m, True)
+        classes = dict(db.execute("SELECT class,count(*) FROM features GROUP BY class"))
+        families = [
+            {"id": fid, "kind": kind, "formula": formula, "rows": count}
+            for fid, kind, formula, count in db.execute(
+                "SELECT f.id,f.kind,f.formula,count(*) FROM families f JOIN features r ON r.family=f.id GROUP BY f.id ORDER BY count(*) DESC,f.id LIMIT 20"
+            )
+        ]
+        family_count = db.execute("SELECT count(*) FROM families").fetchone()[0]
+        types = Counter()
+        low = high = None
+        positive = negative = zero = 0
+        for v in m.variables:
+            types[v[2]] += 1
+            c = m.num(v[5])
+            low = c if low is None else min(low, c)
+            high = c if high is None else max(high, c)
+            positive += c > 0
+            negative += c < 0
+            zero += c == 0
+            # Distinct costs aggregate on disk below; avoid a model-sized Counter.
+        objective = {
+            "sense": m.manifest["sense"],
+            "constant": decimal(m.num(m.manifest["objective_constant"])),
+            "nonzeros": len(m.variables) - zero,
+            "positive": positive,
+            "negative": negative,
+            "zero": zero,
+            "min": str(low) if low is not None else None,
+            "max": str(high) if high is not None else None,
+            "uniform": low == high,
+            "interpretation": None,
+        }
+        if low == high and low is not None and low != 0:
+            objective["interpretation"] = (
+                "maximum_cardinality"
+                if (m.manifest["sense"] == "min" and low < 0)
+                or (m.manifest["sense"] == "max" and low > 0)
+                else "minimum_cardinality"
+            )
+            objective["interpretation"] = (
+                "weighted_uniform_sum"
+                if types.get("B", 0) != len(m.variables)
+                else objective["interpretation"]
+            )
+        runs = [
+            {"handle": i, "kind": k, "completeness": s, "summary": json.loads(x)}
+            for i, k, s, x in db.execute(
+                "SELECT id,kind,CASE WHEN kind='assignments' AND json_extract(spec,'$.version')<>'2.0.1' THEN 'obsolete' ELSE status END,summary FROM runs ORDER BY kind,id LIMIT 20"
+            )
+        ]
+        run_count = db.execute("SELECT count(*) FROM runs").fetchone()[0]
+        tc = db.execute("SELECT count(*) FROM temporal").fetchone()[0]
+        tv = db.execute("SELECT count(*) FROM time_bounds").fetchone()[0]
+        omitted = db.execute("SELECT count(*) FROM omitted").fetchone()[0]
+        db.close()
+        return {
+            "model_version": m.manifest["model_version"],
+            "schema_version": 2,
+            "analysis_version": "2.0",
+            "exactness": "exact",
+            "variables": len(m.variables),
+            "rows": len(m.rows),
+            "nonzeros": len(m.col_idx),
+            "variable_types": dict(types),
+            "objective": objective,
+            "objective_nonzeros": objective["nonzeros"],
+            "objective_constant": objective["constant"],
+            "classes": classes,
+            "families": families,
+            "families_view": "coefficient groups; mathematical explanation document available through describe()",
+            "explanation_ir_available": (m.path / "explanations.json").exists(),
+            "family_count": family_count,
+            "family_list_truncated": family_count > 20,
+            "temporal_rows": tc,
+            "time_variables": tv,
+            "unclassified_working_set_rows": omitted,
+            "numerical_coverage": 1.0,
+            "semantic_coverage_claim": None,
+            "analyses": runs,
+            "analysis_count": run_count,
+            "analysis_list_truncated": run_count > 20,
+            "metrics": {
+                k: m.manifest.get(k)
+                for k in ("timings", "peak_rss_bytes", "artifact_bytes")
+            },
+        }
+
+    def inspect(self, kind, key=None, offset=0, limit=20):
+        self.page(offset, limit)
+        from .references import translate
+
+        if kind.startswith("structure_"):
+            from .structural import page
+
+            key = translate(
+                self.model, key, decode=True, reference=isinstance(key, str)
+            )
+            return page(self.model, kind, key, offset, limit)
+
+        if kind.startswith("index_") or kind in (
+            "explanation",
+            "family",
+            "parameter",
+            "assignment",
+        ):
+            key = translate(
+                self.model, key, decode=True, reference=isinstance(key, str)
+            )
+        if kind.startswith("index_"):
+            from .indexed import page, ScopedModel, qualify
+
+            if isinstance(key, dict) and "analysis" in key:
+                model = ScopedModel(self.model, key["analysis"])
+                return qualify(
+                    page(model, kind, key.get("id"), offset, limit), key["analysis"]
+                )
+            return page(self.model, kind, key, offset, limit)
+        m = self.model
+        db = connect(m, True)
+        try:
+            if kind == "explanation":
+                from .compressed import inspect as inspect_explanation
+
+                return inspect_explanation(m, key, offset, limit)
+            if kind == "analysis":
+                total = db.execute("SELECT count(*) FROM runs").fetchone()[0]
+                items = [
+                    {
+                        "handle": i,
+                        "kind": k,
+                        "completeness": status,
+                        "summary": json.loads(summary),
+                    }
+                    for i, k, status, summary in db.execute(
+                        "SELECT id,kind,CASE WHEN kind='assignments' AND json_extract(spec,'$.version')<>'2.0.1' THEN 'obsolete' ELSE status END,summary FROM runs ORDER BY kind,id LIMIT ? OFFSET ?",
+                        (limit, offset),
+                    )
+                ]
+                return self.envelope(items, total, offset, limit, "analyses")
+            if kind == "row":
+                r = self.resolve("row", key)
+                meta = m.rows[r]
+                lo = int(m.row_ptr[r])
+                total = int(m.row_ptr[r + 1]) - lo
+                items = [
+                    {
+                        "variable": int(m.col_idx[p]),
+                        "name": m.variables[int(m.col_idx[p])][1],
+                        "coefficient": decimal(m.num(int(m.coeff_id[p]))),
+                    }
+                    for p in range(
+                        lo + min(offset, total), lo + min(total, offset + limit)
+                    )
+                ]
+                return self.envelope(
+                    items,
+                    total,
+                    offset,
+                    limit,
+                    {"row": r},
+                    name=meta[1],
+                    lower=decimal(m.num(meta[2])) if meta[2] is not None else None,
+                    upper=decimal(m.num(meta[3])) if meta[3] is not None else None,
+                    source_line=meta[4],
+                )
+            if kind == "variable":
+                v = m.variables[self.resolve(kind, key)]
+                fmt = lambda i: decimal(m.num(i)) if i is not None else None
+                return self.envelope(
+                    [
+                        {
+                            "id": v[0],
+                            "name": v[1],
+                            "kind": v[2],
+                            "lower": fmt(v[3]),
+                            "upper": fmt(v[4]),
+                            "objective": fmt(v[5]),
+                            "source_line": v[6],
+                        }
+                    ],
+                    1,
+                    scope={"variable": v[0]},
+                )
+            if kind == "family":
                 if key is None:
-                    records=[{k:v for k,v in b.items() if k not in ('bindings','left_rows','right_rows','duplicate_pairs')} for b in blocks]
-                    return self.envelope(records[offset:offset+limit],len(records),offset,limit,'assignments')
-                if not blocks:raise LPIRError(f'Unknown assignment {key}')
-                b=blocks[0];records=[{'variable':v,'left_index':i,'right_index':j,'left_row':b['left_rows'][i],'right_row':b['right_rows'][j]} for v,i,j in b['bindings'][offset:offset+limit]]
-                return self.envelope(records,len(b['bindings']),offset,limit,{'assignment':key},shape=b['shape'],missing_pairs=b['missing_pairs'],duplicate_pair_count=len(b['duplicate_pairs']))
-            records=[{'row':r['row']} for r in m.compressed['residual']] if kind=='residual' else self.structures['temporal']['exceptions']
-            return self.envelope(records[offset:offset+limit],len(records),offset,limit,kind)
-        if kind=='parameter':
-            if key not in ('q','M','L','U'):raise LPIRError('Parameter must be q, M, L, or U')
-            records=[]
-            if key in ('q','M'):
-                data=self.structures['temporal']['rows']
-                for r in data[offset:offset+limit]:records.append({'row':r['row'],'source':r['source'],'target':r['target'],'value':fmt(r['q']) if key=='q' else decimal(-m.num(r['negative_M']))})
-            else:
-                data=list(self.structures['temporal']['time_bounds'].items())
-                for v,b in data[offset:offset+limit]:records.append({'variable':int(v),'value':b[0 if key=='L' else 1]})
-            return self.envelope(records,len(data),offset,limit,{'parameter':key})
-        raise LPIRError(f'Unknown inspection kind {kind}')
-    def query(self,kind=None,key=None,where=None,offset=0,limit=20,handle=None):
-        self.page(offset,limit);m=self.model
-        if handle:
-            try:
-                if not handle.startswith('lpir1:') or len(handle)>8192:raise LPIRError('Invalid query handle')
-                spec=json.loads(base64.urlsafe_b64decode(handle.removeprefix('lpir1:')))
-                if spec['model_version']!=m.manifest['model_version']:raise LPIRError('Query handle belongs to another model version')
-                kind,key,where=spec['kind'],spec.get('key'),spec.get('where')
-            except (ValueError,KeyError) as e:raise LPIRError('Invalid query handle') from e
-        spec={'model_version':m.manifest['model_version'],'kind':kind,'key':key,'where':where}
-        query_handle='lpir1:'+base64.urlsafe_b64encode(json.dumps(spec).encode()).decode()
-        if kind=='neighbors':
-            if not key or ':' not in str(key):raise LPIRError('neighbors key must be row:ID or variable:ID')
-            obj,ident=key.split(':',1)
-            if obj not in ('row','variable'):raise LPIRError('neighbors requires row or variable')
-            idx=self.resolve(obj,ident)
-            values=m.incident(idx) if obj=='variable' else [v for v,c in m.row_ids(idx)]
-            records=[{'row' if obj=='variable' else 'variable':v} for v in values[offset:offset+limit]]
-            return self.envelope(records,len(values),offset,limit,spec,query_handle)
-        if kind=='external':
-            fs=[f for f in m.compressed['families'] if f['id']==key]
-            bs=[b for b in self.structures['assignments'] if b['id']==key]
-            if fs:rr={r['row'] for r in fs[0]['instances']}
-            elif bs:rr=set(bs[0]['left_rows']+bs[0]['right_rows'])
-            else:raise LPIRError('external key must name a template or assignment block')
-            variables={v for r in rr for v,c in m.row_ids(r)}
-            # Objective coupling is not a constraint but must remain visible.
-            external=set()
-            for v in variables:external.update(m.incident(v))
-            external.difference_update(rr);ordered=sorted(external)
-            records=[{'row':r,'name':m.rows[r][1]} for r in ordered[offset:offset+limit]]
-            return self.envelope(records,len(ordered),offset,limit,spec,query_handle,objective_variable_count=sum(bool(m.num(m.variables[v][5])) for v in variables),block_variable_count=len(variables))
-        if kind in ('filter','relation'):
-            if key not in (None,'temporal'):raise LPIRError('Relations currently operate on temporal parameter records')
-            if not where:raise LPIRError('A relation expression is required')
-            predicate=Relations(where);t=self.structures['temporal'];L={int(v):F(b[0]) if b[0] is not None else None for v,b in t['time_bounds'].items()};U={int(v):F(b[1]) if b[1] is not None else None for v,b in t['time_bounds'].items()}
-            records=[];total=0;checked=0;passed=0
-            for rec in t['rows']:
-                context={'L':L,'U':U,'source':rec['source'],'target':rec['target'],'q':m.num(rec['q']),'M':-m.num(rec['negative_M']),'cost_switch':m.num(m.variables[rec['switch']][5]),'cost_arc':m.num(m.variables[rec['arc']][5])}
-                result=predicate(context);checked+=1;passed+=result
-                if result if kind=='filter' else not result:
-                    if offset<=total<offset+limit:records.append({'row':rec['row'],'source':rec['source'],'target':rec['target'],'arc':rec['arc'],'q':decimal(context['q']),'M':decimal(context['M']),'assignment_verified':rec['assignment'] is not None})
-                    total+=1
-            return self.envelope(records,total,offset,limit,spec,query_handle,checked=checked,passed=passed,all_satisfied=passed==checked,result_kind='matches' if kind=='filter' else 'counterexamples')
-        raise LPIRError(f'Unknown query kind {kind}')
-    def render(self):
-        o=self.overview();s=self.structures;m=self.model
-        text=['# LP compressed IR',f"Model version: `{o['model_version']}`",f"{o['variables']} variables; {o['rows']} rows; {o['nonzeros']} nonzeros.",f"Objective: {o['objective_sense']} sum(v, c[v]*x[v]) + {o['objective_constant']}. Exact coefficients remain queryable.",'## Assignment structure']
-        for b in s['assignments'][:20]:
-            description = f"y[i,j] binary, shape {b['shape']}; sum(j,y[i,j])=1 and sum(i,y[i,j])=1" if not b['duplicate_pairs'] else f"x[e] binary with endpoint sets {b['shape']}; sum(e incident to each endpoint,x[e])=1; parallel edges retained"
-            text.extend([f"- {b['id']}: {description}.",f"  Complete: {b['complete']}; missing pairs: {b['missing_pairs']}; duplicate pairs: {len(b['duplicate_pairs'])}. External constraints: query external {b['id']}."])
-        t=s['temporal'];ms=Counter(decimal(-m.num(r['negative_M'])) for r in t['rows'])
-        text.extend(['## Time relationships',f"{len(t['rows'])} exact rows: t[j]-t[i] >= q[i,j]*(1-switch[i]) - M[i,j]*(1-arc[i,j]).",f"{len(t['time_bounds'])} continuous variables with explicit/derived singleton bounds L[i], U[i].",f"M value distribution (first 10): {dict(ms.most_common(10))}.",f"Verified assignment index joins: {sum(r['assignment'] is not None for r in t['rows'])}; exceptions: {len(t['exceptions'])}.",'Parameter handles: inspect parameter q / M / L / U. No approximate equality is substituted.','## Primary encoding'])
-        for f in m.compressed['families'][:20]:text.append(f"- {f['id']}: {f['kind']}, {len(f['instances'])} rows; {f['formula']}.")
-        text.extend([f"Residual rows: {len(m.compressed['residual'])}. Reconstruction coverage: {o['reconstruction_coverage']:.0%}.",'Every objective term, domain, row and exception is retained. Role colors do not prove symmetry.','Inspect row/variable/template for exact instances and provenance. Query external for all boundary constraints and objective involvement.','## Query examples','```text','query filter --key temporal --where "L[source] + q > U[target]"','query relation --key temporal --where "q == cost_switch + cost_arc"','inspect template --key family_0','```','No presolve or reformulation has been applied. This artifact adds indexes and views; its total disk size need not be smaller than the source LP.'])
-        if len(s['assignments'])>20 or len(m.compressed['families'])>20:text.append('Lists truncated at 20; use paginated inspection for all instances.')
-        result='\n\n'.join(text)+'\n'
-        if len(result.encode())>20000:raise LPIRError('Summary exceeds 20KB budget')
+                    total = db.execute("SELECT count(*) FROM families").fetchone()[0]
+                    items = [
+                        {"id": i, "kind": k, "formula": f}
+                        for i, k, f in db.execute(
+                            "SELECT id,kind,formula FROM families ORDER BY id LIMIT ? OFFSET ?",
+                            (limit, offset),
+                        )
+                    ]
+                    return self.envelope(items, total, offset, limit, "families")
+                family = db.execute(
+                    "SELECT kind,formula,ast FROM families WHERE id=?", (key,)
+                ).fetchone()
+                if not family:
+                    raise LPIRError("Unknown family")
+                items = []
+                total = db.execute(
+                    "SELECT count(*) FROM features WHERE family=?", (key,)
+                ).fetchone()[0]
+                for r, lo, hi, scale, shift in db.execute(
+                    "SELECT row_id,lower,upper,scale,shift FROM features WHERE family=? ORDER BY row_id LIMIT ? OFFSET ?",
+                    (key, limit, offset),
+                ):
+                    roles = []
+                    for role, c, k, n in db.execute(
+                        "SELECT role,coefficient,kind,count FROM roles WHERE row_id=? ORDER BY role",
+                        (r,),
+                    ):
+                        example = [
+                            {"variable": v, "complement": bool(b)}
+                            for v, b in db.execute(
+                                "SELECT variable,complement FROM bindings WHERE row_id=? AND role=? ORDER BY variable LIMIT 3",
+                                (r, role),
+                            )
+                        ]
+                        roles.append(
+                            {
+                                "role": role,
+                                "coefficient": c,
+                                "type": k,
+                                "count": n,
+                                "examples": example,
+                                "truncated": n > 3,
+                            }
+                        )
+                    items.append(
+                        {
+                            "row": r,
+                            "lower": lo,
+                            "upper": hi,
+                            "scale": scale,
+                            "shift": shift,
+                            "roles": roles,
+                        }
+                    )
+                return self.envelope(
+                    items,
+                    total,
+                    offset,
+                    limit,
+                    {"family": key},
+                    formula=family[1],
+                    ast=json.loads(family[2]),
+                )
+            if kind == "assignment":
+                if key is None:
+                    return self.analyze("assignments", offset=offset, limit=limit)
+                require_current_assignments(db)
+                total = db.execute(
+                    "SELECT count(*) FROM assignment_edges WHERE block=?", (key,)
+                ).fetchone()[0]
+                items = [
+                    {"variable": v, "left_index": i, "right_index": j}
+                    for v, i, j in db.execute(
+                        "SELECT variable,left_idx,right_idx FROM assignment_edges WHERE block=? ORDER BY variable LIMIT ? OFFSET ?",
+                        (key, limit, offset),
+                    )
+                ]
+                return self.envelope(items, total, offset, limit, {"assignment": key})
+            if kind in ("residual", "exceptions"):
+                total = db.execute("SELECT count(*) FROM omitted").fetchone()[0]
+                items = [
+                    {"row": r, "reason": why}
+                    for r, why in db.execute(
+                        "SELECT * FROM omitted ORDER BY row_id LIMIT ? OFFSET ?",
+                        (limit, offset),
+                    )
+                ]
+                return self.envelope(
+                    items, total, offset, limit, "unclassified working sets"
+                )
+            raise LPIRError(f"Unknown inspection kind {kind}")
+        finally:
+            db.close()
+
+    def analyze(self, kind, scope=None, budget=None, handle=None, offset=0, limit=20):
+        from .references import translate
+
+        if kind == "structure":
+            from .structural import analyze as structure_analyze
+
+            return structure_analyze(
+                self.model,
+                translate(self.model, scope, decode=True),
+                budget,
+                handle,
+                offset,
+                limit,
+            )
+
+        scope = translate(self.model, scope, decode=True)
+        handle = translate(self.model, handle, decode=True, reference=True)
+        if kind in ("incidence", "coordinates", "operators"):
+            from .indexed import analyze as indexed_analyze
+
+            return indexed_analyze(
+                self.model, kind, scope, budget, handle, offset, limit
+            )
+        if kind == "relation_components":
+            from .relation_graph import components
+
+            return components(self.model, scope, budget, handle, offset, limit)
+        if kind == "explanations":
+            if scope is not None:
+                raise LPIRError("Explanation compilation requires full-model scope")
+            from .compressed import compile_ir
+
+            return compile_ir(self.model, budget=budget, handle=handle)
+        if kind.startswith("plugin:"):
+            from .plugins import run_plugin
+
+            return run_plugin(self, kind[7:], scope, budget, offset, limit, handle)
+        if scope is not None and kind not in (
+            "components",
+            "wl",
+            "decomposition",
+            "network",
+        ):
+            raise LPIRError("This analysis currently supports model scope only")
+        return analyze(self.model, kind, scope, budget, handle, offset, limit)
+
+    def query(
+        self,
+        kind=None,
+        key=None,
+        offset=0,
+        limit=20,
+        handle=None,
+        spec=None,
+        budget=None,
+    ):
+        self.page(offset, limit)
+        m = self.model
+        from .references import translate
+
+        handle = translate(m, handle, decode=True, reference=True)
+        if isinstance(kind, dict):
+            spec = kind
+        if spec is not None:
+            from .query import run_query
+            from .references import translate
+
+            return run_query(m, translate(m, spec, decode=True), budget, offset, limit)
+        db = connect(m)
+        try:
+            if handle:
+                out = result_page(m, db, handle, offset, limit)
+                if out["scope"].startswith("plugin:"):
+                    out["verification"] = "candidate"
+                if out["scope"] == "probe":
+                    out.update(
+                        exactness="numerical",
+                        verification="candidate",
+                        continuation=None,
+                    )
+                return out
+            if kind == "neighbors":
+                obj, ident = key.split(":", 1)
+                i = self.resolve(obj, ident)
+                if obj == "row":
+                    total = int(m.row_ptr[i + 1] - m.row_ptr[i])
+                    start = int(m.row_ptr[i]) + offset
+                    items = [
+                        {"variable": int(v)}
+                        for v in m.col_idx[
+                            start : min(int(m.row_ptr[i + 1]), start + limit)
+                        ]
+                    ]
+                else:
+                    total = int(m.col_ptr[i + 1] - m.col_ptr[i])
+                    start = int(m.col_ptr[i]) + offset
+                    import numpy as np
+
+                    items = [
+                        {"row": int(np.searchsorted(m.row_ptr, p, side="right") - 1)}
+                        for p in m.col_positions[
+                            start : min(int(m.col_ptr[i + 1]), start + limit)
+                        ]
+                    ]
+                return self.envelope(items, total, offset, limit, {"neighbors": key})
+            if kind == "external":
+                import hashlib
+
+                assignment = str(key).startswith("assignment_")
+                if assignment:
+                    require_current_assignments(db)
+                    if not db.execute(
+                        "SELECT 1 FROM assignment_members WHERE block=?", (key,)
+                    ).fetchone():
+                        raise LPIRError("Unknown assignment block")
+
+                run = (
+                    "e_"
+                    + hashlib.sha256(
+                        (
+                            m.manifest["model_version"]
+                            + str(key)
+                            + (ASSIGNMENT_VERSION if assignment else "")
+                        ).encode()
+                    ).hexdigest()[:32]
+                )
+                if db.execute("SELECT 1 FROM runs WHERE id=?", (run,)).fetchone():
+                    return result_page(m, db, run, offset, limit)
+                db.execute("CREATE TEMP TABLE chosen(row_id INTEGER PRIMARY KEY)")
+                db.execute(
+                    "INSERT OR IGNORE INTO chosen SELECT row_id FROM features WHERE family=?",
+                    (key,),
+                )
+                db.execute(
+                    "INSERT OR IGNORE INTO chosen SELECT row_id FROM assignment_members WHERE block=?",
+                    (key,),
+                )
+                if not db.execute("SELECT 1 FROM chosen LIMIT 1").fetchone():
+                    raise LPIRError("Unknown family/block")
+                db.execute("CREATE TEMP TABLE boundary(row_id INTEGER PRIMARY KEY)")
+                db.execute("CREATE TEMP TABLE boundary_vars(v INTEGER PRIMARY KEY)")
+                for (r,) in db.execute("SELECT row_id FROM chosen"):
+                    for v, c in m.iter_terms(r):
+                        db.execute(
+                            "INSERT OR IGNORE INTO boundary_vars VALUES(?)", (v,)
+                        )
+                for (v,) in db.execute("SELECT v FROM boundary_vars"):
+                    for r in m.incident(v):
+                        db.execute("INSERT OR IGNORE INTO boundary VALUES(?)", (r,))
+                total = 0
+                for (r,) in db.execute(
+                    "SELECT row_id FROM boundary WHERE row_id NOT IN (SELECT row_id FROM chosen) ORDER BY row_id"
+                ):
+                    db.execute(
+                        "INSERT INTO results VALUES(?,?,?)",
+                        (run, total, json.dumps({"row": r, "name": m.rows[r][1]})),
+                    )
+                    total += 1
+                objective = sum(
+                    bool(m.num(m.variables[v][5]))
+                    for (v,) in db.execute("SELECT v FROM boundary_vars")
+                )
+                summary = {"objective_variable_count": objective}
+                db.execute(
+                    "INSERT INTO runs VALUES(?,?,?,?,?,?,?)",
+                    (
+                        run,
+                        "external",
+                        json.dumps({"key": key}),
+                        "complete",
+                        total,
+                        total,
+                        json.dumps(summary),
+                    ),
+                )
+                db.commit()
+                return {**result_page(m, db, run, offset, limit), **summary}
+            raise LPIRError("Use a query AST, neighbors, external, or a result handle")
+        finally:
+            db.close()
+
+    def validate(self, spec, budget=None):
+        from .references import translate
+
+        if spec.get("kind", "").startswith("structure_"):
+            from .structural import validate as structure_validate
+
+            return structure_validate(
+                self.model, translate(self.model, spec, decode=True), budget
+            )
+
+        spec = translate(self.model, spec, decode=True)
+        if spec.get("kind") in (
+            "indexed_operator",
+            "indexed_partition",
+            "cartesian",
+            "row_bundle",
+            "axis_alignment",
+        ):
+            from .indexed import validate as indexed_validate
+
+            return indexed_validate(self.model, spec, budget)
+        from .validation import validate
+
+        return validate(self.model, spec, budget)
+
+    def probe(self, **options):
+        from .probe import probe
+
+        return probe(self.model, **options)
+
+    def verify(self):
+        from .validation import verify
+        from .indexed import verify as verify_indexed
+
+        result = verify(self.model)
+        result["indexed"] = verify_indexed(self.model)
+        from .structural import verify as verify_structure
+
+        result["structure"] = verify_structure(self.model)
         return result
-    def verify(self):return verify(self.model)
-    def export(self,path):write_model(self.model,path)
+
+    def export(self, path, **options):
+        from .exporter import export
+
+        return export(self.model, path, **options)
+
+    def readable(self, result):
+        """Convert response references without changing the underlying numerical facts."""
+        from .references import translate
+
+        result = translate(self.model, result)
+        if isinstance(result, dict):
+            result = {**result, "reference_scope": "artifact-local"}
+        return result
+
+    def describe(self, offset=0, limit=20, max_bytes=20000, raw_ids=False):
+        """The exact structured document consumed by agents and by render()."""
+        from .compressed import document
+
+        return document(self.model, offset, limit, max_bytes, raw_ids=raw_ids)
+
+    def render(self, **options):
+        from .compressed import render_document
+
+        return render_document(self.describe(**options))

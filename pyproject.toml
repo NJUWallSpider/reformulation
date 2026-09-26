@@ -4,14 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lpir"
-version = "0.1.0"
-description = "Exact, queryable compressed intermediate representation for linear LP models"
+version = "0.5.2"
+description = "Exact, verifiable analysis and query infrastructure for LP and MPS models"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["numpy>=1.24"]
 
 [project.optional-dependencies]
 test = ["pytest>=8"]
+probe = ["scipy>=1.11"]
+graph = ["igraph>=0.11"]
 
 [project.scripts]
 lpir = "lpir.cli:main"

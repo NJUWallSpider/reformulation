@@ -112,3 +112,68 @@ End
     m=ir.model
     assert m.variables[m.var_names['x']][3] is None
     assert m.variables[m.var_names['y']][4] is None
+
+
+def test_highs_token_wrapping(make_ir, tmp_path):
+    ir = make_ir(r'''\ File written by HiGHS .lp file handler
+min
+ obj: -2.1507062784 x +0.42978952
+ y -3.288e-2
+\ a comment between coefficient and variable
+
+ z +
+ 2 x + 7
+st
+ r: +2
+ x -3
+ y + z <= 8
+ s: x >= 2
+ y <= 4
+bounds
+ x free
+end
+''')
+    m = ir.model
+    x, y, z = (m.var_names[k] for k in ('x', 'y', 'z'))
+    assert [m.num(m.variables[v][5]) for v in (x, y, z)] == [
+        F('-0.1507062784'), F('0.42978952'), F('-0.03288')
+    ]
+    assert m.num(m.manifest['objective_constant']) == 7
+    assert m.row(0) == {x: F(2), y: F(-3), z: F(1)}
+    # A scalar RHS must not consume the next unnamed row's variable.
+    assert m.row(1) == {x: F(1)}
+    assert m.row(2) == {y: F(1)}
+    assert m.num(m.rows[1][2]) == 2
+    assert m.num(m.rows[2][3]) == 4
+    out = tmp_path / 'highs_roundtrip.lp'
+    ir.export(out)
+    from lpir import IR
+    with IR.build(out, tmp_path / 'highs_roundtrip') as rebuilt:
+        assert rebuilt.verify()['status'] == 'PASS'
+        for name in ('x', 'y', 'z'):
+            assert rebuilt.model.num(rebuilt.model.variables[rebuilt.model.var_names[name]][5]) == m.num(m.variables[m.var_names[name]][5])
+        assert rebuilt.model.num(rebuilt.model.manifest['objective_constant']) == 7
+
+
+@pytest.mark.parametrize('expression', ['x y', 'x\n y', '2 x 3 y'])
+def test_missing_term_operator_still_rejected(make_ir, expression):
+    with pytest.raises(LPIRError, match='expected \\+ or -'):
+        make_ir(f'Minimize\n obj: {expression}\nSubject To\n r: x <= 1\nEnd\n')
+
+
+def test_highs_empty_semi_section(make_ir):
+    ir = make_ir('min\n obj: x\nst\n r: x <= 1\nbin\n x\ngen\nsemi\n\\ empty HiGHS domain\nend\n')
+    assert ir.model.variables[0][2] == 'B'
+    assert ir.verify()['status'] == 'PASS'
+
+
+def test_highs_nonempty_semi_rejected(make_ir):
+    with pytest.raises(LPIRError, match='line 6.*unsupported section semi'):
+        make_ir('min\n obj: x\nst\n r: x <= 1\nbounds\nsemi\n x\nend\n')
+
+
+def test_wide_highs_row_verifies(make_ir):
+    terms = ' + '.join(f'{i + 1}\n x{i}' for i in range(1001))
+    ir = make_ir(f'min\n obj: x0\nst\n r: {terms} <= 2000\nend\n')
+    assert len(ir.model.row(0)) == 1001
+    assert ir.verify()['status'] == 'PASS'

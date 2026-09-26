@@ -1,128 +1,158 @@
-# lpir — exact, queryable compressed IR for linear LP models
+# LPIR
 
-`lpir` builds a persistent numerical model, finds parameterized structural views, and verifies that its compressed representation reconstructs the **entire original model exactly**. It is an analysis substrate for an agent, not an online agent or a presolver: it does not delete constraints, fix variables, optimize a model, or generate a strengthened formulation.
+LPIR turns linear LP/MPS models into exact numerical data, shared variable
+coordinates, parameterized constraint families and queryable structural evidence.
+It retains original coefficients and row provenance. It does not rewrite the
+model, infer application semantics or claim symmetry from matching fingerprints.
 
-The first fixture is `test1/test1.lp`. Existing files under `test1/analysis` are unchanged and serve as an independent numerical reference.
-
-## Install and run
-
-Python 3.11+ and NumPy are required. Solver libraries are not required.
+## Quick start
 
 ```sh
 python -m pip install -e '.[test]'
-lpir build test1/test1.lp --out /tmp/lpir-test1-new
-lpir overview test1/mvp_ir
-lpir render test1/mvp_ir --format markdown
-lpir verify test1/mvp_ir
-lpir export test1/mvp_ir --out /tmp/reconstructed.lp
-pytest -q
+lpir build data/test1.lp --out /tmp/test1-ir
+lpir render /tmp/test1-ir
+lpir verify /tmp/test1-ir
 ```
 
-`build` requires an absent or empty output directory; it never overwrites an existing artifact. A failed build can leave an incomplete directory, which must not be used as an artifact. Choose another output directory to retry.
-
-On the current development machine, source execution without installing dependencies is also available:
-
-```sh
-PYTHONPATH=src /Users/bhz/miniforge3/envs/pdbo/bin/python -m lpir overview test1/mvp_ir
-PYTHONPATH=src /Users/bhz/miniforge3/envs/pdbo/bin/python -m pytest -q
-```
-
-## Python interface
+`build` writes `summary.md` and `summary.json` inside the output directory.
+Give an LLM `summary.md` as its initial model context and access to LPIR's
+`inspect`/`query`/`validate` tools for details. `summary.json` is the same
+structured document used to render that Markdown, suitable for programmatic
+consumers. Neither snapshot replaces the complete numerical and relational IR.
+The default Markdown budget is 20 KB; pagination and incomplete analysis remain
+explicit. After additional analysis, use `describe()`/`render()` for current
+views; the files written by `build` are build-time snapshots.
 
 ```python
 from lpir import IR
 
-ir = IR.build("problem.lp", "artifact")  # once
-ir = IR("artifact")                     # reopen without parsing the LP
-print(ir.overview())
-print(ir.inspect("row", "c276"))
-print(ir.inspect("assignment", "assignment_0", limit=5))
-print(ir.inspect("parameter", "q", limit=5))
-print(ir.query("external", "assignment_0", limit=5))
-
-result = ir.query("filter", "temporal", "L[source] + q > U[target]", limit=5)
-page_two = ir.query(handle=result["handle"], offset=5, limit=5)
-print(result["total"])
-
-# all_satisfied + exact counterexamples, not approximate symbolic inference
-print(ir.query("relation", "temporal", "q == cost_switch + cost_arc"))
-print(ir.verify())
-ir.export("reconstructed.lp")
+with IR("evaluation/test1/ir") as ir:
+    print(ir.render())
+    families = ir.inspect("structure_families", limit=20)
+    result = ir.query({"table": "structure_objective"}, limit=10)
+    checked = ir.verify()
 ```
 
-Variable and row IDs are internal stable IDs within one artifact, **not** numbers extracted from the input names. Names can be used instead of IDs. Names are checked before interpreting a string as an ID. Assignment orientations are arbitrary: a reordered model may swap the two bipartite sides. Test equivalence using the bindings, not raw internal IDs.
+The repository keeps one evaluated set in [`evaluation`](evaluation/report.md).
+[`evaluation/SUMMARIES.md`](evaluation/SUMMARIES.md) links all eight current summaries.
+`data` contains only the eight original `.lp` files. Each `evaluation/<case>`
+contains `ir/`, `summary.md`, `summary.json` and `report.json`.
+Public benchmark inputs remain in `benchmarks/public`; reference literature is
+in `literature`.
 
-### Bounded query protocol
+## Current interfaces
+
+- `IR.build(source, output, **options)` creates a new numerical IR and attempts
+  bounded formula, indexed-coordinate and structural analysis.
+- `overview()`, `describe()` and `render()` return model statistics, machine data
+  and human Markdown. Markdown is a reading view, not a machine serialization.
+- `inspect(kind, key=None, offset=0, limit=20)` reads rows, variables, formula
+  families, indexed diagnostics and `structure_*` relations.
+- `query(spec, ...)` executes a restricted JSON relational AST. `query(handle=...)`
+  pages a materialized result. `neighbors` and `external` provide incidence queries.
+- `analyze(kind, scope=None, budget=None, handle=None, ...)` performs resumable
+  discovery. `validate(spec, budget=None)` checks a hypothesis; `verify()` checks
+  numerical files and published structural views.
+- `export(path, **options)` writes the exact numerical model as LP.
+- `probe(seconds=30, memory_mb=256)` runs the optional continuous LP relaxation;
+  its results are numerical, not exact proofs.
+
+Only numerical schema 2 and structural sidecar 2.0 are supported. Old readers,
+string-expression queries, `template`/`parameter` aliases and migration commands
+have been removed. Rebuild obsolete artifacts from their source LP/MPS.
 
 ```sh
-lpir inspect ARTIFACT row --key c0 --limit 5
-lpir inspect ARTIFACT variable --key x0
-lpir inspect ARTIFACT template
-lpir inspect ARTIFACT template --key family_0 --limit 5
-lpir inspect ARTIFACT assignment --key assignment_0 --limit 5
-lpir inspect ARTIFACT parameter --key L
-lpir inspect ARTIFACT residual
-lpir inspect ARTIFACT exceptions
-lpir query ARTIFACT neighbors --key variable:x0
-lpir query ARTIFACT external --key assignment_0
-lpir query ARTIFACT filter --key temporal --where 'L[source] + q > U[target]'
-lpir query ARTIFACT relation --key temporal --where 'q == cost_switch + cost_arc'
-lpir query ARTIFACT --handle 'HANDLE_FROM_PREVIOUS_RESULT' --offset 20
+lpir query evaluation/test1/ir --spec '{"table":"structure_families"}' --limit 2
+lpir analyze evaluation/test1/ir structure --seconds 30 --memory-mb 128
+lpir inspect evaluation/test1/ir structure_objective --limit 5
 ```
 
-Inspection and query results include a model version, exactness, scope, total count, page limit, next offset, and truncation flag. Default page size is 20; maximum is 1,000. Large query result sets receive replayable handles containing a query specification, not all matches. Reopening a handle scans the same exact scope; handles are not materialized result caches. Template previews cap nested bindings and coefficient slots at 20; the returned original row ID allows full paginated expansion via `inspect row`.
+Use `--raw-ids` to display internal identities; readable references are local to
+an artifact. Scope, pagination and continuation retain the current query contract.
 
-Relations are interpreted by a restricted AST walker, never `eval`. Supported operations are addition, subtraction, unary signs, comparisons, `and`, `or`, `not`, and `L[source]` / `U[target]` indexed parameter joins. Available scalar names are `q`, `M`, `source`, `target`, `cost_switch`, `cost_arc`. Use integers or **quoted decimal strings** for exact numeric constants, e.g. `q > "10.25"`; floating Python literals are rejected. Calls, attributes, multiplication, comprehensions, and arbitrary code are rejected. Missing or infinite bounds produce an explicit error instead of a guessed comparison.
+## Structural representation
 
-`filter` returns matches. `relation` returns counterexamples and reports `checked`, `passed`, and `all_satisfied`. Empty relation scopes are explicitly visible through `checked=0`. For a general temporal candidate, a time-window inequality by itself is not an arc-fixing proof: inspect `assignment_verified` and all other prerequisites before applying any reduction. `lpir` performs no such reduction.
+The primary view contains:
 
-`external` returns every constraint outside the chosen primary template or assignment block incident to its variables. It also reports how many block variables carry objective coefficients. This deliberately retains non-template couplings.
+- Base variable entities with arbitrary-rank coordinates and exact sparse domains.
+- Coordinate views and explicit index mappings, keeping aliases separate from entities.
+- Constraint families with algebraic skeletons, row domains, restricted sums,
+  coefficient tensors and original-row mappings.
+- Objective coefficient tiles, verified axis invariance, and axis subsets with
+  explicit evidence. Equal objective profiles do not prove whole-model symmetry.
 
-## Representation and algorithms
+All published families expand exactly to numerical rows, including coefficients,
+bounds and normalization scales. Missing cells are never silently filled with
+zero. Uncovered rows retain their numerical representation. Long rationals may be
+abbreviated with `≈` in Markdown; exact values remain queryable.
 
-1. **Incremental parsing:** buffer one logical constraint or the objective rather than the complete input text. Combine repeated terms with exact arithmetic and remove only exact zeros. Preserve objective constants, variable domains, all bounds, and input line provenance.
-2. **Persistent numerical layer:** NumPy CSR arrays store column and exact-coefficient IDs. A CSC-position index supports variable-to-row queries without duplicating coefficients. SQLite stores names, domains, row bounds, and canonical finite decimal coefficients `(integer mantissa, decimal exponent)` plus approximate numeric values.
-3. **Candidate discovery:** structural row fingerprints include sense, length, variable types, signs, and coefficient multiplicities. Three bipartite color-refinement rounds generate role labels; exact numerical labels are retained separately. Colors are not automorphism or interchangeability certificates.
-4. **Index recovery:** exactly-one constraints are connected by shared variables; degree checks and bipartite BFS recover assignment incidence, missing index pairs, and parallel pairs. Names, adjacency in the LP, dimensions, and numeric name suffixes are not used.
-5. **Time templates:** identify `-t_source + t_target + q*switch - M*arc >= q-M`, check the RHS **exactly**, and join source/target switches to assignment endpoints where this is unambiguous. `M` is extracted, not assumed to be 60,000. Singleton constraints provide derived time bounds without changing the original variables or rows.
-6. **Restricted anti-unification:** align generic linear terms by type/sign/unit/coefficient roles; common coefficients and bounds become constants, differences become parameter slots. Time templates additionally factor the exact sum/difference relationship in the RHS. This is a bounded template vocabulary, not unrestricted symbolic regression.
-7. **Greedy encoding selection:** select non-overlapping row families using an estimated fixed-width encoding cost that includes bindings, parameters, and template overhead. Unsupported or unprofitable rows remain residual. Structural overlays can overlap independently of primary encoding.
-8. **Verification:** independently expand primary templates and residual rows and compare all coefficients and bounds to the numerical layer. Compare objective sense/constant, every objective coefficient, variable type and bound, and provenance. Base storage checksums detect corruption of shared numerical dictionaries and arrays. The checker does not rely on Python assertions and works with `python -O`.
+The local formula compiler and indexed-coordinate/operator modules remain active
+building blocks for structural discovery. Their diagnostic relations are not old
+API implementations.
 
-No approximate equality is substituted. In `test1`, the apparent `q = cost_switch + cost_arc` relation has exact counterexamples and remains a query result, not a rewriting rule.
+See [structural representation and validation](docs/STRUCTURAL_IR.md),
+[indexed coordinates](docs/INDEXED_IR.md) and
+[relational query recipes](docs/EVIDENCE_QUERIES.md).
 
-### Artifact layout
+## Exact queries and validation
 
-- `manifest.json`: source digest, schema version, metrics, checksums and artifact sizes.
-- `metadata.sqlite`, `*.npy`: exact numerical model and sparse access indexes.
-- `compressed.json`: complete domain/objective snapshot, parameterized families, index bindings, exceptions and residual rows.
-- `structures.json`: structural overlays, recovered assignment indices, temporal joins, exact derived time bounds and role statistics.
-- `verification.json`: exact reconstruction result.
-- `summary.md`, `acceptance.json`: delivered `test1` summary and acceptance measurements.
+The query AST supports scans, filters, projections, joins, grouping, set
+operations, exact arithmetic, selected terms and column incidence. Use rational
+strings for exact decimal constants. Arbitrary Python/SQL expressions are rejected.
 
-The artifact intentionally retains the numerical model **and** analysis views. Total disk size may exceed the original LP; the MVP aims to compress the mathematical presentation and repeated template encoding, not to beat a general-purpose file compressor. Estimated encoding savings are labeled estimates, distinct from measured JSON/disk bytes. A self-consistency/round-trip check is not a formal proof of the parser implementation; parser fidelity is also tested against the existing independent parser and optional solver import during development.
+Validation includes formulas, structural entities/families/maps/subsets/objective
+tiles, support relations, supplied coordinate mappings, cliques and decomposition
+hypotheses. A failed check returns a counterexample; an exhausted budget returns
+an incomplete result rather than a proof.
 
-## Supported LP subset
+Budget fields include `seconds`, `memory_mb` and `candidates`. Most internal
+budgets are cooperative working-set estimates; native solver/graph calls and an
+atomic candidate can overshoot a time quantum. The evaluation runner enforces
+an independent subprocess deadline per model. Partial discovery is not evidence
+that a structure does not exist.
 
-Supported section headers: common `Minimize`/`Maximize`, `Subject To`/`Such That`/`st`/`s.t.`, `Bounds`, `Binaries`/`Binary`, `Generals`/`Integers`, and `End` aliases. Headers appear on their own lines. `End` is required. Backslash starts a line comment.
+## Input, storage and export
 
-Names match `[A-Za-z_][A-Za-z0-9_.\[\],]*`; names are case sensitive, section headers are not. Constraint labels are optional; duplicate row labels are rejected. Expressions support optional signed coefficients, implicit unit coefficients, decimal/scientific notation, and constants. Products, powers, parentheses, quoted names, SOS, indicator and semi-continuous declarations are not supported and cause errors with source locations. MPS is not supported in this version.
+LP parsing streams bounded chunks and reports unsupported syntax with locations.
+Supported models are linear, with continuous, integer and binary variables,
+finite or infinite bounds, equalities, inequalities and ranged rows. Nonlinear,
+SOS, indicator and semicontinuous features are rejected.
+HiGHS LP output is accepted, including objective/left-hand-side wraps between
+a coefficient and its variable and an empty `semi` section. A nonempty `semi`
+section still raises an unsupported-domain error. Completed terms require
+explicit `+` or `-`; a scalar right-hand side ends at the physical newline.
 
-Constraints support `=`, `<=`, `>=`, and finite constant-ended ranges in either direction. A row can span lines before the comparison or after a trailing comparison/sign. A numeric RHS completes the logical row; do not continue a completed RHS on another line. Bounds are one declaration per line and support equality, one/two-sided bounds, `free`, and the usual `-inf`/`+inf` endpoints. Infinity cannot be used as an ordinary row coefficient or variable name.
+MPS supports fixed/free records, integer markers, RHS/RANGES/BOUNDS sets and
+objective offsets. Multiple vector sets require explicit selection. INTORG
+columns default to `[0,1]` unless overridden by BOUNDS. LP export requires names
+compatible with its grammar and rejects completely free rows it cannot represent;
+explicit rename maps are supported.
 
-Default continuous/integer bounds are `[0,+inf)`. Binary domains are intersected with `[0,1]`; explicit empty domains are retained rather than silently repaired. Repeated bound declarations replace the explicitly declared side. Repeated objective/constraint sections are rejected. The supported subset and semantics are intentionally narrower than every solver's LP dialect.
+`metadata.sqlite` and CSR/CSC arrays form the immutable, checksummed numerical
+store. Analysis, local formulas, indexed coordinates and structure sidecars are
+separate. Description-length metrics measure canonical algebraic descriptions,
+not SQLite disk size. Raw identity audit mappings are excluded; coordinate maps,
+views, subsets and objective representations are counted.
 
-## Validation and scaling limits
-
-Tests cover exact agreement with `test1/analysis/model_io.py`, lossless export/reparse, renamed and reordered models with known mappings, tiny RHS perturbations, changed objectives, external coupling, sparse/parallel assignment incidence, non-bipartite rejection, residual constraints, corruption, query safety, default bounds, constants and parser errors.
-
-Generate a larger *disjoint-copy* fixture without running the analysis:
+## Tests and evaluation
 
 ```sh
-lpir generate test1/mvp_ir --copies 10 --out /tmp/test1_10copies.lp
-lpir generate test1/mvp_ir --target-mb 110 --out /tmp/test1_large.lp
+pytest -q
+PYTHONPATH=src python scripts/evaluate_structure.py \
+  --out /tmp/lpir-evaluation --seconds 300 --jobs 2
+PYTHONPATH=src python scripts/evaluate_public.py --out /tmp/lpir-public
 ```
 
-Only small generator fixtures are exercised in this MVP. **No 100MB+ run has been performed.** Repeated disjoint blocks do not represent arbitrary dense, irregular, or highly coupled large models.
+The structural runner builds danoint, assign1-5-8 and test1–test6 independently,
+including parsing, summaries and verification within each five-minute cap.
+It never overwrites an existing output directory. The public benchmark runner
+checks small MPS models and optional independent SCIP comparisons.
 
-Parsing avoids loading the full source, and matrix arrays are memory mapped. However, variable/name dictionaries, row metadata, the largest logical expression, color-refinement neighborhoods, and the JSON analysis views still scale with model size and are held in memory. This is not yet a fully external-memory analyzer. Expensive general graph isomorphism, online AI orchestration, arbitrary parameter synthesis, model transformations, and solver benchmarking are outside this version.
+Tests cover exact parsing, corruption rejection, numerical round trips, random
+renaming/permutation/scaling, masked domains, parameter perturbations, paging,
+scopes and continuation. [The offline AI evaluation protocol](docs/AI_EVALUATION.md)
+describes the limits of claims based on deterministic regression checks.
+
+Optional dependencies: `.[probe]` supplies SciPy and `.[graph]` supplies igraph.
+`register_analysis(name, version, discover)` supports trusted Python extensions;
+CLI JSON cannot install or execute plugins.

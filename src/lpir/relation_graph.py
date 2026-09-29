@@ -3,7 +3,8 @@
 import json
 
 from .evidence import begin, emit, input_relation, js, require_result, save
-from .jobs import Budget, BudgetExceeded, result_page
+from .budget import Budget, BudgetExceeded
+from .results import result_page
 from .numbers import LPIRError
 from .semantic import connect
 

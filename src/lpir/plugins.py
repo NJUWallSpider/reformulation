@@ -62,7 +62,8 @@ def register_analysis(name, version, discover):
 def run_plugin(ir, name, scope=None, budget=None, offset=0, limit=20, handle=None):
     import hashlib, json
     from .semantic import connect
-    from .jobs import Budget, BudgetExceeded, result_page
+    from .budget import Budget, BudgetExceeded
+    from .results import result_page
 
     if name not in _REGISTRY:
         raise LPIRError(f"Unregistered analysis plugin {name}")

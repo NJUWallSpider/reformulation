@@ -4,7 +4,7 @@ from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from fractions import Fraction as F
 from pathlib import Path
-import json, sqlite3, struct, time, resource, sys
+import json, sqlite3, struct, time, sys
 import numpy as np
 from .numbers import LPIRError, encoding, from_encoding
 from .artifact_io import sha256, dump
@@ -350,7 +350,7 @@ class Model:
                 pass
 
 
-def build(source, out, memory_mb=128, **options):
+def build_numerical(source, out, memory_mb=128, **options):
     if memory_mb < 32:
         raise LPIRError(
             "build memory budget must be at least 32 MiB (cooperative working-set budget)"
@@ -405,45 +405,4 @@ def build(source, out, memory_mb=128, **options):
         p.name: sha256(p) for p in out.iterdir() if p.suffix in (".sqlite", ".npy")
     }
     dump(out / "manifest.json", manifest)
-    from .semantic import discover
-
-    m = Model(out)
-    discover(m, memory_mb)
-    from .semantic import view_digests
-
-    manifest["view_sha256"] = view_digests(m)
-    manifest["timings"]["discover"] = time.perf_counter() - indexed
-    from .compressed import compile_ir
-
-    explanation_start = time.perf_counter()
-    compile_ir(m)
-    manifest["timings"]["explanations"] = time.perf_counter() - explanation_start
-    from .indexed import analyze as indexed_analyze
-
-    indexed_start = time.perf_counter()
-    indexed_analyze(m)
-    manifest["timings"]["indexed"] = time.perf_counter() - indexed_start
-    from .structural import analyze as structure_analyze
-
-    structure_start = time.perf_counter()
-    structure_analyze(m, budget={"memory_mb": memory_mb})
-    manifest["timings"]["structure"] = time.perf_counter() - structure_start
-    # The default agent entry point is a bounded snapshot of persisted views.
-    # Render the same document we save; rendering must not run discovery.
-    from .compressed import document, render_document
-
-    summary_start = time.perf_counter()
-    summary = document(m)
-    dump(out / "summary.json", summary)
-    (out / "summary.md").write_text(render_document(summary), encoding="utf-8")
-    manifest["timings"]["summary"] = time.perf_counter() - summary_start
-    manifest["timings"]["total"] = time.perf_counter() - start
-    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    manifest["peak_rss_bytes"] = int(peak if sys.platform == "darwin" else peak * 1024)
-    manifest["peak_rss_scope"] = "process high-water mark"
-    manifest["artifact_bytes"] = {
-        p.name: p.stat().st_size for p in out.iterdir() if p.is_file()
-    }
-    dump(out / "manifest.json", manifest)
-    m.manifest = manifest
-    return m
+    return Model(out)

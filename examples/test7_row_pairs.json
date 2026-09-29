@@ -1,0 +1,9 @@
+{
+  "op": "compare_rows",
+  "start": 0,
+  "stop": 3497,
+  "step": 1,
+  "left": {"offset": 52, "stride": 2},
+  "right": {"offset": 53, "stride": 2},
+  "mode": "vector"
+}

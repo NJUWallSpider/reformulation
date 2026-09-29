@@ -3,6 +3,8 @@
 from pathlib import Path
 import hashlib
 import json
+import os
+import tempfile
 
 
 def sha256(path):
@@ -14,4 +16,27 @@ def sha256(path):
 
 
 def dump(path, data):
-    Path(path).write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+    atomic_write(path, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+
+
+def atomic_write(path, text):
+    """Publish a complete UTF-8 snapshot, leaving the old file intact on failure."""
+    path = Path(path)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=path.name + ".",
+            suffix=".tmp",
+            delete=False,
+        ) as target:
+            temporary = Path(target.name)
+            target.write(text)
+            target.flush()
+            os.fsync(target.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)

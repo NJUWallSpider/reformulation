@@ -15,6 +15,13 @@ def main(argv=None):
     for opt in ("rhs", "bounds", "ranges"):
         b.add_argument("--" + opt)
     b.add_argument("--memory-mb", type=float, default=128)
+    b.add_argument(
+        "--analysis-seconds",
+        type=float,
+        default=30,
+        help="Cooperative time budget for each resumable analysis stage",
+    )
+    b.add_argument("--analysis-candidates", type=int, default=1000000)
     b.add_argument("--mps-format", choices=["auto", "fixed", "free"])
     for name in (
         "overview",
@@ -36,6 +43,12 @@ def main(argv=None):
             action="store_true",
             help="Show internal identities instead of artifact-local short references",
         )
+        if name in ("query", "inspect", "validate"):
+            q.add_argument(
+                "--preview",
+                action="store_true",
+                help="Show compact evidence instead of the JSON envelope",
+            )
         if name == "inspect":
             q.add_argument("kind")
             q.add_argument("--key")
@@ -76,18 +89,24 @@ def main(argv=None):
             Path(value[1:]).read_text() if value.startswith("@") else value
         )
 
+    ir = None
     try:
         if a.command == "build":
-            result = IR.build(
+            ir = IR.build(
                 a.source,
                 a.out,
                 memory_mb=a.memory_mb,
+                analysis_budget={
+                    "seconds": a.analysis_seconds,
+                    "candidates": a.analysis_candidates,
+                },
                 **{
                     k: getattr(a, k)
                     for k in ("rhs", "bounds", "ranges", "mps_format")
                     if getattr(a, k) is not None
                 },
-            ).overview()
+            )
+            result = ir.overview()
         else:
             ir = IR(a.artifact)
             c = a.command
@@ -180,10 +199,16 @@ def main(argv=None):
             and hasattr(ir, "readable")
         ):
             result = ir.readable(result)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if getattr(a, "preview", False):
+            print(ir.preview(result))
+        else:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
     except (LPIRError, OSError, KeyError, ValueError, TypeError, AttributeError) as e:
         print(
             json.dumps({"error": str(e), "type": type(e).__name__}, ensure_ascii=False),
             file=sys.stderr,
         )
         raise SystemExit(2)
+    finally:
+        if ir is not None:
+            ir.close()

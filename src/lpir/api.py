@@ -3,9 +3,12 @@
 from collections import Counter
 import json
 from .numbers import LPIRError, decimal
-from .storage import Model, build
+from .storage import Model
+from .build import build
 from .semantic import connect
-from .jobs import analyze, result_page, require_current_assignments, ASSIGNMENT_VERSION
+from .sidecar import check_page, page_fields
+from .jobs import analyze
+from .results import result_page, require_current_assignments, ASSIGNMENT_VERSION
 
 
 class IR:
@@ -27,10 +30,7 @@ class IR:
         m.close()
         return cls(out)
 
-    @staticmethod
-    def page(offset, limit):
-        if offset < 0 or not 1 <= limit <= 1000:
-            raise LPIRError("offset >= 0 and 1 <= limit <= 1000 required")
+    page = staticmethod(check_page)
 
     def envelope(self, items, total, offset=0, limit=20, scope=None, **extra):
         return {
@@ -40,12 +40,7 @@ class IR:
             "verification": "verified",
             "completeness": "complete",
             "scope": scope,
-            "total": total,
-            "offset": offset,
-            "limit": limit,
-            "truncated": offset + len(items) < total,
-            "next_offset": offset + len(items) if offset + len(items) < total else None,
-            "items": items,
+            **page_fields(items, total, offset, limit),
             "provenance": {"artifact": "numerical IR / analysis.sqlite"},
             **extra,
         }
@@ -157,6 +152,15 @@ class IR:
     def inspect(self, kind, key=None, offset=0, limit=20):
         self.page(offset, limit)
         from .references import translate
+
+        from .query_catalog import TABLES
+
+        if kind in TABLES and not kind.startswith(("structure_", "index_")):
+            if key is not None:
+                raise LPIRError("Use query filters to select records from a relation")
+            return self.query(
+                spec={"op": "scan", "table": kind}, offset=offset, limit=limit
+            )
 
         if kind.startswith("structure_"):
             from .structural import page
@@ -528,6 +532,11 @@ class IR:
             db.close()
 
     def validate(self, spec, budget=None):
+        if spec.get("kind") == "row_pairs":
+            from .row_relations import validate
+
+            return validate(self.model, spec, budget)
+
         from .references import translate
 
         if spec.get("kind", "").startswith("structure_"):
@@ -573,6 +582,11 @@ class IR:
 
         return export(self.model, path, **options)
 
+    def preview(self, result, limit=3):
+        from .preview import preview
+
+        return preview(result, limit)
+
     def readable(self, result):
         """Convert response references without changing the underlying numerical facts."""
         from .references import translate
@@ -584,11 +598,11 @@ class IR:
 
     def describe(self, offset=0, limit=20, max_bytes=20000, raw_ids=False):
         """The exact structured document consumed by agents and by render()."""
-        from .compressed import document
+        from .document import document
 
         return document(self.model, offset, limit, max_bytes, raw_ids=raw_ids)
 
     def render(self, **options):
-        from .compressed import render_document
+        from .document import render_document
 
         return render_document(self.describe(**options))

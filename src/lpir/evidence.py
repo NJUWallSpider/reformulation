@@ -8,7 +8,8 @@ import hashlib
 import json
 from fractions import Fraction as F
 
-from .jobs import Budget, BudgetExceeded, result_page
+from .budget import Budget, BudgetExceeded
+from .results import result_page
 from .numbers import LPIRError
 from .semantic import connect
 

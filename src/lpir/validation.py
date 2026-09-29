@@ -48,7 +48,7 @@ def verify(m):
 def validate(m, spec, budget=None):
     if not isinstance(spec, dict):
         raise LPIRError("Validation requires an object")
-    from .jobs import Budget, BudgetExceeded
+    from .budget import Budget, BudgetExceeded
 
     work_budget = Budget(**(budget or {}))
     kind = spec.get("kind")
@@ -333,7 +333,7 @@ def validate(m, spec, budget=None):
                         "Use a query AST for numerical variable/term relations"
                     )
                 if relation in ("assignment_members", "assignment_edges"):
-                    from .jobs import require_current_assignments
+                    from .results import require_current_assignments
 
                     require_current_assignments(db)
                 records = (json.loads(rec) for (rec,) in db.execute(TABLES[relation]))

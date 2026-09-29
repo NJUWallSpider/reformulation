@@ -181,7 +181,7 @@ def probe(m, seconds=30, memory_mb=256, offset=0, limit=20):
         (run, "probe", "{}", completeness, count, count, json.dumps(summary)),
     )
     db.commit()
-    from .jobs import result_page
+    from .results import result_page
 
     result = result_page(m, db, run, offset, limit)
     db.close()

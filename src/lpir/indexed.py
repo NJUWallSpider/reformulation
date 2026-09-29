@@ -4,188 +4,32 @@ All mathematics is checked against the immutable numerical model. The sidecar is
 an overlapping view, never an alternative numerical source or a presolver.
 """
 
-import hashlib
 import json
 import sqlite3
 from collections import Counter, defaultdict, deque
+from contextlib import closing
 from fractions import Fraction as F
 
-from .jobs import Budget, BudgetExceeded
+from .budget import Budget, BudgetExceeded
 from .numbers import LPIRError
+from .artifact_io import atomic_write
+from .sidecar import read_checkpoint
 
-VERSION = "1.0"
-RELATIONS = (
-    "index_sets",
-    "index_members",
-    "index_degrees",
-    "index_partitions",
-    "index_tensors",
-    "index_coordinates",
-    "index_operators",
-    "index_rows",
-    "index_kernel",
-    "index_alignment",
-    "index_evidence",
-    "index_axes",
+from .indexed_store import (
+    VERSION,
+    RELATIONS,
+    js,
+    ident,
+    ScopedModel,
+    filename,
+    qualify,
+    connect,
+    put,
+    get,
+    handle,
+    envelope,
+    page,
 )
-
-
-def js(x):
-    return json.dumps(x, sort_keys=True, separators=(",", ":"))
-
-
-def ident(prefix, x):
-    return prefix + hashlib.sha256(js(x).encode()).hexdigest()[:20]
-
-
-class ScopedModel:
-    """Numerical access is delegated unchanged; only the analysis sidecar differs."""
-
-    def __init__(self, model, analysis):
-        if (
-            not isinstance(analysis, str)
-            or not analysis.startswith("scope_")
-            or len(analysis) != 26
-            or any(c not in "0123456789abcdef" for c in analysis[6:])
-        ):
-            raise LPIRError("Invalid indexed analysis identifier")
-        self.model = model
-        self.analysis = analysis
-
-    def __getattr__(self, name):
-        return getattr(self.model, name)
-
-
-def filename(m, suffix):
-    return "indexed" + ("_" + m.analysis if isinstance(m, ScopedModel) else "") + suffix
-
-
-def qualify(value, analysis):
-    if isinstance(value, dict):
-        return {
-            **{k: qualify(v, analysis) for k, v in value.items()},
-            **({"analysis": analysis} if value.get("table") in RELATIONS else {}),
-        }
-    if isinstance(value, list):
-        return [qualify(x, analysis) for x in value]
-    return value
-
-
-def connect(m, readonly=False):
-    path = m.path / filename(m, ".sqlite")
-    if readonly and not path.exists():
-        raise LPIRError('No indexed analysis; run analyze("operators")')
-    db = (
-        sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True)
-        if readonly
-        else sqlite3.connect(path)
-    )
-    db.execute("PRAGMA cache_size=-8192")
-    db.execute("PRAGMA temp_store=FILE")
-    if not readonly:
-        db.executescript("""
-        CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT);
-        CREATE TABLE IF NOT EXISTS records(relation TEXT,key TEXT,record TEXT,PRIMARY KEY(relation,key));
-        CREATE INDEX IF NOT EXISTS records_id ON records(relation,json_extract(record,'$.id'));
-        CREATE TABLE IF NOT EXISTS terms(r INTEGER,v INTEGER,c TEXT,kind TEXT,PRIMARY KEY(r,v));
-        CREATE INDEX IF NOT EXISTS terms_v ON terms(v,r);
-        CREATE TABLE IF NOT EXISTS sets(g TEXT,r INTEGER,PRIMARY KEY(g,r));
-        CREATE TABLE IF NOT EXISTS members(g TEXT,r INTEGER,v INTEGER,PRIMARY KEY(g,r,v));
-        CREATE INDEX IF NOT EXISTS members_v ON members(g,v,r);
-        CREATE TABLE IF NOT EXISTS coords(t TEXT,v INTEGER,a INTEGER,b INTEGER,PRIMARY KEY(t,v));
-        CREATE UNIQUE INDEX IF NOT EXISTS coords_cell ON coords(t,a,b);
-        CREATE TABLE IF NOT EXISTS bundles(t TEXT,axis INTEGER,p INTEGER,k INTEGER,r INTEGER,scale TEXT,lo TEXT,hi TEXT,PRIMARY KEY(t,axis,r));
-        CREATE TABLE IF NOT EXISTS slices(t TEXT,axis INTEGER,r INTEGER,j INTEGER,c TEXT,PRIMARY KEY(t,axis,r,j));
-        """)
-    old = db.execute("SELECT value FROM meta WHERE key='model'").fetchone()
-    if old and json.loads(old[0]) != [m.manifest["model_version"], VERSION]:
-        db.close()
-        raise LPIRError(
-            "Indexed sidecar version mismatch; use a new artifact directory"
-        )
-    if not old and not readonly:
-        db.execute(
-            "INSERT INTO meta VALUES('model',?)",
-            (js([m.manifest["model_version"], VERSION]),),
-        )
-        db.commit()
-    return db
-
-
-def put(db, relation, key, value):
-    db.execute(
-        "INSERT OR REPLACE INTO records VALUES(?,?,?)", (relation, str(key), js(value))
-    )
-
-
-def get(db, relation, key):
-    row = db.execute(
-        "SELECT record FROM records WHERE relation=? AND key=?", (relation, str(key))
-    ).fetchone()
-    if row is None:
-        raise LPIRError(f"Unknown {relation}: {key}")
-    return json.loads(row[0])
-
-
-def handle(table, id=None):
-    return {"table": table, **({"id": id} if id is not None else {})}
-
-
-def envelope(m, **kw):
-    return dict(
-        model_version=m.manifest["model_version"],
-        analysis_version="indexed-" + VERSION,
-        exactness="exact",
-        verification="verified",
-        completeness="complete",
-        provenance={
-            "artifact": "indexed.sqlite",
-            "numerical_source": "immutable numerical IR",
-        },
-        **kw,
-    )
-
-
-def page(m, relation, key=None, offset=0, limit=20):
-    if relation not in RELATIONS or offset < 0 or not 1 <= limit <= 1000:
-        raise LPIRError("Invalid indexed relation/page")
-    with connect(m, True) as db:
-        where = "relation=?"
-        if relation == "index_operators":
-            where += " AND json_extract(record,'$.verification')='verified'"
-        if relation in ("index_rows", "index_kernel", "index_alignment"):
-            where += " AND EXISTS(SELECT 1 FROM records p WHERE p.relation='index_operators' AND p.key=json_extract(records.record,'$.id') AND json_extract(p.record,'$.verification')='verified')"
-        args = [relation]
-        if key is not None:
-            where += " AND json_extract(record,'$.id')=?"
-            args.append(key)
-        total = db.execute(
-            "SELECT count(*) FROM records WHERE " + where, args
-        ).fetchone()[0]
-        items = [
-            json.loads(x[0])
-            for x in db.execute(
-                "SELECT record FROM records WHERE "
-                + where
-                + " ORDER BY key LIMIT ? OFFSET ?",
-                [*args, limit, offset],
-            )
-        ]
-        state = json.loads(
-            db.execute("SELECT value FROM meta WHERE key='state'").fetchone()[0]
-        )
-    return envelope(
-        m,
-        items=items,
-        total=total,
-        total_known=True,
-        offset=offset,
-        limit=limit,
-        truncated=offset + len(items) < total,
-        next_offset=offset + len(items) if offset + len(items) < total else None,
-        scope={"relation": relation, "id": key},
-        search_completeness="complete" if state["phase"] == "done" else "partial",
-    )
 
 
 def partition(db, g, budget):
@@ -932,8 +776,8 @@ def analyze(
     token = ident("indexed_", [m.manifest["model_version"], VERSION, scope])
     if handle is not None and handle != token:
         raise LPIRError("Foreign indexed continuation")
-    db = connect(m)
     b = Budget(**(budget or {}))
+    db = connect(m)
     reason = None
     old = db.execute("SELECT value FROM meta WHERE key='scope'").fetchone()
     if old and json.loads(old[0]) != scope:
@@ -956,59 +800,54 @@ def analyze(
         "coordinates": {"bundle", "operator", "done"},
         "operators": {"done"},
     }
+    failed = False
     try:
         # Import caller-selected relations through the public executor once. Full,
         # exact materialization is required; no preview is treated as a whole set.
         if scope and not state.get("scope_ready"):
-            from .api import IR
+            from .evidence import input_relation
             from .evidence import require_result
             from .semantic import connect as analysis_db
 
-            ir = IR(m.path)
-            try:
-                for field in ("rows", "members", "variables", "role"):
-                    if field not in scope:
-                        continue
-                    result = ir.query(spec=scope[field], budget=budget, limit=1)
-                    if result["completeness"] != "complete":
-                        return {
-                            **result,
-                            "continuation": {"kind": kind, "scope": scope},
-                            "reason": "scope materialization incomplete",
-                        }
-                    adb = analysis_db(m)
-                    try:
-                        require_result(m, adb, result["handle"])
-                        db.execute(
-                            f"CREATE TABLE IF NOT EXISTS scope_{field}(record TEXT)"
-                        )
-                        db.execute(f"DELETE FROM scope_{field}")
-                        db.executemany(
-                            f"INSERT INTO scope_{field} VALUES(?)",
-                            adb.execute(
-                                "SELECT record FROM results WHERE run=? ORDER BY ordinal",
-                                (result["handle"],),
-                            ),
-                        )
-                        columns = (
-                            ["row_id", "variable"]
-                            if field in ("members", "role")
-                            else ["row_id"]
-                            if field == "rows"
-                            else ["variable"]
-                        )
-                        expressions = ",".join(
-                            "json_extract(record,'$." + c + "')" for c in columns
-                        )
-                        db.execute(
-                            f"CREATE INDEX IF NOT EXISTS scope_{field}_lookup ON scope_{field}({expressions})"
-                        )
-                    finally:
-                        adb.close()
-                state["scope_ready"] = True
-                db.commit()
-            finally:
-                ir.close()
+            for field in ("rows", "members", "variables", "role"):
+                if field not in scope:
+                    continue
+                result = input_relation(m, scope[field], budget)
+                if result["completeness"] != "complete":
+                    return {
+                        **result,
+                        "continuation": {"kind": kind, "scope": scope},
+                        "reason": "scope materialization incomplete",
+                    }
+                adb = analysis_db(m)
+                try:
+                    require_result(m, adb, result["handle"])
+                    db.execute(f"CREATE TABLE IF NOT EXISTS scope_{field}(record TEXT)")
+                    db.execute(f"DELETE FROM scope_{field}")
+                    db.executemany(
+                        f"INSERT INTO scope_{field} VALUES(?)",
+                        adb.execute(
+                            "SELECT record FROM results WHERE run=? ORDER BY ordinal",
+                            (result["handle"],),
+                        ),
+                    )
+                    columns = (
+                        ["row_id", "variable"]
+                        if field in ("members", "role")
+                        else ["row_id"]
+                        if field == "rows"
+                        else ["variable"]
+                    )
+                    expressions = ",".join(
+                        "json_extract(record,'$." + c + "')" for c in columns
+                    )
+                    db.execute(
+                        f"CREATE INDEX IF NOT EXISTS scope_{field}_lookup ON scope_{field}({expressions})"
+                    )
+                finally:
+                    adb.close()
+            state["scope_ready"] = True
+            db.commit()
         while state["phase"] not in stops[kind]:
             phase = state["phase"]
             if phase == "scan":
@@ -1132,14 +971,17 @@ def analyze(
             db.commit()
     except BudgetExceeded:
         reason = "budget exhausted; resume the same scope and handle (candidate checks are atomic)"
-    except Exception:
+    except BaseException:
+        failed = True
         db.rollback()
         raise
     finally:
-        if reason is not None or state["phase"] in stops[kind]:
-            db.execute("UPDATE meta SET value=? WHERE key='state'", (js(state),))
-            db.commit()
-        db.close()
+        try:
+            if not failed and (reason is not None or state["phase"] in stops[kind]):
+                db.execute("UPDATE meta SET value=? WHERE key='state'", (js(state),))
+                db.commit()
+        finally:
+            db.close()
     table = {
         "incidence": "index_partitions",
         "coordinates": "index_tensors",
@@ -1166,9 +1008,7 @@ def analyze(
         "state": state,
         "handle": token,
     }
-    tmp = m.path / filename(m, ".json.tmp")
-    tmp.write_text(js(manifest))
-    tmp.replace(m.path / filename(m, ".json"))
+    atomic_write(m.path / filename(m, ".json"), js(manifest))
     if isinstance(m, ScopedModel):
         result = qualify(result, m.analysis)
         result["analysis"] = m.analysis
@@ -1604,9 +1444,13 @@ def validate(m, spec, budget=None):
 
 
 def summary(m, max_bytes=6000):
-    if not (m.path / "indexed.json").exists():
+    if not (m.path / filename(m, ".sqlite")).exists():
         return None
-    meta = json.loads((m.path / "indexed.json").read_text())
+    with closing(connect(m, True)) as saved:
+        meta = read_checkpoint(saved)
+    meta["handle"] = ident(
+        "indexed_", [m.manifest["model_version"], VERSION, meta["scope"]]
+    )
     out = {
         "version": VERSION,
         "search_completeness": "complete"
@@ -1646,7 +1490,7 @@ def summary(m, max_bytes=6000):
 
 def verify(m):
     """Recheck published coordinate and operator views; unfinished search is separate."""
-    if not (m.path / "indexed.json").exists():
+    if not (m.path / filename(m, ".sqlite")).exists():
         return {"status": "not_run"}
     db = connect(m, True)
     counts = Counter()
@@ -1668,7 +1512,8 @@ def verify(m):
                 counts[kind] += 1
     finally:
         db.close()
-    state = json.loads((m.path / "indexed.json").read_text())["state"]
+    with closing(connect(m, True)) as saved:
+        state = read_checkpoint(saved)["state"]
     return {
         "status": "PASS",
         "views": dict(counts),

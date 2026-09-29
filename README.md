@@ -111,6 +111,15 @@ atomic candidate can overshoot a time quantum. The evaluation runner enforces
 an independent subprocess deadline per model. Partial discovery is not evidence
 that a structure does not exist.
 
+Build gives each resumable analysis stage its own budget. Use
+`IR.build(..., memory_mb=64, analysis_budget={"seconds": 10, "candidates": 5000})`
+or `lpir build model.lp --out ir --memory-mb 64 --analysis-seconds 10
+--analysis-candidates 5000`. Defaults are 30 seconds and 1,000,000 candidates per
+stage; this is not an overall parsing/build deadline. If formula compilation is
+incomplete, the entry summary says so and the numerical artifact remains usable.
+Resume `analyze("explanations")` before calling `describe()` or `render()`.
+See [module boundaries and recovery contracts](docs/ARCHITECTURE.md).
+
 ## Input, storage and export
 
 LP parsing streams bounded chunks and reports unsupported syntax with locations.
@@ -137,6 +146,7 @@ views, subsets and objective representations are counted.
 ## Tests and evaluation
 
 ```sh
+python -m pip install -e '.[test,probe]'
 pytest -q
 PYTHONPATH=src python scripts/evaluate_structure.py \
   --out /tmp/lpir-evaluation --seconds 300 --jobs 2
@@ -156,3 +166,62 @@ describes the limits of claims based on deterministic regression checks.
 Optional dependencies: `.[probe]` supplies SciPy and `.[graph]` supplies igraph.
 `register_analysis(name, version, discover)` supports trusted Python extensions;
 CLI JSON cannot install or execute plugins.
+
+### 在 LPIR 内核验跨行模式
+
+行号是 **从 0 开始的 `row_id`**，与 LP 文件物理行号、约束名称不同。
+以下查询核验 `52+2j` 与 `53+2j`，其中 `0 <= j < 10`（`stop` 不包含在范围内）：
+
+```python
+spec = {
+    "op": "compare_rows",
+    "start": 0, "stop": 10, "step": 1,
+    "left": {"offset": 52, "stride": 2},
+    "right": {"offset": 53, "stride": 2},
+    "mode": "vector",
+}
+page = ir.query(spec, limit=3)
+print(ir.preview(page))
+proof = ir.validate({**spec, "kind": "row_pairs"})
+```
+
+`mode` 支持 `support`（变量支持集）、`vector`（完整精确系数向量）、
+`constraint`（向量及上下界）。不自动允许缩放或变量重命名。
+配对越界会报错，不会跳过缺失的行。`row_pairs` 使用同样的范围与映射，仅生成行对。
+验证返回 `valid=true/false/null`；未完成且尚未发现反例时为 `null`，发现反例即可为
+`false`。空作用域使用全称量词的空真语义，但明确标注 `empty_scope`，预览提示未检查任何行对。
+预算耗尽后用原 spec 再次调用，即从已保存的行内位置续跑；读取句柄只读取已有证据。
+
+`row_signatures` 对 `start/stop/step` 指定的原行生成稀疏签名（默认全模型），支持同样的
+三种模式。签名可用于分组和候选筛选，**哈希相同不构成相等证明**；证明使用 `compare_rows`。
+这些新算子可作为 `aggregate`、`filter` 等关系算子的输入。
+
+嵌套字段使用 `{"path": ["first_difference", "variable"]}`；原有
+`{"field": "left.row_id"}` 仍按完整顶层键读取，避免与 join 输出冲突。
+聚合的 `field` 可以接受路径表达式；嵌套分组字段先通过 `project` 提取为命名字段。
+显式 `sort` 示例：
+
+```python
+sorted_rows = ir.query({
+    "op": "sort",
+    "input": {"op": "scan", "table": "raw_rows"},
+    "by": [{"expr": {"field": "row_id"}, "direction": "desc"}],
+})
+```
+
+排序对数值及有理数字符串使用精确比较；升序时 null 在前，其次数值，最后文本。
+同值用完整记录作为稳定次序；排序放在最外层可得到稳定分页。路径缺失会报错。
+`inspect("raw_rows")`、`inspect("variables")` 等基础关系与 query 共用关系目录。
+CLI 的 `query`、`inspect`、`validate` 可添加 `--preview` 显示简洁证据，默认 JSON 接口保持不变。
+
+结构摘要首先列出分块、去重覆盖率及已接受公式中的跨块关联，再展示公式和证据入口。
+搜索完成表示当前算法完成，不代表已穷尽模型结构；零发现状态也会保留。
+未被结构族覆盖的行不能据此认定为“无结构”，跨块关联也不等于可独立分解证明。
+
+仓库的 `data/test7.lp` 可直接使用已核验的范围：
+
+```sh
+lpir query /path/to/test7.ir --spec @examples/test7_row_pairs.json --preview
+```
+
+该范围包含 3497 对行，完整系数向量全部相等；不声称上下界也相等。

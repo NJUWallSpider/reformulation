@@ -13,7 +13,7 @@ from fractions import Fraction as F
 from functools import lru_cache
 
 from .numbers import LPIRError
-from .artifact_io import sha256
+from .artifact_io import sha256, atomic_write
 
 VERSION = "1.0"
 FILE = "explanations.sqlite"
@@ -419,8 +419,9 @@ def open_db(m):
 
 
 def compile_ir(m, budget=None, handle=None):
-    from .jobs import Budget, BudgetExceeded
+    from .budget import Budget, BudgetExceeded
 
+    b = Budget(**(budget or {}))
     continuation = "explanations:" + m.manifest["model_version"] + ":" + VERSION
     if handle is not None and handle != continuation:
         raise LPIRError("Foreign explanation continuation")
@@ -476,11 +477,9 @@ def compile_ir(m, budget=None, handle=None):
             or state.get("version") != VERSION
         ):
             raise LPIRError("Explanation checkpoint version mismatch")
-    b = Budget(**budget) if budget is not None else None
 
     def tick():
-        if b is not None:
-            b.tick()
+        b.tick()
 
     def checkpoint():
         db.execute(
@@ -493,7 +492,7 @@ def compile_ir(m, budget=None, handle=None):
     )
     try:
         if state["phase"] == "rows":
-            _compile_rows(m, db, old, state, tick, checkpoint)
+            _compile_rows(m, db, old, state, tick, checkpoint, b.require)
             state["phase"] = "families"
             checkpoint()
         if state["phase"] == "families":
@@ -561,13 +560,11 @@ def compile_ir(m, budget=None, handle=None):
         "evidence_handle": continuation,
         "exceptions": {"assessed": False},
     }
-    temporary = m.path / (MANIFEST + ".tmp")
-    temporary.write_text(js(manifest))
-    temporary.replace(m.path / MANIFEST)
+    atomic_write(m.path / MANIFEST, js(manifest))
     return manifest
 
 
-def _compile_rows(m, db, old, state, tick, checkpoint):
+def _compile_rows(m, db, old, state, tick, checkpoint, require):
     @lru_cache(maxsize=8192)
     def kind_of(v):
         return m.variables[v][2]
@@ -587,6 +584,7 @@ def _compile_rows(m, db, old, state, tick, checkpoint):
                 if used > 16 * 1024**2:
                     terms = None
                     break
+                require(used)
                 terms.append((v, c))
         else:
             terms = None
@@ -1043,110 +1041,12 @@ def inspect(m, key=None, offset=0, limit=20):
 
 
 def render_document(doc):
-    """Human Markdown projection; complete machine data remains in describe()."""
-    from .markdown import render
+    from .document import render_document as render
 
     return render(doc)
 
 
 def document(m, offset=0, limit=20, max_bytes=20000, raw_ids=False):
-    if offset < 0 or not 1 <= limit <= 1000 or max_bytes < 2000:
-        raise LPIRError("Invalid explanation document budget")
-    db = open_db(m)
-    meta = json.loads(
-        db.execute("SELECT value FROM metadata WHERE key='model'").fetchone()[0]
-    )
-    count = db.execute("SELECT count(*) FROM families").fetchone()[0]
-    residual_count = db.execute("SELECT count(*) FROM residuals").fetchone()[0]
-    residuals = [
-        {
-            "row": r,
-            "terms": n,
-            "positive": p,
-            "negative": q,
-            "types": json.loads(t),
-            "coefficient_min": a,
-            "coefficient_max": b,
-            "lower": lo,
-            "upper": hi,
-            "handle": {"table": "terms", "row_id": r},
-        }
-        for r, n, p, q, t, a, b, lo, hi in db.execute(
-            "SELECT * FROM residuals ORDER BY nnz DESC,row_id LIMIT 3"
-        )
-    ]
-    doc = {
-        **meta,
-        "scope": "all numerical rows; formula-family page",
-        "coverage": {
-            "total_families": count,
-            "numerical_reference_rows": residual_count,
-        },
-        "large_or_unstructured_rows": residuals,
-        "residuals_handle": {"table": "explanation_residuals"},
-        "page": {
-            "offset": offset,
-            "limit": limit,
-            "shown": 0,
-            "next_offset": None,
-            "truncated": False,
-        },
-        "families": [],
-    }
-    from .indexed import summary as indexed_summary
+    from .document import document as describe
 
-    from .structural import summary as structure_summary
-
-    structured = structure_summary(m, max_bytes=min(12000, max_bytes * 3 // 4))
-    if structured is not None and (structured["families"] or structured.get("objective_tiles")):
-        doc["structure_views"] = structured
-        fully_covered = structured["covered_rows"] == structured["scope_rows"]
-        doc["presentation"] = {
-            "primary": "structure",
-            "show_indexed_diagnostics": structured["covered_rows"] == 0,
-            "show_local_diagnostics": not (fully_covered or structured["covered_rows"]),
-        }
-    # Preserve the existing machine interface; complete structural coverage only
-    # changes which view is primary in the human renderer.
-    indexed = indexed_summary(m, max_bytes=min(6500, max_bytes // 2))
-    if indexed is not None:
-        doc["indexed_views"] = indexed
-    from .references import translate
-
-    if not raw_ids:
-        doc = translate(m, doc)
-        doc["reference_scope"] = (
-            "artifact-local; short references are accepted by inspect/query/validate"
-        )
-    # Any selection happens in the IR document, never inside the Markdown renderer.
-    for (fid,) in db.execute(
-        "SELECT id FROM families ORDER BY rows DESC,id LIMIT ? OFFSET ?",
-        (limit, offset),
-    ):
-        item = card(db, fid)
-        if not raw_ids:
-            item = translate(m, item)
-        doc["families"].append(item)
-        doc["page"].update(
-            shown=len(doc["families"]),
-            next_offset=offset + len(doc["families"]),
-            truncated=True,
-        )
-        if len(render_document(doc).encode()) > max_bytes:
-            doc["families"].pop()
-            break
-    shown = len(doc["families"])
-    doc["page"].update(
-        shown=shown,
-        next_offset=offset + shown if offset + shown < count else None,
-        truncated=offset + shown < count,
-    )
-    if not shown and offset < count:
-        doc["page"]["reason"] = (
-            "Next family exceeds document byte budget; inspect explanation or increase max_bytes"
-        )
-        doc["page"]["next_offset"] = offset
-    db.close()
-    if len(render_document(doc).encode()) > max_bytes:
-        raise LPIRError("Document metadata exceeds byte budget; increase max_bytes")
-    return doc
+    return describe(m, offset, limit, max_bytes, raw_ids)

@@ -60,6 +60,13 @@ def entry(h):
 
 def render(doc):
     lines = ["# 模型结构摘要", "", "<!-- lpir:human-summary-v1 -->", ""]
+    if doc.get("completeness") == "partial" and doc.get("analyses"):
+        lines += [
+            "公式编译尚未完成；此页仅提供完整数值模型的入口，不代表未发现结构。",
+            "",
+            "通过 `analyze('explanations')` 继续编译，再用 `describe()` / `render()` 获取当前摘要。",
+            "",
+        ]
     types = {"B": "二元", "C": "连续", "I": "整数"}
     domains = "，".join(
         f"{n:,} 个{types.get(k, k)}变量"
@@ -88,6 +95,35 @@ def render(doc):
     structure = doc.get("structure_views")
     if structure:
         lines += [
+            "## 分块与覆盖概览",
+            "",
+            f"已识别 {structure.get('block_count', len(structure['blocks']))} 个变量块、{structure.get('family_count', len(structure['families']))} 个约束族；其中 {structure.get('coupling_family_count', 0)} 个约束族关联多个变量块。",
+            f"已验证结构覆盖 {structure['covered_rows']} / {structure['scope_rows']} 行（去重）；其余行保留数值证据。",
+            "",
+        ]
+        if structure.get("family_count", len(structure["families"])) == 0:
+            lines += [
+                "当前搜索方法在给定作用域内未发现可接受的结构家族；这不代表模型没有结构。搜索完成仅表示当前方法执行完毕。",
+                "",
+            ]
+        lines += [
+            "分块及其关系是已验证的局部结构，可以重叠；不据此声称模型可独立分解。",
+            "",
+        ]
+    if structure:
+        links = [f for f in structure["families"] if f.get("cross_block")]
+        if links:
+            lines += table(
+                ["跨块约束族", "关联变量块", "覆盖行", "证据入口"],
+                [
+                    [f["name"], f["blocks"], f["rows"], entry(f["handle"])]
+                    for f in links
+                ],
+            )
+        lines += [
+            "<details>",
+            "<summary>展开结构公式、参数与映射证据</summary>",
+            "",
             "## 共享坐标与结构约束族",
             "",
             f"搜索状态：{structure['search_completeness']}；结构覆盖 {structure['covered_rows']} / {structure['scope_rows']} 行；其余行保留本地公式。",
@@ -247,6 +283,7 @@ def render(doc):
             "原粗粒度算子保留为诊断查询：`index_operators`。",
             "",
         ]
+        lines += ["</details>", ""]
     indexed = doc.get("indexed_views", {})
     if not doc.get("presentation", {}).get("show_indexed_diagnostics", True):
         indexed = {}

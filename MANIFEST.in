@@ -1,0 +1,14 @@
+include README.md pyproject.toml setup.py
+recursive-include src/mipframe *.py py.typed *.json *.md
+recursive-include tests *.py
+recursive-include scripts *.py
+recursive-include docs *.md
+recursive-include examples *.py *.ipynb
+recursive-include examples/data *.lp *.mps
+prune docs/agent-development
+prune data
+prune evaluation
+prune practice
+prune playground
+prune literature
+global-exclude *.py[cod] .DS_Store

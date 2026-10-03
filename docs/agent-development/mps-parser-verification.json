@@ -1,0 +1,68 @@
+{
+  "format": 1,
+  "scope": "Complete canonical facts, auto versus explicit free; parser/store path, without IR or indexed execution",
+  "full_suite": {
+    "passed": 365,
+    "skipped": 5
+  },
+  "external_parser_tests": {
+    "passed": 5,
+    "failed": 0
+  },
+  "results": [
+    {
+      "case": 16,
+      "input": "<data-root>/playground/test16/presolved.mps",
+      "source_sha256": "5d0a6c71c4c1de39340b87d639c1b890bc2f60b20f07a94998f603bd53b8b2c0",
+      "version": "6c19a53c7d68d2ea2cb8035b8176105b10bee1435d44efa0139a9e1e626cb321",
+      "rows": 55832,
+      "vars": 152131,
+      "nnz": 312480,
+      "auto_vs_free": "PASS"
+    },
+    {
+      "case": 30,
+      "input": "<data-root>/playground/test30/presolved.mps",
+      "source_sha256": "60fa2b1ba53183a81ed9aad79b7e2055d998c12ad65e3071a41bd72246a1f98d",
+      "version": "490a64179227f6145a1a1f43dd19d77ad924d87bd143073c62f767576be558e7",
+      "rows": 12852,
+      "vars": 31721,
+      "nnz": 112542,
+      "auto_vs_free": "PASS"
+    },
+    {
+      "case": 31,
+      "input": "<data-root>/playground/test31/presolved.mps",
+      "source_sha256": "80964ce5c4bfe593d5561dff406ffac89c3769f182661d7386490dac0af0fcce",
+      "version": "2f58076d2b9ed17eae83b30394deb7e79bdf5805a4824a49b950937ba2ee09f8",
+      "rows": 13965,
+      "vars": 334635,
+      "nnz": 1296654,
+      "auto_vs_free": "PASS"
+    },
+    {
+      "case": 32,
+      "input": "<data-root>/playground/test32/presolved.mps",
+      "source_sha256": "60bf300214f51b911119cc59510f89131be7460e1bc02fbd932bed7181d9f7a6",
+      "version": "34646539c044d0e2b167b6c30bed616abee60bf450d6462d853846c73061e972",
+      "rows": 488,
+      "vars": 4733,
+      "nnz": 42817,
+      "auto_vs_free": "PASS"
+    },
+    {
+      "case": 34,
+      "input": "<data-root>/playground/test34/presolved.mps",
+      "source_sha256": "3e9900d82438720baf3deef3af5f7ea107360cd32ffe1f73d8ef6488d79490d0",
+      "version": "270cd29666297d9be22d506f9ddbc61693b2580214ceb683fa5f076765611d3e",
+      "rows": 106723,
+      "vars": 53593,
+      "nnz": 266574,
+      "auto_vs_free": "PASS"
+    }
+  ],
+  "end_to_end_structure_checks": {
+    "status": "NOT_COMPLETED",
+    "reason": "An optional default read of case 16 advanced to IR/signature preparation and was interrupted after the complete parser comparison and regression suite passed. No full structural-check success is claimed."
+  }
+}

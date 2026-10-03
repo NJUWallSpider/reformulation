@@ -3,20 +3,24 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lpir"
-version = "0.5.2"
-description = "Exact, verifiable analysis and query infrastructure for LP and MPS models"
+name = "mipframe"
+version = "0.8.0"
+description = "Read, inspect and analyze exact LP/MPS optimization models in Python"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["numpy>=1.24"]
+classifiers = [
+    "Private :: Do Not Upload",
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.13",
+]
 
 [project.optional-dependencies]
 test = ["pytest>=8"]
-probe = ["scipy>=1.11"]
-graph = ["igraph>=0.11"]
-
-[project.scripts]
-lpir = "lpir.cli:main"
+scipy = ["scipy>=1.11"]
+parquet = ["pyarrow>=14"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -24,3 +28,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.setuptools.package-data]
+mipframe = ["py.typed"]
+"mipframe._help" = ["catalog.json", "skill.md"]

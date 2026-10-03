@@ -12,3 +12,10 @@ benchmarks/
 .ruff_cache/
 evaluation/
 practice/
+
+!examples/data/
+!examples/data/**
+
+.DS_Store
+.vscode/
+playground/

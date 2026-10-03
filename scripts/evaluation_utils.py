@@ -1,11 +1,11 @@
-"""Exact numerical comparison for evaluation scripts."""
+"""Shared native snapshot setup and exact numerical comparison for evaluations/tests."""
 
-from lpir import LPIRError
+from mipframe import MIPFrameError, read, load
 
 
 def require(ok, message):
     if not ok:
-        raise LPIRError(message)
+        raise MIPFrameError(message)
 
 
 def equal_models(a, b, rename_vars=None, rename_rows=None):
@@ -40,3 +40,9 @@ def equal_models(a, b, rename_vars=None, rename_rows=None):
             (a.num(r[2]), a.num(r[3])) == (b.num(b.rows[s][2]), b.num(b.rows[s][3])),
             "bounds differ",
         )
+
+
+def saved_model(source, out, memory_mb=128, **options):
+    with read(source, memory_mb=memory_mb, **options) as model:
+        model.save(out)
+    return load(out)

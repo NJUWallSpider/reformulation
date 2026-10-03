@@ -1,0 +1,240 @@
+# MIPFrame 用户指南
+
+MIPFrame 保留模型的精确系数和原始身份。基础表是 Rows、Vars、Terms；模型快照
+不可变，Frame 查询也不可变。完整接口契约和旧写法迁移见 [FRAME.md](FRAME.md)，
+代码目录职责见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+
+## 读取与快照
+
+```python
+import mipframe as mf
+from mipframe import col
+
+m = mf.read("model.mps")
+m.uid, m.version, m.source, m.stage
+m.shape, m.nnz
+```
+
+read/load 同步准备默认 IR 和 indexed；后续 `m.structure.indexed()` 直接取得结果。
+自定义选区或签名配置在显式请求时计算。展示不运行新的结构搜索，不隐式生成稠密矩阵。
+独立 read 分配不同 uid；save/load 保留 uid/version。Native v3 保存完整精确值，
+不依赖原 LP/MPS 文件仍存在。旧 v2 需要从 LP/MPS 重新导入。
+
+```python
+saved = m.save("model.native")
+m.close()
+m = mf.load(saved)
+```
+
+只读有限数值为 Fraction。行 lb/ub 保持原始双边界，lhs/rhs 是别名。
+变量 kind 为 C/I；is_binary 和展示 type 根据有效整数域推导。目标系数在 Vars.obj，
+方向与常数在模型元数据中。重复项精确求和，抵消后的零项不进入 Terms。
+
+## 实体与集合
+
+```python
+r = m.rows.iloc[0]                # 按位置
+x = m.vars.by_name("x")          # 明确名称查找
+m.rows.loc[r.id]                  # 按原始键
+r.vars                           # 变量集合
+x.rows                           # 行集合
+r.terms                          # 原始非零项，包含系数
+term = r.terms.head(1).one()
+term.row, term.var, term.coef
+r.formula(max_terms=8)
+```
+
+实体集合自动去重。筛选、排序、切片保留类型；select/join 返回普通 Frame。
+`.ids` 是原始实体 ID；名称不作为关联身份。Frame 不接受混合语义的 `[]`，
+使用 iloc、loc、where、family、column 明确表达意图。
+
+```python
+R = m.rows.where(col("nnz") > 10)
+V = R.vars
+small = R.head(8)
+sample = R.sample(8, random_state=42)
+intersection = R & m.rows.head(100)
+```
+
+sample 无放回并保留原相对顺序，固定 seed 可复现。集合操作和 refs 返回模型顺序。
+one 要求恰好一个成员，零个或多个成员均抛 CardinalityError。
+
+## Compressed IR：模型地图
+
+```python
+m.ir.show()
+summary = m.ir.to_dict()
+json_text = m.ir.to_json()
+F0 = m.rows.family("F0@2")
+V2 = m.vars.family("V2@1")
+family = m.structure.signatures().family("F0", depth=2)
+family.inspect()
+family.params
+family.params.relations["histogram"]
+```
+
+IR schema 0.3 仅保存摘要、ID、深度和配置，不再提供字符串句柄解析。
+详细对象使用类型接口访问：族用 `signatures.family()`，成员用 `m.rows.family()` /
+`m.vars.family()`，索引对象用 `m.structure.indexed().tensor()` / `.operator()`。
+
+标签属于指定模型、IR 配置和深度，不是跨模型身份。默认 IR 的变量角色深度为 1、
+行 family 深度为 2。family 图角色提出假设，不能代替原始成员和精确数值验证。
+变化的系数角色会在 inspect 中醒目显示；params 明确采用 canonical 数值基准，
+原始系数始终从 Terms 读取。
+
+```python
+sig = m.structure.signatures(depth=3, mode="exact")
+sig.rows
+sig.row_families(2)
+sig.row_families(2).relations["members"]
+sig.family("F0", depth=2).inspect()
+```
+
+## 全量坐标验证与系数关联
+
+以下标签对应 test10 示例；其他模型的标签应从 IR 中选择。
+
+```python
+F0 = m.rows.family("F0@2")
+F1 = m.rows.family("F1@2")
+F2 = m.rows.family("F2@2")
+V2 = m.vars.family("V2@1")
+P = V2.project(i=F0, k=F1, j=F2)
+P.check("product", ("i", "j")).require()
+P.check("function", key="i", value="k").require()
+P.loc[V2.iloc[0].id].i.formula(max_terms=8)
+
+A = m.terms(rows=F0, vars=V2).select("var", a=col("coef"))
+Q = P.join(A, on="var", cardinality="1:1", require="left")
+S = Q.group_by("i").agg(
+    distinct=col("a").nunique(), amin=col("a").min(), amax=col("a").max())
+S.where(col("distinct") != 1)
+```
+
+投影检查全部源成员。异常 report.violations 包含完整零/多匹配记录，其
+relations["matches"] 提供匹配 Terms。product 使用声明目标域，包括零度成员；
+head 不缩小该域。function 检查函数依赖并报告未覆盖成员，不能视作双射。
+
+select("var", ...) 不证明 var 唯一。join 的 cardinality 和 require 分别验证
+唯一性和完整匹配；head(1) 也必须先完成验证。浮点不参与精确比较和分组。
+Fraction/Decimal 可以作常量，有限 float 必须先显式转换。
+
+## 计数、模式和极值
+
+```python
+C = m.matrix.nnz(rows=F0, vars=V2, axis="var")
+rare = C.where(col("nnz") <= 2).refs("var")
+hub = C.where(col("nnz") >= 20).refs("var")
+patterns = V2.pattern_counts("family")
+patterns.relations["members"]
+patterns.relations["items"]
+rhs = F1.column("ub")
+rhs.max(), rhs.argmax(), rhs.value_counts()
+```
+
+matrix.nnz 包含所选轴的零度成员。普通 Terms 分组只包含实际出现的组。
+模式计数、模式成员和模式项分别是表，不将成员列表塞进单元格。
+argmin/argmax 返回全部并列记录并保持 Frame 类型与顺序。
+
+## 稀疏矩阵与 Python 科学计算
+
+```python
+S = m.matrix.view(rows=F0, vars=V2)
+S                                # shape、nnz、density，无 dense preview
+S.preview()                      # 默认最多 8 × 12
+S.preview(choose_vars="first")
+S.preview(choose_vars="largest_coef")
+S.entries.head(20)               # TermFrame(row, var, coef)
+S.row_nnz, S.var_nnz              # Frame，保留零计数成员
+A = S.to_scipy()
+row_ids, var_ids = S.rows.ids, S.vars.ids
+```
+
+most_active 按整个选区中的列非零次数排序，largest_coef 按精确最大绝对系数排序；
+并列保持变量轴顺序。自动选列不保证展示的前 8 行中一定出现这些变量。
+Terms 按原始行/变量 ID 排序，SciPy 的行列位置则严格对应 S.rows.ids/S.vars.ids。
+SciPy 延迟导入，需要 `mipframe[scipy]`。导出 float64，检查溢出、非有限值和
+非零下溢，结果与模型不共享可写数组。`m.A` 是完整模型的独立 CSR 导出。
+
+```python
+binary = A.copy()
+binary.data[:] = 1
+row_overlap = binary @ binary.T
+```
+
+## Indexed
+
+```python
+I = m.structure.indexed()
+I.tensors, I.operators, I.partitions, I.evidence
+T = I.tensor(I.tensors.head(1).one().id)
+T.vars, T.axes, T.coordinates
+T.coordinates.check("product", ("i", "j")).require()
+O = I.operator(I.operators.head(1).one().id)
+O.kernel, O.bindings
+O.verify().require()
+```
+
+目录、坐标、kernel、bindings、证据使用普通 Frame；tensor/operator 保留领域方法。
+默认 IR 不展示内部缓存哈希，机器摘要保留 ID、作用域和签名配置；
+详细对象通过匹配配置的 IndexedResult 类型接口访问。
+
+## 资源和导出
+
+repr 只读有界前缀，未知总数显示 total not computed；count/len 显式求精确总量。
+查询默认工作预算 128 MiB，最低 16 KiB；解析最低 32 MiB。阻塞操作精确溢写
+SQLite。预算不代表整个 Python 进程的内存上限。
+
+```python
+records = Q.collect()             # 默认最多 128 MiB，超限报错
+for batch in Q.iter_batches(4096):
+    process(batch.to_records())
+Q.write("coefficients.jsonl")     # 完整、精确、原子发布
+spec = Q.to_spec()
+restored = mf.frame_from_spec(spec, models={m.uid: m})
+```
+
+独立记录使用 Ref 身份值，模型关闭后仍可读；ref.bind(m) 才恢复实体导航。
+实时 Frame、实体、列和迭代器在任一依赖模型关闭后失效。保存后的数值快照、refinement 层和完整 indexed 结果
+随 native 加载恢复；编辑生成的 lineage 也会保留。
+
+## 通用集合、图与稀疏计算
+
+`mf.ops.sets` 提供集合配对、成员展开、等价类、分量与精确聚合；
+`mf.ops.graph` 提供分量、SCC、拓扑序、可达关系、DAG 传递约简与路径。
+所有结果都是完整的 Frame，默认超过 100 万条整体报错。
+`m.matrix.activity()` 和 `transpose_activity()` 使用精确数值，缺失输入默认报错。
+完整接口、资源语义和组合案例见 [核心算法指南](OPS.md)。
+
+## Expressions and explicit verification
+
+Use `row.expr`, variable arithmetic, or `m.linexpr(...)` to build exact affine
+expressions. `<=`, `>=` and `.eq()` create unproved Claims. The six `m.check`
+primitives verify explicit evidence and return the same Report type used by Frame
+and indexed checks. See [the complete guide](CHECK.md) for conditional proofs,
+integer scope, local enumeration, point verification, and certificate replay.
+
+Migration: `ValidationReport` remains an alias of `Report`; `.ok`, `.summary`,
+`.violations` and `.require()` continue to work. Reports have no implicit truth
+value. Use `.status` to distinguish `REFUTED` from `INCONCLUSIVE`. Var handles are
+now hashable by snapshot identity for substitution mappings, while `x == y` still
+compares entity identity. Mathematical equality uses `x.eq(y)`.
+
+## Modify a snapshot explicitly
+
+Use `candidate = m.edit().build()` to create an independent descendant; declare
+changes on the Edit before building it. Source entities and existing proofs are
+never mutated. Bound Frames align by typed keys, not positions. The detailed
+[Edit guide](EDIT.md) covers bulk rows, auxiliary variables, strict `because`
+contracts, batch linear certificates, direct-parent diffs, persistence and LP
+auditing. Run `examples/exact_edits.py` for a complete proved add/drop roundtrip.
+
+
+## Find the current contract
+
+Use `mf.help("support containment")` to find a pattern, then
+`mf.help("recipe.support", detail="full")` for its input schema and boundaries.
+For a specific call use `mf.help(mf.Frame.join)`; for a caught error use
+`mf.help(error)`. Text results are displayable `Formula` objects, not printed side
+effects. `format="json"` returns detached metadata, including real signatures.
+The [help guide](HELP.md) describes the CLI, recipes and offline checks.

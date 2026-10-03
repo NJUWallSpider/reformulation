@@ -1,9 +1,16 @@
 """Small cross-family public MPS smoke evaluation; optional independent SCIP audit."""
 
-import argparse, json, hashlib, sys, tempfile, time
+import argparse
+import json
+import hashlib
+import sys
+import tempfile
+import time
 from pathlib import Path
-from lpir import IR, LPIRError
-from evaluation_utils import equal_models, require
+from evaluation_utils import saved_model
+from mipframe import MIPFrameError
+from evaluation_utils import equal_models
+from evaluation_utils import require
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -79,7 +86,7 @@ def main():
     args = p.parse_args()
     out = Path(args.out)
     if out.exists() and any(out.iterdir()):
-        raise LPIRError("Use a new evaluation output directory")
+        raise MIPFrameError("Use a new evaluation output directory")
     out.mkdir(parents=True, exist_ok=True)
     manifest = json.loads((ROOT / "benchmarks/public/manifest.json").read_text())
     reports = []
@@ -90,12 +97,12 @@ def main():
             "benchmark source changed",
         )
         start = time.perf_counter()
-        ir = IR.build(source, out / entry["name"] / "ir")
+        ir = saved_model(source, out / entry["name"] / "ir")
         elapsed = time.perf_counter() - start
         report = {
             **entry,
             "build_seconds": elapsed,
-            "overview": ir.overview(),
+            "ir": ir.ir.to_dict(),
             "verification": ir.verify(),
             "independent_scip_audit": scip_audit(ir, source),
         }
@@ -110,19 +117,18 @@ def main():
                 indent=2,
             )
         )
-        ir.export(
+        ir.write_lp(
             out / entry["name"] / "reconstructed.lp",
             rename_vars=names,
             rename_rows=rows,
         )
-        with tempfile.TemporaryDirectory(prefix="lpir-public-roundtrip-") as t:
-            other = IR.build(out / entry["name"] / "reconstructed.lp", Path(t) / "ir")
+        with tempfile.TemporaryDirectory(prefix="mipframe-public-roundtrip-") as t:
+            other = saved_model(out / entry["name"] / "reconstructed.lp", Path(t) / "ir")
             equal_models(ir.model, other.model, names, rows)
             other.close()
         report["roundtrip"] = "PASS"
-        report["probe"] = ir.probe(limit=3)
         reports.append(report)
-        (out / entry["name"] / "summary.md").write_text(ir.render())
+        (out / entry["name"] / "summary.md").write_text(str(ir.ir.show()))
         ir.close()
         print(
             entry["name"],
@@ -140,6 +146,7 @@ def main():
                 "instances": reports,
             },
             indent=2,
+            default=str,
         )
     )
 

@@ -1,4 +1,4 @@
-"""Public-tool replay and bounded L1/L2 regression; preserves existing artifacts."""
+"""Indexed verification and exact numerical roundtrip regression; preserves existing artifacts."""
 
 import argparse
 import json
@@ -7,8 +7,7 @@ import sys
 import time
 from pathlib import Path
 
-from lpir import IR
-from lpir.compressed import render_document
+from evaluation_utils import saved_model, equal_models
 
 
 def evaluate(source, out):
@@ -16,13 +15,15 @@ def evaluate(source, out):
         raise RuntimeError(f"Refusing to overwrite {out}")
     out.mkdir(parents=True)
     start = time.perf_counter()
-    ir = IR.build(source, out / "ir")
+    ir = saved_model(source, out / "ir")
     build_seconds = time.perf_counter() - start
     trace = []
 
     def call(name, fn, *args, **kw):
         t = time.perf_counter()
         response = fn(*args, **kw)
+        if hasattr(response, "ok"):
+            response = {"valid": response.ok, "summary": response.summary}
         trace.append(
             {
                 "operation": name,
@@ -35,33 +36,33 @@ def evaluate(source, out):
         return response
 
     with ir:
-        tensors = call("inspect", ir.inspect, "index_tensors", limit=20)
-        operators = call("inspect", ir.inspect, "index_operators", limit=20)
+        indexed = ir.structure.indexed()
+        tensors = dict(items=indexed.tensors.head(20).to_records(), total=len(indexed.tensors))
+        operators = dict(items=indexed.operators.head(20).to_records(), total=len(indexed.operators))
         validations = []
         for t in tensors["items"]:
             validations.append(
-                call("validate", ir.validate, {"kind": "cartesian", "id": t["id"]})
+                call("validate", indexed.validate, {"kind": "cartesian", "id": t["id"]})
             )
         for op in operators["items"]:
             validations.append(
                 call(
                     "validate",
-                    ir.validate,
+                    indexed.validate,
                     {"kind": "indexed_operator", "id": op["id"]},
                 )
             )
-            if "alignment" in op["kernel_statistics"]:
+            if "alignment" in indexed.operator(op["id"]).kernel_statistics:
                 validations.append(
                     call(
                         "validate",
-                        ir.validate,
+                        indexed.validate,
                         {"kind": "axis_alignment", "id": op["id"]},
                     )
                 )
-        doc = call("describe", ir.describe)
-        md = ir.render()
-        if render_document(doc) != md:
-            raise RuntimeError("Summary codec changed content")
+        search_status = indexed.to_record()["status"]
+        doc = call("ir.to_dict", ir.ir.to_dict)
+        md = str(ir.ir.show())
         if len(md.encode()) > 20000:
             raise RuntimeError("Summary too large")
         if any(x["valid"] is not True for x in validations):
@@ -69,38 +70,12 @@ def evaluate(source, out):
         checked = call("verify", ir.verify)
         if checked["status"] != "PASS":
             raise RuntimeError("Numerical verification failed")
-        ir.export(out / "roundtrip.lp")
-        with IR.build(out / "roundtrip.lp", out / "roundtrip_ir") as reread:
-            if len(reread.model.rows) != len(ir.model.rows) or len(
-                reread.model.variables
-            ) != len(ir.model.variables):
-                raise RuntimeError("Roundtrip shape changed")
-            # Numerical IDs may change with exported declaration order: compare by names.
-            orig = ir.model
-            copy = reread.model
-            for v in orig.variables:
-                w = copy.variables[copy.var_names[v[1]]]
-                if v[2] != w[2] or tuple(orig.num(v[k]) for k in (3, 4, 5)) != tuple(
-                    copy.num(w[k]) for k in (3, 4, 5)
-                ):
-                    raise RuntimeError("Roundtrip domain/cost changed")
-            for r in orig.rows:
-                q = copy.rows[copy.row_names[r[1]]]
-                if tuple(orig.num(r[k]) for k in (2, 3)) != tuple(
-                    copy.num(q[k]) for k in (2, 3)
-                ):
-                    raise RuntimeError("Roundtrip bounds changed")
-                a = {orig.variables[v][1]: c for v, c in orig.iter_terms(r[0])}
-                b = {copy.variables[v][1]: c for v, c in copy.iter_terms(q[0])}
-                if a != b:
-                    raise RuntimeError("Roundtrip coefficients changed")
-            if orig.manifest["sense"] != copy.manifest["sense"] or orig.num(
-                orig.manifest["objective_constant"]
-            ) != copy.num(copy.manifest["objective_constant"]):
-                raise RuntimeError("Roundtrip objective changed")
+        ir.write_lp(out / "roundtrip.lp")
+        with saved_model(out / "roundtrip.lp", out / "roundtrip_ir") as reread:
+            equal_models(ir.model, reread.model)
         (out / "summary.md").write_text(md)
-        (out / "summary.json").write_text(json.dumps(doc, indent=2))
-    (out / "trace.json").write_text(json.dumps(trace, indent=2))
+        (out / "summary.json").write_text(json.dumps(doc, indent=2, default=str))
+    (out / "trace.json").write_text(json.dumps(trace, indent=2, default=str))
     rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     report = {
         "source": str(source),
@@ -109,11 +84,11 @@ def evaluate(source, out):
         "peak_rss_bytes": rss if sys.platform == "darwin" else rss * 1024,
         "peak_rss_scope": "process high-water mark",
         "public_calls": len(trace),
-        "returned_bytes": sum(len(json.dumps(x["response"]).encode()) for x in trace),
+        "returned_bytes": sum(len(json.dumps(x["response"], default=str).encode()) for x in trace),
         "summary_bytes": len(md.encode()),
         "tensors": tensors["total"],
         "operators": operators["total"],
-        "search_completeness": doc["indexed_views"]["search_completeness"],
+        "search_completeness": search_status,
         "numeric_roundtrip": "PASS",
         "view_verification": "PASS",
         "artifact_bytes": {

@@ -1,227 +1,458 @@
-# LPIR
+# MIPFrame
 
-LPIR turns linear LP/MPS models into exact numerical data, shared variable
-coordinates, parameterized constraint families and queryable structural evidence.
-It retains original coefficients and row provenance. It does not rewrite the
-model, infer application semantics or claim symmetry from matching fingerprints.
+MIPFrame is a Python package for reading, inspecting and analyzing linear LP/MPS
+optimization models. It preserves exact coefficients, variable domains and source
+locations, and exposes them as Python objects. Reading a file also builds a
+factual compressed model map (`model.ir`, template depth 2) without requiring an
+output directory, including verified indexed coordinates and operators. Native loading
+restores saved indexed results or computes them if absent. Structural operations, discrete searches, certificates and edits are explicit.
 
-## Quick start
+## Install
+
+From this repository (Python 3.11 or later):
 
 ```sh
-python -m pip install -e '.[test]'
-lpir build data/test1.lp --out /tmp/test1-ir
-lpir render /tmp/test1-ir
-lpir verify /tmp/test1-ir
+python -m pip install .
 ```
 
-`build` writes `summary.md` and `summary.json` inside the output directory.
-Give an LLM `summary.md` as its initial model context and access to LPIR's
-`inspect`/`query`/`validate` tools for details. `summary.json` is the same
-structured document used to render that Markdown, suitable for programmatic
-consumers. Neither snapshot replaces the complete numerical and relational IR.
-The default Markdown budget is 20 KB; pagination and incomplete analysis remain
-explicit. After additional analysis, use `describe()`/`render()` for current
-views; the files written by `build` are build-time snapshots.
+Version 0.8.0 is an internal preview, not a public PyPI release. NumPy is the
+only runtime dependency. For a distributed wheel, install with
+`python -m pip install /path/to/mipframe-0.8.0-py3-none-any.whl`.
+Install `.[scipy]` from this repository for sparse CSR exports, or `.[parquet]`
+for Parquet exports. Offline help is available through
+`python -m mipframe help "support containment"`.
+See [internal release and verification](docs/RELEASE.md) for reproducible builds,
+optional model regressions, and release boundaries.
+
+## Compressed model map
+
+`read()`, `load()` and `Model(path)` generate `model.ir` before returning. It is a
+structured `CompressedIR` object with exact facts and model-local structural IDs:
 
 ```python
-from lpir import IR
-
-with IR("evaluation/test1/ir") as ir:
-    print(ir.render())
-    families = ir.inspect("structure_families", limit=20)
-    result = ir.query({"table": "structure_objective"}, limit=10)
-    checked = ir.verify()
+with mf.read("model.mps") as m:
+    m.ir.show()                       # bounded notebook-friendly text; no printing
+    facts = m.ir.to_dict()            # complete, independent exact schema 0.3
+    json_text = m.ir.to_json()        # rational values encoded as strings
+    m.ir.size, m.ir.matrix, m.ir.domains
+    m.ir.numerics, m.ir.objective, m.ir.topology
+    record = m.ir.structure["row_families"][0]
+    family = m.structure.signatures().family(record["id"], depth=record["depth"])
+    R = family.rows
+    params = family.params
+    S = m.matrix.view(rows=R, vars=R.vars)
 ```
 
-The repository keeps one evaluated set in [`evaluation`](evaluation/report.md).
-[`evaluation/SUMMARIES.md`](evaluation/SUMMARIES.md) links all eight current summaries.
-`data` contains only the eight original `.lp` files. Each `evaluation/<case>`
-contains `ir/`, `summary.md`, `summary.json` and `report.json`.
-Public benchmark inputs remain in `benchmarks/public`; reference literature is
-in `literature`.
-
-## Current interfaces
-
-- `IR.build(source, output, **options)` creates a new numerical IR and attempts
-  bounded formula, indexed-coordinate and structural analysis.
-- `overview()`, `describe()` and `render()` return model statistics, machine data
-  and human Markdown. Markdown is a reading view, not a machine serialization.
-- `inspect(kind, key=None, offset=0, limit=20)` reads rows, variables, formula
-  families, indexed diagnostics and `structure_*` relations.
-- `query(spec, ...)` executes a restricted JSON relational AST. `query(handle=...)`
-  pages a materialized result. `neighbors` and `external` provide incidence queries.
-- `analyze(kind, scope=None, budget=None, handle=None, ...)` performs resumable
-  discovery. `validate(spec, budget=None)` checks a hypothesis; `verify()` checks
-  numerical files and published structural views.
-- `export(path, **options)` writes the exact numerical model as LP.
-- `probe(seconds=30, memory_mb=256)` runs the optional continuous LP relaxation;
-  its results are numerical, not exact proofs.
-
-Only numerical schema 2 and structural sidecar 2.0 are supported. Old readers,
-string-expression queries, `template`/`parameter` aliases and migration commands
-have been removed. Rebuild obsolete artifacts from their source LP/MPS.
-
-```sh
-lpir query evaluation/test1/ir --spec '{"table":"structure_families"}' --limit 2
-lpir analyze evaluation/test1/ir structure --seconds 30 --memory-mb 128
-lpir inspect evaluation/test1/ir structure_objective --limit 5
-```
-
-Use `--raw-ids` to display internal identities; readable references are local to
-an artifact. Scope, pagination and continuation retain the current query contract.
-
-## Structural representation
-
-The primary view contains:
-
-- Base variable entities with arbitrary-rank coordinates and exact sparse domains.
-- Coordinate views and explicit index mappings, keeping aliases separate from entities.
-- Constraint families with algebraic skeletons, row domains, restricted sums,
-  coefficient tensors and original-row mappings.
-- Objective coefficient tiles, verified axis invariance, and axis subsets with
-  explicit evidence. Equal objective profiles do not prove whole-model symmetry.
-
-All published families expand exactly to numerical rows, including coefficients,
-bounds and normalization scales. Missing cells are never silently filled with
-zero. Uncovered rows retain their numerical representation. Long rationals may be
-abbreviated with `≈` in Markdown; exact values remain queryable.
-
-The local formula compiler and indexed-coordinate/operator modules remain active
-building blocks for structural discovery. Their diagnostic relations are not old
-API implementations.
-
-See [structural representation and validation](docs/STRUCTURAL_IR.md),
-[indexed coordinates](docs/INDEXED_IR.md) and
-[relational query recipes](docs/EVIDENCE_QUERIES.md).
-
-## Exact queries and validation
-
-The query AST supports scans, filters, projections, joins, grouping, set
-operations, exact arithmetic, selected terms and column incidence. Use rational
-strings for exact decimal constants. Arbitrary Python/SQL expressions are rejected.
-
-Validation includes formulas, structural entities/families/maps/subsets/objective
-tiles, support relations, supplied coordinate mappings, cliques and decomposition
-hypotheses. A failed check returns a counterexample; an exhausted budget returns
-an incomplete result rather than a proof.
-
-Budget fields include `seconds`, `memory_mb` and `candidates`. Most internal
-budgets are cooperative working-set estimates; native solver/graph calls and an
-atomic candidate can overshoot a time quantum. The evaluation runner enforces
-an independent subprocess deadline per model. Partial discovery is not evidence
-that a structure does not exist.
-
-Build gives each resumable analysis stage its own budget. Use
-`IR.build(..., memory_mb=64, analysis_budget={"seconds": 10, "candidates": 5000})`
-or `lpir build model.lp --out ir --memory-mb 64 --analysis-seconds 10
---analysis-candidates 5000`. Defaults are 30 seconds and 1,000,000 candidates per
-stage; this is not an overall parsing/build deadline. If formula compilation is
-incomplete, the entry summary says so and the numerical artifact remains usable.
-Resume `analyze("explanations")` before calling `describe()` or `render()`.
-See [module boundaries and recovery contracts](docs/ARCHITECTURE.md).
-
-## Input, storage and export
-
-LP parsing streams bounded chunks and reports unsupported syntax with locations.
-Supported models are linear, with continuous, integer and binary variables,
-finite or infinite bounds, equalities, inequalities and ranged rows. Nonlinear,
-SOS, indicator and semicontinuous features are rejected.
-HiGHS LP output is accepted, including objective/left-hand-side wraps between
-a coefficient and its variable and an empty `semi` section. A nonempty `semi`
-section still raises an unsupported-domain error. Completed terms require
-explicit `+` or `-`; a scalar right-hand side ends at the physical newline.
-
-MPS supports fixed/free records, integer markers, RHS/RANGES/BOUNDS sets and
-objective offsets. Multiple vector sets require explicit selection. INTORG
-columns default to `[0,1]` unless overridden by BOUNDS. LP export requires names
-compatible with its grammar and rejects completely free rows it cannot represent;
-explicit rename maps are supported.
-
-`metadata.sqlite` and CSR/CSC arrays form the immutable, checksummed numerical
-store. Analysis, local formulas, indexed coordinates and structure sidecars are
-separate. Description-length metrics measure canonical algebraic descriptions,
-not SQLite disk size. Raw identity audit mappings are excluded; coordinate maps,
-views, subsets and objective representations are counted.
-
-## Tests and evaluation
-
-```sh
-python -m pip install -e '.[test,probe]'
-pytest -q
-PYTHONPATH=src python scripts/evaluate_structure.py \
-  --out /tmp/lpir-evaluation --seconds 300 --jobs 2
-PYTHONPATH=src python scripts/evaluate_public.py --out /tmp/lpir-public
-```
-
-The structural runner builds danoint, assign1-5-8 and test1–test6 independently,
-including parsing, summaries and verification within each five-minute cap.
-It never overwrites an existing output directory. The public benchmark runner
-checks small MPS models and optional independent SCIP comparisons.
-
-Tests cover exact parsing, corruption rejection, numerical round trips, random
-renaming/permutation/scaling, masked domains, parameter perturbations, paging,
-scopes and continuation. [The offline AI evaluation protocol](docs/AI_EVALUATION.md)
-describes the limits of claims based on deterministic regression checks.
-
-Optional dependencies: `.[probe]` supplies SciPy and `.[graph]` supplies igraph.
-`register_analysis(name, version, discover)` supports trusted Python extensions;
-CLI JSON cannot install or execute plugins.
-
-### 在 LPIR 内核验跨行模式
-
-行号是 **从 0 开始的 `row_id`**，与 LP 文件物理行号、约束名称不同。
-以下查询核验 `52+2j` 与 `53+2j`，其中 `0 <= j < 10`（`stop` 不包含在范围内）：
+The map includes exact degree/numeric summaries, objective support by variable
+role, bipartite components (including isolated nodes), template refinement levels
+0–2, variable roles at depth 1, row families at depth 2, and both axes' refinement
+lineage. Signed role multisets use `|`; they are structural abstractions, not
+algebraic formulas. Machine data retains model-scoped stable signature IDs,
+family IDs, depths and configurations, but no full member-name lists, coefficient
+histograms or raw neighbor lists. Facts and structural abstractions are separated from semantic
+conclusions: the IR does not label a model as flow/assignment or prescribe a
+reformulation.
 
 ```python
-spec = {
-    "op": "compare_rows",
-    "start": 0, "stop": 10, "step": 1,
-    "left": {"offset": 52, "stride": 2},
-    "right": {"offset": 53, "stride": 2},
-    "mode": "vector",
-}
-page = ir.query(spec, limit=3)
-print(ir.preview(page))
-proof = ir.validate({**spec, "kind": "row_pairs"})
+mf.options.ir.max_var_roles = 12
+mf.options.ir.max_row_families = 15
+mf.options.ir.max_attention = 6
+mf.options.ir.max_splits = 8
 ```
 
-`mode` 支持 `support`（变量支持集）、`vector`（完整精确系数向量）、
-`constraint`（向量及上下界）。不自动允许缩放或变量重命名。
-配对越界会报错，不会跳过缺失的行。`row_pairs` 使用同样的范围与映射，仅生成行对。
-验证返回 `valid=true/false/null`；未完成且尚未发现反例时为 `null`，发现反例即可为
-`false`。空作用域使用全称量词的空真语义，但明确标注 `empty_scope`，预览提示未检查任何行对。
-预算耗尽后用原 spec 再次调用，即从已保存的行内位置续跑；读取句柄只读取已有证据。
+These independent display budgets never truncate the machine schema. Family
+previews are ordered by coverage and report omitted counts, covered population
+and singleton counts. Numeric profiles use exact fractions; near-zero means
+`0 < abs(coef) <= 1e-9`, an explicit observation threshold, not a numerical
+correctness verdict. Rendering is cached-data-only and never creates a dense
+matrix or imports SciPy.
 
-`row_signatures` 对 `start/stop/step` 指定的原行生成稀疏签名（默认全模型），支持同样的
-三种模式。签名可用于分组和候选筛选，**哈希相同不构成相等证明**；证明使用 `compare_rows`。
-这些新算子可作为 `aggregate`、`filter` 等关系算子的输入。
+Creation now includes sparse scans and refinement work. Numeric distributions
+spill to SQLite; topology uses storage proportional to vertices, not matrix
+area. `memory_mb` also configures refinement working buffers, not a process-wide
+memory cap. Native saves retain the refinement cache; loading reuses it and
+rebuilds the map. Model directories must be writable for these derived caches.
+Live IR access and detailed queries require an open model; `to_dict()` and `to_json()` exports
+remain usable after close. See the [schema and typed navigation guide](docs/USER_GUIDE.md#compressed-ir模型地图).
 
-嵌套字段使用 `{"path": ["first_difference", "variable"]}`；原有
-`{"field": "left.row_id"}` 仍按完整顶层键读取，避免与 join 输出冲突。
-聚合的 `field` 可以接受路径表达式；嵌套分组字段先通过 `project` 提取为命名字段。
-显式 `sort` 示例：
+## Read a model
 
 ```python
-sorted_rows = ir.query({
-    "op": "sort",
-    "input": {"op": "scan", "table": "raw_rows"},
-    "by": [{"expr": {"field": "row_id"}, "direction": "desc"}],
-})
+import mipframe as mf
+
+with mf.read("model.mps") as model:
+    print(model)                   # MIPModel("model") followed by numerical statistics
+    print(model.shape, model.nnz)
+
+    variable = model.variables[0]
+    print(variable.name, variable.kind, variable.lower, variable.upper)
+
+    constraint = model.constraints[0]
+    print(constraint.name, constraint.lower, constraint.upper)
+    print(constraint.coefficients)  # {variable_id: Fraction(...), ...}
+
+    print(model.objective.sense)
+    print(model.objective.constant)
+    print(model.objective.coefficients)
 ```
 
-排序对数值及有理数字符串使用精确比较；升序时 null 在前，其次数值，最后文本。
-同值用完整记录作为稳定次序；排序放在最外层可得到稳定分页。路径缺失会报错。
-`inspect("raw_rows")`、`inspect("variables")` 等基础关系与 query 共用关系目录。
-CLI 的 `query`、`inspect`、`validate` 可添加 `--preview` 显示简洁证据，默认 JSON 接口保持不变。
+Finite values are `fractions.Fraction`; an absent lower or upper bound is `None`.
+Sequence indexing is zero-based. Use `model.constraints.by_name("demand")` or
+`model.variables.by_name("x")` for name lookup. Coefficient dictionaries are
+independent copies, materialized only when requested.
 
-结构摘要首先列出分块、去重覆盖率及已接受公式中的跨块关联，再展示公式和证据入口。
-搜索完成表示当前算法完成，不代表已穷尽模型结构；零发现状态也会保留。
-未被结构族覆盖的行不能据此认定为“无结构”，跨块关联也不等于可独立分解证明。
+In notebooks, putting `model` on the last line displays its name, objective sense,
+variable/constraint/nonzero counts, matrix density, variable types and objective
+nonzeros. Counts use thousands separators and density uses three significant
+digits. The name comes from the input filename without its extension and is
+preserved when saving and reloading. Reading a model does not print anything.
 
-仓库的 `data/test7.lp` 可直接使用已核验的范围：
+## Exact Frames and structural checks
+
+The canonical tables are `m.rows`, `m.vars` and `m.terms()`. Rows store original
+`lb/ub`; variables store `kind` (`C/I`), bounds and `obj`; Terms store nonzero
+`row/var/coef` triples. `type` and `is_binary` are derived from the effective
+integer domain. Duplicate terms sum exactly and cancelling terms disappear.
+
+```python
+from mipframe import col
+
+r = m.rows.iloc[0]                 # Position -> Row
+x = m.vars.by_name("x")           # Explicit name lookup
+r.vars, x.rows                    # Entity sets, without coefficients
+r.terms, x.terms                   # Terms, with typed endpoints and exact coefficients
+m.rows.loc[r.id]                   # Declared key -> Row
+m.rows.where(col("ub") <= 1)
+m.rows.column("ub").argmax()       # Every tied maximizer
+
+F0 = m.rows.family("F0@2")
+F1 = m.rows.family("F1@2")
+F2 = m.rows.family("F2@2")
+V2 = m.vars.family("V2@1")
+P = V2.project(i=F0, k=F1, j=F2)
+P.check("product", ("i", "j")).require()
+P.check("function", key="i", value="k").require()
+A = m.terms(rows=F2, vars=V2).select("var", a=-col("coef"))
+Q = P.join(A, on="var", cardinality="1:1", require="left")
+S = Q.group_by("i").agg(
+    distinct=col("a").nunique(), amin=col("a").min(), amax=col("a").max())
+S.where(col("distinct") != 1)
+```
+
+Family labels depend on the model and signature configuration. `select()` and
+`join()` return ordinary Frames; filtering, sorting and slicing preserve entity
+or TermFrame types. Bare Frame `[]` is removed: use `.iloc`, `.loc`, `.family`,
+`.where` or `.column` explicitly. `.ids` gives original entity IDs. Names never
+act as relational identity. `head()` constructs a lazy view, while strict
+projection and join validation always check their complete inputs.
+
+`select("var", ...)` on Terms does **not** prove variable uniqueness. Join
+`cardinality` validates uniqueness separately from `require`'s match coverage.
+Reports retain complete violations and original declared domains; taking a
+sample cannot turn partial Cartesian coverage into a full proof.
+
+```python
+C = m.matrix.nnz(rows=F0, vars=V2, axis="var")
+rare = C.where(col("nnz") <= 2).refs("var")  # Includes zero-degree variables
+patterns = V2.pattern_counts("family")
+patterns.relations["members"]               # var Ref, pattern ID
+patterns.relations["items"]                 # pattern ID, family, count
+```
+
+Frame numeric comparisons, grouping and aggregation remain exact. Use `Fraction`
+or `Decimal` for noninteger constants; implicit finite floats are rejected.
+`collect()` / `to_records()` explicitly produce detached records, with a default
+128 MiB materialization limit. `iter_batches()` and atomic exact JSONL `write()`
+stream larger exports. Records contain snapshot-qualified Ref values; bind them
+explicitly to an open matching model to resume navigation. Live Frames, records
+and iterators become invalid when any dependent model closes.
+
+See [Frame contracts and migration](docs/FRAME.md) and the
+[test10 notebook](examples/test10_structure_guide.ipynb).
+
+## Inspect a large constraint
+
+```python
+r = m.rows.by_name("capacity_18392")    # Row object; lookup does not scan its terms
+r                                  # Statistics only, never an implicit formula
+r.terms.head(10)                    # Lazy TermFrame: row/var/coef
+r.formula()                        # Largest |coef| first; at most 16 terms
+r.formula(order="index")           # Variable ID order; only reads the prefix
+r.formula(order="name")            # Variable name order
+r.formula(max_terms=30)
+m.rows.sample(3, random_state=42).formula(max_terms=8)  # formulas for multiple rows
+```
+
+`Row` exposes `nnz`, `lhs`, `rhs`, `sense`, `coef_min`, `coef_max`, `unique_coef`
+and `var_types`. Its display contains bounds, nonzeros, participating variable
+types, coefficient range and distinct coefficient count. Statistics are cached
+after their first scan; no coefficient dictionary or full formula is constructed.
+`loc` accepts an original integer row ID and respects frame selections; use
+`by_name()` for names. Position access through `.iloc[]` returns a live row entity.
+
+`terms` is a read-only `TermFrame` over sparse storage, supporting `head`, `tail`,
+`sample`, `.iloc` slices and exact column operations. Terms are keyed by their
+two original endpoints. Display settings also apply to term frames. Only `to_records()`
+explicitly materializes all selected terms.
+
+`formula()` returns a notebook-friendly string. Omitted terms appear as `...`
+with `[16 of 103,824 terms shown]`; a preview with omissions is not the full
+constraint. `abs_coef` and `name` scan the row using a bounded selection heap;
+`index` reads only the requested prefix. Absolute-coefficient ties use variable
+IDs. Bounds and coefficients remain exact, and empty rows display as `0 = ...`.
+
+`RowFrame.formula()` works on samples, slices and family members, returning
+one notebook-friendly string with row IDs and names. It preserves selection
+order and previews at most `options.display.max_rows` rows, with 16 terms per
+row by default. Only displayed rows are scanned. The existing
+`.show(formula=True, ...)` also remains available.
+
+## Local sparse matrices
+
+```python
+R = m.rows.family("F0@2")
+V = R.neighbors()
+S = m.matrix.view(rows=R, vars=V)
+S                                 # Shape, nnz, density; never a dense preview
+S.preview()                       # At most 8 rows × 12 vars, most active vars first
+S.preview(choose_vars="first")
+S.preview(choose_vars="largest_coef")
+S.entries.head(20)                 # Lazy COO records: row, var, coef
+S.row_nnz                         # Frame(row, nnz), including zeros
+S.var_nnz                         # Frame(var, nnz), including zeros
+A = S.to_scipy()                   # Explicit float64 CSR copy; needs mipframe[scipy]
+```
+
+`view()` accepts same-model `RowFrame` / `VarFrame` selections; an omitted axis or
+`None` selects that complete axis. Selection order is preserved, with duplicate IDs
+removed at their first occurrence. `S.rows.ids` and `S.vars.ids` map local
+positions to original model IDs, including the row/column order of the SciPy copy.
+Only original constraint coefficients belong to the matrix; objectives, bounds and
+family normalization are excluded. `shape`, `nnz` and `density` describe the full
+selection. Axis counts include selected rows/variables with zero local nonzeros.
+
+Default display is statistics only and never materializes coefficients. Accurate
+statistics may scan sparse indices on first access and are cached. `preview()`
+returns notebook-friendly text, with exact coefficients, `.` for structural zeros
+and explicit omission markers. Its default 8×12 limits are independent of global
+frame display options; explicit nonnegative `max_rows` / `max_vars` change them.
+It shows the first selected rows and ranks variables over **all selected rows**:
+`most_active` uses nonzero counts, `largest_coef` uses maximum absolute coefficient,
+and `first` preserves the selected variable order. Ties follow that order; inactive
+columns fill remaining slots after active ones. Ranked variables may still be zero
+in the first displayed rows.
+
+`entries` is repeatably iterable and supports `len()`, `head()` and `to_records()`.
+Rows follow the selected row order; entries within each row follow original variable
+ID order. Records contain original names and exact `Fraction` coefficients.
+`head(20)` limits sparse traversal to the requested prefix; display is bounded by
+`options.display.max_rows`. Only `to_records()` collects the current entries
+selection in full. All live views require an open model.
+
+Install `pip install 'mipframe[scipy]'` for `to_scipy()`. Export directly constructs
+the selected sparse matrix, with no dense intermediate or full-model export.
+Ordinary float64 rounding is allowed; overflow or nonzero underflow to zero raises
+`MIPFrameError`. The returned matrix is independent of the model and remains usable
+after it closes. For other sparse formats use `A.tocoo()` or `A.tocsc()` explicitly.
+
+## Custom structural queries in Python
+
+Raw sparse access is public. `m.A` and `S.to_scipy()` return independent SciPy CSR
+matrices with explicit float64 conversion. Inspect exact coefficients through
+Terms; use these exports for NumPy, SciPy, sklearn or graph experimentation.
+
+```python
+S = m.matrix.view(rows=R, vars=R.vars)
+A = S.to_scipy()
+binary = A.copy()
+binary.data[:] = 1
+row_overlap = binary @ binary.T
+row_ids, var_ids = S.rows.ids, S.vars.ids
+```
+
+The output axis order follows the selected Frames. Export rejects overflow,
+nonfinite coefficients and nonzero underflow. No dense matrix is constructed.
+
+## Exact structural algorithms
+
+Algorithms return completed ordinary Frames and compose with the same query API:
+
+```python
+S = m.terms(rows=R, vars=V).select(set=col("row"), member=col("var"))
+P = mf.ops.sets.pairs(S, relation="strict_subset")
+D = mf.ops.sets.members(S, pairs=P, op="right_only")
+C = mf.ops.sets.components(S)
+
+closure = mf.ops.graph.reachability(E, include_self=True)
+reduced = mf.ops.graph.transitive_reduction(E)
+activity = m.matrix.activity(values, rows=R)
+```
+
+Support comparison does not compare coefficients. Graph facts do not prove a MIP
+transformation valid. Calls complete fully or fail; output defaults to at most
+1,000,000 rows (`max_output_rows=None` explicitly removes that limit). Exact
+working data spills under `memory_mb`; optional `disk_mb` limits scratch storage.
+Matrix input coverage is strict unless `missing="zero"` is requested.
+
+See [algorithm contracts and examples](docs/OPS.md) and
+[the executable closure/resource example](examples/structural_ops.py).
+
+## Explicit graph and integer searches
+
+`mf.alg` keeps candidate discovery separate from exhaustive enumeration:
+
+```python
+C = mf.alg.graph.clique_candidates(E, top=100, max_states=1_000_000)
+C                              # clique, vertex
+C.relations["summary"]         # clique, size, exact score
+C.relations["search"]          # candidate mode, scope, stop reason and budgets
+
+all_cliques = mf.alg.graph.maximal_cliques(E)
+cycles = mf.alg.graph.simple_cycles(E, directed=False, max_length=9)
+```
+
+Candidate results contain verified objects but do not claim global top-k or
+exhaustiveness. Exhaustive searches complete within their declared scope or raise
+`SearchBudgetExceeded`. Both return ordinary Frames and use paged working storage.
+`vertices=` declares a complete domain; `scope=` selects an induced subgraph.
+Graph structure does not prove a MIP cut valid. Odd-cycle candidates, exact
+whole-graph isomorphism classes and finite pure-integer enumeration share these
+contracts. See [ALG.md](docs/ALG.md) and the executable
+[discrete search example](examples/discrete_search.py).
+
+## Structural roles and numerical observations
+
+```python
+sig = m.structure.signatures(depth=3, mode="template")
+sig.row_families(2)                 # Frame: scalar family summaries
+sig.var_families(1)
+sig.rows                            # Frame: row Ref and colors at each depth
+members = sig.row_families(2).relations["members"]
+F = sig.family("F0", depth=2)       # Domain facade for explicit drill-down
+F.inspect()
+F.rows                              # RowFrame
+F.params                            # Frame: signed role, exact range, distinct count
+F.params.relations["histogram"]     # Frame: role, exact value, frequency
+m.rows.signature("algebraic")       # Frame with separate .relations["pattern"]
+```
+
+Families are model/configuration/depth-dependent observations. Template roles
+use coefficient signs and multiplicity classes; exact mode uses normalized
+rational values. A shared role does not prove a Cartesian product, symmetry,
+constant numerical parameters or a reformulation. Use projections and reports to
+check actual membership, and Terms to inspect original coefficients and bounds.
+
+## Save, reload and export
+
+```python
+import mipframe as mf
+
+with mf.read("model.lp") as model:
+    model.save("saved_model")       # New directory; existing targets are rejected
+    model.write_lp("exported.lp")   # Exact LP export
+
+with mf.load("saved_model") as model:
+    print(model.verify()["status"])
+```
+
+`read()` owns a temporary disk-backed numerical store. `close()` releases file
+handles and memory maps and removes that temporary workspace; using `with` is
+recommended. `load()` opens a persistent store and never deletes it. `save()`
+creates an independent snapshot containing numerical artifacts, refinement layers,
+complete indexed results and any edit lineage. Native schema 3 rejects older
+stores; reimport their LP/MPS sources.
+
+## Examples and documentation
+
+After installation, run either self-contained repository example:
 
 ```sh
-lpir query /path/to/test7.ir --spec @examples/test7_row_pairs.json --preview
+python examples/basic_read.py
+python examples/save_reload.py
 ```
 
-该范围包含 3497 对行，完整系数向量全部相等；不声称上下界也相等。
+- [Structure discovery walkthrough](examples/test10_structure_guide.ipynb): a worked
+  Notebook on `data/test10.mps`, from family membership to verified coordinates
+  and substitution cost.
+- [User guide](docs/USER_GUIDE.md): objects, exact values, formats, persistence and analysis.
+- [Frame queries](docs/FRAME.md) and [structural operations](docs/OPS.md).
+- [Indexed coordinates](docs/INDEXED_IR.md) and [discrete searches](docs/ALG.md).
+- [Architecture and recovery contracts](docs/ARCHITECTURE.md).
+
+LP/MPS support covers linear continuous, integer and binary models, including
+ranged constraints and infinite bounds. Unsupported nonlinear, SOS, indicator
+and semicontinuous features are rejected rather than silently dropped. MPS
+fixed/free records and vector-set selection are supported. The default
+`mps_format="auto"` checks each complete record: solver padding does not force
+long names or full-precision decimals into fixed-width fields. Explicit
+`mps_format="fixed"` or `"free"` selects a layout. Only LP export is currently
+available.
+
+## Development
+
+```sh
+python -m pip install -e '.[test,scipy]'
+python -m pytest -q
+```
+
+The move from the unpublished predecessor is intentionally breaking: use
+`mipframe.read()`/`load()` and `Model`, not the previous import name or build/CLI
+entry points. Numeric storage formats are versioned independently from the package.
+
+
+### Signature-assisted indexed discovery
+
+```python
+I = m.structure.indexed()  # already prepared by read/load; saved with the model
+I.tensors                 # verified 2D coordinate views, including sparse grids
+I.operators               # exact reduction / broadcast operators
+I.verify().require()
+m.ir.show()               # includes indexed summaries; use typed APIs for details
+```
+
+Structural signatures propose variable roles and row supports; exact membership and full-row coefficient
+checks establish the result. Colors do not define axes: same-family candidates can still need bipartite
+splitting. See [indexed views](docs/INDEXED_IR.md) for scope selection, raw-ID projections, exact kernels,
+memory limits and result navigation.
+
+### Exact expressions and certificates
+
+```python
+x = m.vars.by_name("x")
+e = 2*x + mf.q("0.1")
+claim = e <= 10                    # a proposition, not an established fact
+report = m.check.linear(claim, using=certificate, residual="bounds")
+report.require()
+```
+
+`LinExpr`, `Claim`, and the unified `Report` support exact identities, explicit
+linear certificates, conditional infeasibility, integer rounding, local integer
+enumeration, and full-point feasibility. Conditions and integer-only scope persist
+through dependent reports. [API and replay guide](docs/CHECK.md) ·
+[runnable example](examples/exact_certificates.py).
+
+### Immutable model edits
+
+`m.edit()` stages exact source-relative changes and builds an independent snapshot.
+Attach a verified Report with `because=` to establish preserving changes; omitted
+evidence remains explicitly unverified. Draft auxiliary variables, bulk Frame
+inputs, grounded deletion certificates, native lineage and exact LP audits share
+the same path. See [the Edit guide](docs/EDIT.md) and the runnable
+[verified add/drop example](examples/exact_edits.py).
+
+
+## Offline help for agents and interactive work
+
+```python
+import mipframe as mf
+mf.help("recover coordinates from row families")
+mf.help("recipe.coordinates", detail="full")
+mf.help(mf.Frame.join)
+# After catching an exception: mf.help(error)
+```
+
+`python -m mipframe help "linear certificate" --format json` uses the same
+installed-version contracts. Help does not read model data or execute analysis.
+See the [help guide](docs/HELP.md), [copyable agent skill](docs/agent/SKILL.md),
+and [generated API reference](docs/agent/API.md). All examples state the scope of
+their conclusions; candidate discovery does not grant proof or edit authority.

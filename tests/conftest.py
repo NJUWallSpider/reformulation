@@ -1,37 +1,29 @@
-from pathlib import Path
-import pytest
-from lpir import IR
+"""Numerical model fixtures shared by parser and fidelity regressions."""
 
-ROOT = Path(__file__).resolve().parents[1]
+from contextlib import ExitStack
+
+from external_models import model_path
+
+import pytest
+from mipframe import read
+
 
 
 @pytest.fixture(scope="session")
-def test1(tmp_path_factory):
-    with IR.build(
-        ROOT / "data/test1.lp", tmp_path_factory.mktemp("test1") / "ir"
-    ) as ir:
-        yield ir
+def test1():
+    with read(model_path("test1.lp")) as model:
+        yield model
 
 
 @pytest.fixture
-def make_ir(tmp_path):
-    opened = []
+def make_model(tmp_path):
     count = 0
+    with ExitStack() as stack:
+        def make(text, suffix=".lp", **options):
+            nonlocal count
+            count += 1
+            source = tmp_path / f"m{count}{suffix}"
+            source.write_text(text)
+            return stack.enter_context(read(source, **options))
 
-    def make(text, suffix=".lp", **options):
-        nonlocal count
-        count += 1
-        p = tmp_path / f"m{count}{suffix}"
-        p.write_text(text)
-        ir = IR.build(p, tmp_path / f"ir{count}", **options)
-        opened.append(ir)
-        return ir
-
-    yield make
-    for ir in opened:
-        ir.close()
-
-
-@pytest.fixture
-def make_v2(make_ir):
-    return make_ir
+        yield make

@@ -23,7 +23,7 @@ G = T.group_by("row").agg(
 G.head()''',
       'Actual observed coefficient statistics of the selected rows.',
       'A family label is not an original formula, and observations do not prove a semantic role.',
-      ('api.Structure.signatures','api.StructuralConstraintFamily.inspect'))
+      ('api.Model.families','api.Frame.inspect'))
     recipe('coordinates','Recover Cartesian coordinates',
       'Every variable should touch exactly one row in each proposed coordinate domain.',
       'V is a VarFrame; A and B are same-snapshot RowFrames with declared full axis domains.',
@@ -148,7 +148,7 @@ assert m2.diff(m).semantic["lp"] == "SAME"''',
 proof = m.check.linear(target, using=[r.ub_claim], residual="bounds")
 proof.require()
 proof.evidence
-with m.check.batch("linear", residual="bounds") as batch:
+with m.check.linear_batch(residual="bounds") as batch:
     batch.add(key="bound", target=target, using=[r.ub_claim])
     batch.add(key="conditional", target=x <= 0, assume=[x.eq(0)])
     proofs = batch.run()
@@ -156,7 +156,7 @@ proofs.require()
 assert proofs.for_target("conditional").scope["assumptions"] == 1''',
       'The exact supplied certificate implies the target within its recorded domain.',
       'No search for multipliers; failure is INCONCLUSIVE, not proof that the target is false.',
-      ('api.Checker.linear','api.Checker.batch','concept.proofs','concept.report-resources'))
+      ('api.Checker.linear','api.Checker.linear_batch','concept.proofs','concept.report-resources'))
     recipe('conditions','Check a conditional contradiction',
       'A binary switch value may conflict with original bounds and rows.',
       'x is continuous with ub=3; z is binary; r is the original row x-4z>=0.',

@@ -77,7 +77,7 @@ available verification primitives from optimization algorithms not provided by
 the package. `fractional point feasibility` explains exact activity/bound checks
 and why `check.solution` is an integer-model checker.
 
-General batch-proof queries lead to `Checker.batch`, whose builder accepts scalar
+General batch-proof queries lead to `Checker.linear_batch`, whose builder accepts scalar
 Claims, sources and per-target assumptions. `Frame native batch certificates`
 leads to `Checker.linear_many` for inputs already represented as three Frames.
 
@@ -109,7 +109,9 @@ python -m build
 
 The compiler generates `catalog.json`, the agent reference pages and marked
 `MIPFRAME HELP BEGIN/END` docstring blocks. It preserves prose outside those
-blocks. Runtime error hints only store a topic ID; they do not load the index.
+blocks. Generated source docstrings contain a short summary and an exact
+`mf.help(topic_id)` link; complete contracts remain in the catalog and API guide.
+Runtime error hints only store a topic ID; they do not load the index.
 Build hooks validate version, source/content fingerprints and the catalog digest
 without importing NumPy. `importlib.resources` reads the bundled catalog and
 Skill. The first query builds no files; subsequent queries reuse process memory.

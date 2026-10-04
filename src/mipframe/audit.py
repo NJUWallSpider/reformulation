@@ -14,21 +14,9 @@ def roundtrip(
 ):
     """
     MIPFRAME HELP BEGIN
-    audit.roundtrip [api.audit.roundtrip]
-
     Numerically reparse an LP and compare exact model facts.
 
-    audit.roundtrip(model, path, *, rename_vars=None, rename_rows=None, memory_mb=128, disk_mb=None)
-
-    When to use: Numerically reparse an LP and compare exact model facts.
-
-    Inputs: Model, LP path, optional explicit rename mapping.
-
-    Returns: I/O Report with complete differences.
-
-    Does not establish: I/O equality is not a reusable linear certificate.
-
-    See also: limitation.export, recipe.edits
+    Full contract: mf.help("api.audit.roundtrip")
     MIPFRAME HELP END
     """
     if Path(path).suffix.lower() != ".lp":

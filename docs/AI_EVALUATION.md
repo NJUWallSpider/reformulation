@@ -79,7 +79,7 @@ Record one JSONL task record with these fields:
 
 ```json
 {"protocol":1,"task_id":"heldout-task","model_family":"declared-family",
- "split":"development","package_version":"0.8.0","help_digest":"sha256",
+ "split":"development","package_version":"1.0.0","help_digest":"sha256",
  "agent_model":"not_run","arm":"skill_plus_help","seed":0,
  "status":"NOT_RUN","api_misuses":null,"recovered_errors":null,
  "help_calls":null,"help_returned_bytes":null,"tool_calls":null,

@@ -23,19 +23,9 @@ from mipframe.store.search_store import SearchStore
 class InvalidCertificateError(MIPFrameError):
     """
     MIPFRAME HELP BEGIN
-    InvalidCertificateError [api.InvalidCertificateError]
-
     Diagnostic exception; inspect original message and any attached complete Report.
 
-    InvalidCertificateError [type]
-
-    When to use: Diagnostic exception; inspect original message and any attached complete Report.
-
-    Returns: Exception type, not a mathematical result.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.proofs
+    Full contract: mf.help("api.InvalidCertificateError")
     MIPFRAME HELP END
     """
     def __init__(self, message, violations=None):
@@ -46,25 +36,80 @@ class InvalidCertificateError(MIPFrameError):
 class UnsupportedEnumerationDomain(MIPFrameError):
     """
     MIPFRAME HELP BEGIN
-    UnsupportedEnumerationDomain [api.UnsupportedEnumerationDomain]
-
     Diagnostic exception; inspect original message and any attached complete Report.
 
-    UnsupportedEnumerationDomain [type]
-
-    When to use: Diagnostic exception; inspect original message and any attached complete Report.
-
-    Returns: Exception type, not a mathematical result.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: api.Checker.enumerate
+    Full contract: mf.help("api.UnsupportedEnumerationDomain")
     MIPFRAME HELP END
     """
     pass
 
 
-class ProofContext(SearchStore):
+class ProofData:
+    """Read-only claim access shared by workspaces and archived proof views."""
+    def __init__(self, owner, runtime, models):
+        self.owner, self._runtime, self.models = owner, runtime, tuple(models)
+
+    @property
+    def db(self):
+        return self._runtime.db
+
+    @property
+    def memory(self):
+        return self._runtime.memory
+
+    @property
+    def query_context(self):
+        self.guard()
+        return self._runtime
+
+    def guard(self):
+        for model in self.models:
+            model.model
+        self._runtime.guard()
+
+    def execute(self, sql, args=()):
+        self.guard()
+        return self._runtime.execute(sql, args)
+
+    def close(self):
+        # A view owns its lease, never the shared runtime.
+        pass
+
+    def claim(self, ident):
+        rel, c, axis, entity, side = self.execute(
+            f"SELECT relation,constant,axis,entity,side FROM {self.claims} WHERE id=?",
+            (ident,),
+        ).fetchone()
+        e = LinExpr(
+            self.owner,
+            Fraction(c),
+            store=self,
+            query=f"SELECT v,c FROM {self.terms} WHERE claim={int(ident)} ORDER BY v",
+            models=self.models,
+        )
+        return Claim(
+            e,
+            rel,
+            _source=None if axis is None else dict(axis=axis, id=entity, side=side),
+        )
+
+    def assumption_claims(self):
+        for (ident,) in self.execute(
+            f"SELECT claim FROM {self.assumptions} ORDER BY claim"
+        ):
+            yield self.claim(ident)
+
+
+class ArchivedProof(ProofData):
+    """A complete, reference-owned view of one normalized archived proof."""
+    def __init__(self, owner, runtime, models, tables, parents, lease):
+        super().__init__(owner, runtime, models)
+        self._lease, self.parents = lease, list(parents)
+        for name, query in tables.items():
+            setattr(self, name, query)
+
+
+class ProofContext(ProofData):
     def __init__(
         self,
         owner,
@@ -73,18 +118,15 @@ class ProofContext(SearchStore):
         memory_mb=128,
         disk_mb=None,
         domain="auto",
-        arithmetic="exact",
-        _shared=None,
+        runtime=None,
     ):
-        if arithmetic != "exact":
-            raise ValueError('This checker supports arithmetic="exact" only')
-        if domain not in ("auto", "relaxation", "integer"):
-            raise ValueError("domain must be auto, relaxation or integer")
-        if _shared is None:
-            super().__init__((owner,), memory_mb=memory_mb, disk_mb=disk_mb, max_output_rows=None)
-        else:
-            self.__dict__.update(_shared.__dict__)
-            self._shared = _shared
+        self._owns_runtime = runtime is None
+        if domain not in ('auto', 'relaxation', 'integer'):
+            raise ValueError('domain must be auto, relaxation or integer')
+        if runtime is None:
+            runtime = SearchStore((owner,), memory_mb=memory_mb, disk_mb=disk_mb, max_output_rows=None)
+        super().__init__(owner, runtime, (owner,))
+        runtime.operation = method
         self.owner, self.method, self.operation, self.requested_domain = (
             owner,
             method,
@@ -112,40 +154,54 @@ class ProofContext(SearchStore):
             "id INTEGER PRIMARY KEY,direction TEXT,v INTEGER,c TEXT,side TEXT,bound TEXT,contribution TEXT"
         )
 
-    def execute(self, sql, args=()):
-        if getattr(self, "_shared", None) is not None:
-            return self._shared.execute(sql, args)
-        return super().execute(sql, args)
-
     def publish(self, schema, rows, **kwargs):
-        if getattr(self, "_shared", None) is not None:
-            return self._shared.publish(schema, rows, **kwargs)
-        return super().publish(schema, rows, **kwargs)
+        self.guard()
+        result = self._runtime.publish(schema, rows, **kwargs)
+        result._models = self.models
+        return result
 
     def raw_table(self, definition):
-        if getattr(self, "_shared", None) is not None:
-            return self._shared.raw_table(definition)
-        return super().raw_table(definition)
-
-    def table(self, schema):
-        if getattr(self, "_shared", None) is not None:
-            return self._shared.table(schema)
-        return super().table(schema)
-
-    def guard(self):
-        if getattr(self, "_shared", None) is not None:
-            for model in self.models:
-                model.model
-            return self._shared.guard()
-        return super().guard()
+        return self._runtime.raw_table(definition)
 
     def close(self):
-        if getattr(self, "_shared", None) is None:
-            super().close()
+        runtime = getattr(self, '_runtime', None)
+        if runtime is not None and self._owns_runtime:
+            runtime.close()
 
     def _close_connection(self):
-        if getattr(self, "_shared", None) is None:
-            super()._close_connection()
+        if self._owns_runtime:
+            self._runtime._close_connection()
+
+    def check_size(self, value):
+        return self._runtime.check_size(value)
+
+    def disk_check(self):
+        return self._runtime.disk_check()
+
+    def reader(self, store):
+        return self._runtime.reader(store)
+
+    def output_budget(self, store):
+        return self._runtime.output_budget(store)
+
+    def configure(self, **options):
+        return self._runtime.configure(**options)
+
+    def clock(self):
+        return self._runtime.clock()
+
+    def tick(self):
+        return self._runtime.tick()
+
+    searching = property(lambda self: self._runtime.searching,
+                         lambda self, value: setattr(self._runtime, 'searching', value))
+    prepared = property(lambda self: self._runtime.prepared,
+                        lambda self, value: setattr(self._runtime, 'prepared', value))
+    scope_info = property(lambda self: self._runtime.scope_info,
+                          lambda self, value: setattr(self._runtime, 'scope_info', value))
+    states = property(lambda self: self._runtime.states)
+    started = property(lambda self: self._runtime.started,
+                       lambda self, value: setattr(self._runtime, 'started', value))
 
     def add_claim(self, claim):
         if not isinstance(claim, Claim):
@@ -168,24 +224,6 @@ class ProofContext(SearchStore):
             self.check_size(c)
             self.execute(f"INSERT INTO {self.terms} VALUES(?,?,?)", (ident, v, str(c)))
         return ident
-
-    def claim(self, ident):
-        rel, c, axis, entity, side = self.execute(
-            f"SELECT relation,constant,axis,entity,side FROM {self.claims} WHERE id=?",
-            (ident,),
-        ).fetchone()
-        e = LinExpr(
-            self.owner,
-            Fraction(c),
-            store=self,
-            query=f"SELECT v,c FROM {self.terms} WHERE claim={int(ident)} ORDER BY v",
-            models=self.models,
-        )
-        return Claim(
-            e,
-            rel,
-            _source=None if axis is None else dict(axis=axis, id=entity, side=side),
-        )
 
     def equal_claim(self, a, b):
         ar, ac = self.execute(
@@ -213,12 +251,6 @@ class ProofContext(SearchStore):
             ):
                 self.execute(f"INSERT INTO {self.assumptions} VALUES(?)", (ident,))
         return self
-
-    def assumption_claims(self):
-        for (ident,) in self.execute(
-            f"SELECT claim FROM {self.assumptions} ORDER BY claim"
-        ):
-            yield self.claim(ident)
 
     def dependency(self, kind, entity=-1, side="", parent=-1):
         self.execute(
@@ -284,9 +316,7 @@ class ProofContext(SearchStore):
             axis = src["axis"]
             if axis not in ("row", "var"):
                 raise InvalidCertificateError("Invalid source axis")
-            entity = (self.owner.rows if axis == "row" else self.owner.vars).by_id(
-                src["id"]
-            )
+            entity = (self.owner.rows if axis == "row" else self.owner.vars).loc[src["id"]]
             actual = source_claim(entity, src["side"])
             if actual.relation != source.relation or not expressions_equal(
                 actual.expr, source.expr, self
@@ -347,8 +377,7 @@ class ProofContext(SearchStore):
                             )
                         axis = present[0]
                         ent = (
-                            self.owner.rows if axis == "row" else self.owner.vars
-                        ).by_id(row[axis])
+                            self.owner.rows if axis == "row" else self.owner.vars).loc[row[axis]]
                         if (
                             constraints
                             and "multiplier" in row
@@ -437,7 +466,7 @@ class ProofContext(SearchStore):
         ).fetchone()
         if row is not None:
             return number(row[0]), number(row[1])
-        var = self.owner.vars.by_id(v)
+        var = self.owner.vars.loc[v]
         lo, hi = var.lb, var.ub
         # These exact model sides participate in conditional interval intersection.
         self.dependency("var", v, "lb")
@@ -457,18 +486,45 @@ class ProofContext(SearchStore):
         return None
 
     def accumulate(self, sources):
+        # Reserve a conservative fraction of the call budget. Large exact values
+        # and wide residuals spill to the same exact paged kernel.
+        import sys
         table = self.raw_table("v INTEGER PRIMARY KEY,c TEXT")
+        limit = self.memory // 8
+        values, used, spilled = {}, 0, False
         constant = Fraction(0)
+        conditional = self.execute(f"SELECT 1 FROM {self.intervals} LIMIT 1").fetchone() is not None
+
+        def weight(c):
+            return 256 + sys.getsizeof(c.numerator) + sys.getsizeof(c.denominator)
+
         for factor, expr in sources:
             constant += factor * expr.constant
             self.check_size(constant)
             for v, c in expr._items(self):
-                fixed = self.fixed(v)
-                if fixed is None:
-                    add(self, table, v, factor * c)
-                else:
-                    constant += factor * c * fixed
+                c = c if factor == 1 else -c if factor == -1 else factor * c
+                fixed = self.fixed(v) if conditional else None
+                if fixed is not None:
+                    constant += c * fixed
                     self.check_size(constant)
+                elif spilled:
+                    add(self, table, v, c)
+                elif c:
+                    old = values.pop(v, None)
+                    if old is not None:
+                        used -= weight(old)
+                        c += old
+                    self.check_size(c)
+                    if c:
+                        values[v] = c
+                        used += weight(c)
+                    if used > limit:
+                        for key, value in values.items():
+                            self.execute(f"INSERT INTO {table} VALUES(?,?)", (key, str(value)))
+                        values.clear()
+                        spilled = True
+        for v, c in values.items():
+            self.execute(f"INSERT INTO {table} VALUES(?,?)", (v, str(c)))
         return table, constant
 
     def source_terms(self, direction="main", *, oriented=True):
@@ -494,7 +550,7 @@ class ProofContext(SearchStore):
                 f"SELECT {column} FROM {self.intervals} WHERE v=?", (v,)
             ).fetchone()
             if conditional is None:
-                b = getattr(self.owner.vars.by_id(v), side)
+                b = getattr(self.owner.vars.loc[v], side)
                 self.dependency("var", v, side)
             else:
                 b = number(conditional[0])
@@ -532,110 +588,10 @@ class ProofContext(SearchStore):
     ):
         evidence = dict(evidence or {})
         empty = self.publish({"reason": DType("str")}, [], limited=False)
-        evidence["sources"] = self.publish(
-            {
-                "source": DType("int"),
-                "direction": DType("str"),
-                "claim": DType("int"),
-                "multiplier": DType("number"),
-                "parent": DType("int", True),
-            },
-            (
-                dict(source=i, direction=d, claim=c, multiplier=Fraction(a), parent=p)
-                for i, d, c, a, p in self.execute(
-                    f"SELECT id,direction,claim,multiplier,parent FROM {self.sources} ORDER BY id"
-                )
-            ),
-        )
-        evidence["claims"] = self.publish(
-            {
-                "claim": DType("int"),
-                "relation": DType("str"),
-                "constant": DType("number"),
-                "row": ref_type(self.owner, "row").optional(),
-                "var": ref_type(self.owner, "var").optional(),
-                "side": DType("str", True),
-            },
-            (
-                dict(
-                    claim=i,
-                    relation=r,
-                    constant=Fraction(c),
-                    row=v if a == "row" else None,
-                    var=v if a == "var" else None,
-                    side=s,
-                )
-                for i, r, c, a, v, s in self.execute(
-                    f"SELECT * FROM {self.claims} ORDER BY id"
-                )
-            ),
-        )
-        evidence["terms"] = self.publish(
-            {
-                "claim": DType("int"),
-                "var": ref_type(self.owner, "var"),
-                "coef": DType("number"),
-            },
-            (
-                dict(claim=i, var=v, coef=Fraction(c))
-                for i, v, c in self.execute(
-                    f"SELECT * FROM {self.terms} ORDER BY claim,v"
-                )
-            ),
-        )
-        evidence["assumptions"] = self.publish(
-            {"claim": DType("int")},
-            (
-                dict(claim=i)
-                for i, in self.execute(
-                    f"SELECT claim FROM {self.assumptions} ORDER BY claim"
-                )
-            ),
-        )
-        evidence["bounds"] = self.publish(
-            {
-                "direction": DType("str"),
-                "var": ref_type(self.owner, "var"),
-                "coef": DType("number"),
-                "side": DType("str"),
-                "bound": DType("number"),
-                "contribution": DType("number", True),
-            },
-            (
-                dict(
-                    direction=d,
-                    var=v,
-                    coef=Fraction(c),
-                    side=s,
-                    bound=number(b),
-                    contribution=None if x is None else Fraction(x),
-                )
-                for d, v, c, s, b, x in self.execute(
-                    f"SELECT direction,v,c,side,bound,contribution FROM {self.bounds_evidence} ORDER BY id"
-                )
-            ),
-        )
-        dependencies = self.publish(
-            {
-                "kind": DType("str"),
-                "row": ref_type(self.owner, "row").optional(),
-                "var": ref_type(self.owner, "var").optional(),
-                "side": DType("str"),
-                "parent": DType("int", True),
-            },
-            (
-                dict(
-                    kind=k,
-                    row=v if k == "row" else None,
-                    var=v if k in ("var", "integer") else None,
-                    side=s,
-                    parent=p if p >= 0 else None,
-                )
-                for k, v, s, p in self.execute(
-                    f"SELECT kind,entity,side,parent FROM {self.deps} ORDER BY id"
-                )
-            ),
-        )
+        from mipframe.check.evidence import normalized_evidence
+        normalized = normalized_evidence(self)
+        dependencies = normalized.pop("dependencies")
+        evidence.update(normalized)
         scope = dict(
             kind=kind,
             domain=self.proof_domain,
@@ -644,7 +600,7 @@ class ProofContext(SearchStore):
             local=local,
             snapshot=dict(uid=self.owner.uid, version=self.owner.version),
             numeric_provenance=dict(self.owner.source)["numeric_provenance"],
-            assumptions=len(evidence["assumptions"]),
+            assumptions=self.execute(f"SELECT count(*) FROM {self.assumptions}").fetchone()[0],
         )
         if self.method in ("enumerate", "cases"):
             scope["exhaustive"] = summary["exhaustive"]

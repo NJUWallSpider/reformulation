@@ -15,7 +15,7 @@ def discharge_cases(ctx, target, variable, cases):
         raise InvalidCertificateError("Case discharge proves integer conclusions only")
     ctx.proof_domain = "integer"
     v = var_id(ctx.owner, variable)
-    var = ctx.owner.vars.by_id(v)
+    var = ctx.owner.vars.loc[v]
     if var.kind != "I" or isinstance(var.lb, float) or isinstance(var.ub, float):
         raise InvalidCertificateError("Case variable must be integer with finite model bounds")
     lo, hi = ceil(var.lb), floor(var.ub)
@@ -45,13 +45,15 @@ def discharge_cases(ctx, target, variable, cases):
             if not report.scope.get("assumptions", 0):
                 ctx.parent(report)
                 continue
-            for dep in report.dependencies._iterate():
-                kind = dep["kind"]
+            # These are the canonical dependencies of a verified proof. Reading
+            # them directly avoids allocating a Frame execution DB per branch.
+            for kind, entity, side, parent in report._store.execute(
+                f"SELECT kind,entity,side,parent FROM {report._store.deps} ORDER BY id"
+            ):
                 if kind == "report":
-                    pending.append(report._parents[dep["parent"]])
+                    pending.append(report._parents[parent])
                 elif kind in ("row", "var", "integer"):
-                    entity = dep["row"] if kind == "row" else dep["var"]
-                    ctx.dependency(kind, entity, dep["side"])
+                    ctx.dependency(kind, entity, side)
                 else:
                     raise InvalidCertificateError("Unsupported case proof dependency")
 

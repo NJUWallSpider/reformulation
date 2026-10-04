@@ -20,25 +20,9 @@ from mipframe.check.algorithm import NotDAGError
 def components(ctx, E, *, u="u", v="v", vertices=None):
     """
     MIPFRAME HELP BEGIN
-    ops.graph.components [api.ops.graph.components]
-
     Compute undirected components of an endpoint relation.
 
-    ops.graph.components(E, *, u='u', v='v', vertices=None, memory_mb=128, max_output_rows=1000000, disk_mb=None)
-
-    When to use: Compute undirected components of an endpoint relation.
-
-    Inputs: Frame with compatible nonmissing endpoint columns; optional declared vertices.
-
-    Returns: Frame(vertex,component).
-
-    Establishes: Includes isolated declared vertices.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. max_output_rows defaults to 1,000,000; exceeding it fails the whole call. None explicitly removes that limit.
-
-    See also: recipe.network, recipe.closure
+    Full contract: mf.help("api.ops.graph.components")
     MIPFRAME HELP END
     """
     graph = Graph(ctx, E, u, v, vertices)
@@ -61,25 +45,9 @@ def components(ctx, E, *, u="u", v="v", vertices=None):
 def scc(ctx, E, *, tail="u", head="v", vertices=None):
     """
     MIPFRAME HELP BEGIN
-    ops.graph.scc [api.ops.graph.scc]
-
     Compute directed strongly connected components.
 
-    ops.graph.scc(E, *, tail='u', head='v', vertices=None, memory_mb=128, max_output_rows=1000000, disk_mb=None)
-
-    When to use: Compute directed strongly connected components.
-
-    Inputs: Frame with compatible nonmissing endpoint columns; optional declared vertices.
-
-    Returns: Frame(vertex,scc).
-
-    Establishes: Nonrecursive traversal; representative is minimum original key.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. max_output_rows defaults to 1,000,000; exceeding it fails the whole call. None explicitly removes that limit.
-
-    See also: recipe.network, recipe.closure
+    Full contract: mf.help("api.ops.graph.scc")
     MIPFRAME HELP END
     """
     graph = Graph(ctx, E, tail, head, vertices)
@@ -100,25 +68,9 @@ def scc(ctx, E, *, tail="u", head="v", vertices=None):
 def topological_order(ctx, E, *, tail="u", head="v", vertices=None):
     """
     MIPFRAME HELP BEGIN
-    ops.graph.topological_order [api.ops.graph.topological_order]
-
     Order a directed acyclic graph deterministically.
 
-    ops.graph.topological_order(E, *, tail='u', head='v', vertices=None, memory_mb=128, max_output_rows=1000000, disk_mb=None)
-
-    When to use: Order a directed acyclic graph deterministically.
-
-    Inputs: Frame with compatible nonmissing endpoint columns; optional declared vertices.
-
-    Returns: Frame(vertex,order,level).
-
-    Establishes: Smallest available vertex first; level is longest predecessor depth. Cycles raise GraphCycleError with full SCC evidence.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. max_output_rows defaults to 1,000,000; exceeding it fails the whole call. None explicitly removes that limit.
-
-    See also: recipe.network, recipe.closure
+    Full contract: mf.help("api.ops.graph.topological_order")
     MIPFRAME HELP END
     """
     graph = Graph(ctx, E, tail, head, vertices)
@@ -184,25 +136,9 @@ def reachability(
 ):
     """
     MIPFRAME HELP BEGIN
-    ops.graph.reachability [api.ops.graph.reachability]
-
     Compute exact reachable endpoint pairs.
 
-    ops.graph.reachability(E, *, tail='u', head='v', vertices=None, sources=None, targets=None, include_self=False, memory_mb=128, max_output_rows=1000000, disk_mb=None)
-
-    When to use: Compute exact reachable endpoint pairs.
-
-    Inputs: Frame with compatible nonmissing endpoint columns; optional declared vertices.
-
-    Returns: Frame(source,target).
-
-    Establishes: sources/targets restrict returned endpoints, not intermediate vertices. include_self=False excludes all diagonals even in cycles.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. max_output_rows defaults to 1,000,000; exceeding it fails the whole call. None explicitly removes that limit.
-
-    See also: recipe.network, recipe.closure
+    Full contract: mf.help("api.ops.graph.reachability")
     MIPFRAME HELP END
     """
     if type(include_self) is not bool:
@@ -265,25 +201,9 @@ def reachability(
 def path(ctx, E, *, source, target, tail="u", head="v", vertices=None):
     """
     MIPFRAME HELP BEGIN
-    ops.graph.path [api.ops.graph.path]
-
     Return one stable shortest directed path.
 
-    ops.graph.path(E, *, source, target, tail='u', head='v', vertices=None, memory_mb=128, max_output_rows=1000000, disk_mb=None)
-
-    When to use: Return one stable shortest directed path.
-
-    Inputs: Frame with compatible nonmissing endpoint columns; optional declared vertices.
-
-    Returns: Frame(step,u,v), plus relations["status"].
-
-    Establishes: Unreachable and source==target both have empty edge paths; status distinguishes unreachable from length zero.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. max_output_rows defaults to 1,000,000; exceeding it fails the whole call. None explicitly removes that limit.
-
-    See also: recipe.network, recipe.closure
+    Full contract: mf.help("api.ops.graph.path")
     MIPFRAME HELP END
     """
     graph = Graph(ctx, E, tail, head, vertices)
@@ -327,25 +247,9 @@ def path(ctx, E, *, source, target, tail="u", head="v", vertices=None):
 def transitive_reduction(ctx, E, *, tail="u", head="v", vertices=None):
     """
     MIPFRAME HELP BEGIN
-    ops.graph.transitive_reduction [api.ops.graph.transitive_reduction]
-
     Reduce a DAG while preserving reachability.
 
-    ops.graph.transitive_reduction(E, *, tail='u', head='v', vertices=None, memory_mb=128, max_output_rows=1000000, disk_mb=None)
-
-    When to use: Reduce a DAG while preserving reachability.
-
-    Inputs: Frame with compatible nonmissing endpoint columns; optional declared vertices.
-
-    Returns: Original input schema and all parallel source records for retained endpoint pairs.
-
-    Establishes: Rejects cycles/self-loops. This is not a proof that original constraints can be deleted.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. max_output_rows defaults to 1,000,000; exceeding it fails the whole call. None explicitly removes that limit.
-
-    See also: recipe.network, recipe.closure
+    Full contract: mf.help("api.ops.graph.transitive_reduction")
     MIPFRAME HELP END
     """
     graph = Graph(ctx, E, tail, head, vertices)

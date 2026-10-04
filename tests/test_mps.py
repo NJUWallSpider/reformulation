@@ -43,12 +43,12 @@ def test_free_mps_exact(make_model, tmp_path):
     assert m.variables[0][2] == "I" and m.num(m.variables[0][4]) == 8
     assert m.variables[1][3:5] == (None, None)
     assert [(m.num(r[2]), m.num(r[3])) for r in m.rows] == [(2, 4), (1, 6), (7, 10)]
-    assert m.row(0) == {0: F(1), 1: F(-1)} and ir.verify()["status"] == "PASS"
+    assert m.row(0) == {0: F(1), 1: F(-1)} and ir.verify().status == "PROVED"
     p = tmp_path / "out.lp"
     ir.write_lp(p)
 
     with read(p) as restored:
-        assert restored.verify()["status"] == "PASS"
+        assert restored.verify().status == "PROVED"
 
 
 def fixed_record(name, row, value, row2="", value2=""):
@@ -136,7 +136,7 @@ def test_named_vectors_require_selection(make_model):
     s = MPS.replace(" FR BND Y", " FR BND Y\n UP SECOND X 4")
     with pytest.raises(MIPFrameError, match="multiple BOUNDS"):
         make_model(s, ".mps")
-    assert make_model(s, ".mps", bounds="BND").verify()["status"] == "PASS"
+    assert make_model(s, ".mps", bounds="BND").verify().status == "PROVED"
 
 
 def test_mps_rejects_special_sections(make_model):

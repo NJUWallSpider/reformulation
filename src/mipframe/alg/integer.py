@@ -32,25 +32,9 @@ def enumerate(ctx, variables, terms, rows, *, max_states=None, time_limit=None):
     All feasible assignments of a bounded integer linear system, or an error.
 
     MIPFRAME HELP BEGIN
-    alg.integer.enumerate [api.alg.integer.enumerate]
-
     Enumerate the complete feasible assignments of an explicit finite integer system.
 
-    alg.integer.enumerate(variables, terms, rows, *, max_states=None, time_limit=None, memory_mb=128, max_output_rows=1000000, disk_mb=None)
-
-    When to use: Enumerate the complete feasible assignments of an explicit finite integer system.
-
-    Inputs: variables(var,lb,ub); terms(row,var,coef); rows(row,lb,ub), with compatible endpoint keys.
-
-    Returns: Frame(assignment,var,value); relations["summary"] contains every assignment, including the empty one.
-
-    Establishes: Explicit pure-integer domains ceil(lb)..floor(ub). Exact leaf checks; exhaustive or SearchBudgetExceeded, with no partial successful result.
-
-    Does not establish: No continuous projection, objective optimization, implicit model integrality or implication Report.
-
-    Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. max_output_rows defaults to 1,000,000; exceeding it fails the whole call. None explicitly removes that limit.
-
-    See also: recipe.enumeration, api.Checker.enumerate
+    Full contract: mf.help("api.alg.integer.enumerate")
     MIPFRAME HELP END
     """
     vt, vs = ctx.stage_checked(

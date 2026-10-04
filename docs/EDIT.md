@@ -28,8 +28,8 @@ with mf.read("model.lp") as m:
 ```
 
 The candidate remains usable after the source closes. Diff and live proofs that
-reference the source do not. New snapshots prepare their own default IR/indexed
-results. A no-op build still receives a new UUID; its mathematical content version
+reference the source do not. Edited snapshots defer default IR/indexed preparation until requested;
+use `build(prepare="indexed")` for eager preparation. A no-op build still receives a new UUID; its mathematical content version
 can equal its parent's version. A successful Edit is sealed and cannot be built
 again. Failed builds do not publish a candidate; unsealed edits can be retried.
 Use `Edit.close()` or a context manager to release its scratch resources.
@@ -221,3 +221,23 @@ acceptance flow is reproducible with
 `python examples/edit_real_models.py data/assign1-5-8.lp data/test10.mps`; it includes
 independent indexed verification, native reloading, and the test10 190,000-variable
 coordinate product check. This flow builds three snapshots per input model.
+
+## Logical builds and verification reuse
+
+`edit.build()` defaults to `prepare="logical"`: it validates the complete edit,
+exact proof obligations and LP/MIP relations and produces an independent native
+snapshot. Numerical rows, variables, terms, matrices, lineage, `repr` and `save`
+are immediately available without constructing structural analyses. Accessing
+`m.ir` prepares the default IR/indexed results once; `m.indexed()` and family
+queries prepare their own required analyses. Use `edit.build(prepare="indexed")`
+to prepare everything before returning. `read()` and `load()` remain eager.
+A failed lazy analysis leaves numerical facts usable and can be retried.
+
+`child.diff(parent, verify="auto")` reuses a process-local receipt from a
+successful build or full verification when the exact live source and target
+stores still match. This does not retain the Edit or its proof graph, and
+closing the Edit does not invalidate its child. Loaded artifacts have no such
+receipt: their first diff replays lineage and compares the complete target.
+`verify="replay"` always forces that full audit. There is no unchecked mode.
+Diff Frames and row/column degree statistics are materialized only when read.
+Both snapshots must remain open while using the diff.

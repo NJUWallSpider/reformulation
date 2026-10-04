@@ -1,4 +1,5 @@
 """Stored edit history is auditable data; proofs require explicit source binding."""
+from mipframe.frame.schema import decode_tree
 
 from contextlib import closing
 import json
@@ -23,32 +24,15 @@ TABLES = (
 )
 
 
-def decoded(x):
-    if isinstance(x, dict):
-        if set(x) in ({"rational"}, {"infinity"}, {"ref"}):
-            return decode(x)
-        return {k: decoded(v) for k, v in x.items()}
-    if isinstance(x, list):
-        return [decoded(v) for v in x]
-    return x
+
 
 
 class Lineage:
     """
     MIPFRAME HELP BEGIN
-    Lineage [api.Lineage]
-
     Read-only Lineage domain facade.
 
-    Lineage [type]
-
-    When to use: Read-only Lineage domain facade.
-
-    Returns: Obtain from the corresponding Model analysis or lineage property.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.identity
+    Full contract: mf.help("api.Lineage")
     MIPFRAME HELP END
     """
     def __init__(self, owner):
@@ -66,19 +50,9 @@ class Lineage:
     def parent(self):
         """
         MIPFRAME HELP BEGIN
-        Lineage.parent [api.Lineage.parent]
-
         Read Lineage parent.
 
-        Lineage.parent [property]
-
-        When to use: Read Lineage parent.
-
-        Returns: Bounded summary, Frame or domain result.
-
-        Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-        See also: concept.identity, recipe.roles
+        Full contract: mf.help("api.Lineage.parent")
         MIPFRAME HELP END
         """
         return self._owner.parent
@@ -86,25 +60,15 @@ class Lineage:
     def _meta(self, key):
         with closing(self._db()) as db:
             row = db.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
-            return decoded(json.loads(row[0]))
+            return decode_tree(json.loads(row[0]))
 
     @property
     def semantic(self):
         """
         MIPFRAME HELP BEGIN
-        Lineage.semantic [api.Lineage.semantic]
-
         Read declared semantic scope; saved lineage summaries are historical, not live proofs.
 
-        Lineage.semantic [property]
-
-        When to use: Read declared semantic scope; saved lineage summaries are historical, not live proofs.
-
-        Returns: Bounded summary, Frame or domain result.
-
-        Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-        See also: concept.identity, recipe.roles
+        Full contract: mf.help("api.Lineage.semantic")
         MIPFRAME HELP END
         """
         return dict(
@@ -118,19 +82,9 @@ class Lineage:
         Detached build-time diagnostics; never a reusable mathematical proof.
 
         MIPFRAME HELP BEGIN
-        Lineage.validation [api.Lineage.validation]
-
         Read Lineage validation.
 
-        Lineage.validation [property]
-
-        When to use: Read Lineage validation.
-
-        Returns: Bounded summary, Frame or domain result.
-
-        Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-        See also: concept.identity, recipe.roles
+        Full contract: mf.help("api.Lineage.validation")
         MIPFRAME HELP END
         """
         return self._meta("validation")
@@ -139,19 +93,9 @@ class Lineage:
     def findings(self):
         """
         MIPFRAME HELP BEGIN
-        Lineage.findings [api.Lineage.findings]
-
         Read Lineage findings.
 
-        Lineage.findings [property]
-
-        When to use: Read Lineage findings.
-
-        Returns: Bounded summary, Frame or domain result.
-
-        Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-        See also: concept.identity, recipe.roles
+        Full contract: mf.help("api.Lineage.findings")
         MIPFRAME HELP END
         """
         return self._frame(
@@ -183,19 +127,9 @@ class Lineage:
     def operations(self):
         """
         MIPFRAME HELP BEGIN
-        Lineage.operations [api.Lineage.operations]
-
         Read Lineage operations.
 
-        Lineage.operations [property]
-
-        When to use: Read Lineage operations.
-
-        Returns: Bounded summary, Frame or domain result.
-
-        Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-        See also: concept.identity, recipe.roles
+        Full contract: mf.help("api.Lineage.operations")
         MIPFRAME HELP END
         """
         return self._frame(
@@ -208,19 +142,9 @@ class Lineage:
     def evidence(self):
         """
         MIPFRAME HELP BEGIN
-        Lineage.evidence [api.Lineage.evidence]
-
         Read Lineage evidence.
 
-        Lineage.evidence [property]
-
-        When to use: Read Lineage evidence.
-
-        Returns: Bounded summary, Frame or domain result.
-
-        Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-        See also: concept.identity, recipe.roles
+        Full contract: mf.help("api.Lineage.evidence")
         MIPFRAME HELP END
         """
         return self._frame(
@@ -233,19 +157,9 @@ class Lineage:
     def changes(self):
         """
         MIPFRAME HELP BEGIN
-        Lineage.changes [api.Lineage.changes]
-
         Read Lineage changes.
 
-        Lineage.changes [property]
-
-        When to use: Read Lineage changes.
-
-        Returns: Bounded summary, Frame or domain result.
-
-        Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-        See also: concept.identity, recipe.roles
+        Full contract: mf.help("api.Lineage.changes")
         MIPFRAME HELP END
         """
         return self._frame(
@@ -264,19 +178,9 @@ class Lineage:
     def mapping(self, axis, *, source=None):
         """
         MIPFRAME HELP BEGIN
-        Lineage.mapping [api.Lineage.mapping]
-
         Read explicit source/target entity correspondence, optionally binding the parent.
 
-        Lineage.mapping(axis, *, source=None)
-
-        When to use: Read explicit source/target entity correspondence, optionally binding the parent.
-
-        Returns: Bounded summary, Frame or domain result.
-
-        Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-        See also: concept.identity, recipe.roles
+        Full contract: mf.help("api.Lineage.mapping")
         MIPFRAME HELP END
         """
         if axis not in ("row", "var"):
@@ -320,19 +224,9 @@ class Lineage:
     def resolve(self, ref):
         """
         MIPFRAME HELP BEGIN
-        Lineage.resolve [api.Lineage.resolve]
-
         Read Lineage resolve.
 
-        Lineage.resolve(ref)
-
-        When to use: Read Lineage resolve.
-
-        Returns: Bounded summary, Frame or domain result.
-
-        Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-        See also: concept.identity, recipe.roles
+        Full contract: mf.help("api.Lineage.resolve")
         MIPFRAME HELP END
         """
         from mipframe.edit.draft import DraftRef, DraftVar
@@ -347,24 +241,14 @@ class Lineage:
             ).fetchone()
         if r is None:
             raise KeyError(ref)
-        return (self._owner.rows if ref.kind == "row" else self._owner.vars).by_id(r[0])
+        return (self._owner.rows if ref.kind == "row" else self._owner.vars).loc[r[0]]
 
     def proof(self, ident, *, models, memory_mb=128, disk_mb=None):
         """
         MIPFRAME HELP BEGIN
-        Lineage.proof [api.Lineage.proof]
-
         Replay stored lineage evidence with explicitly bound source snapshots.
 
-        Lineage.proof(ident, *, models, memory_mb=128, disk_mb=None)
-
-        When to use: Replay stored lineage evidence with explicitly bound source snapshots.
-
-        Returns: Bounded summary, Frame or domain result.
-
-        Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-        See also: concept.identity, recipe.roles
+        Full contract: mf.help("api.Lineage.proof")
         MIPFRAME HELP END
         """
         from mipframe.check.report import Report

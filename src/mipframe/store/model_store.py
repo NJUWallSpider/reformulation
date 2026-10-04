@@ -31,8 +31,38 @@ def content_digest(path, sense, constant):
         digest.update((json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n").encode())
     db = sqlite3.connect(Path(path) / "metadata.sqlite")
     try:
+        pool, used = OrderedDict(), 0
+        budget = 4 * 1024**2
+
+        def remember(ident, value):
+            nonlocal used
+            size = 256 + sys.getsizeof(ident) + sum(sys.getsizeof(x) for x in value)
+            if size <= budget:
+                while pool and used + size > budget:
+                    _, (_, old_size) = pool.popitem(last=False)
+                    used -= old_size
+                pool[ident] = (value, size)
+                used += size
+
+        # Preserve the exact original strings and digest stream. Small dictionaries
+        # need one query; unusually large dictionaries retain a byte-bounded LRU.
+        for ident, numerator, denominator in db.execute("SELECT id,numerator,denominator FROM numbers ORDER BY id"):
+            value = (numerator, denominator)
+            size = 256 + sys.getsizeof(ident) + sum(sys.getsizeof(x) for x in value)
+            if used + size > budget:
+                break
+            remember(ident, value)
+
         def number(ident):
-            return None if ident is None else db.execute("SELECT numerator,denominator FROM numbers WHERE id=?", (ident,)).fetchone()
+            if ident is None:
+                return None
+            if ident in pool:
+                pool.move_to_end(ident)
+                return pool[ident][0]
+            value = db.execute("SELECT numerator,denominator FROM numbers WHERE id=?", (ident,)).fetchone()
+            if value is not None:
+                remember(ident, value)
+            return value
         emit((sense, number(constant)))
         for ident, name, kind, lo, hi, obj, line in db.execute("SELECT * FROM variables ORDER BY id"):
             emit((ident, name, kind, number(lo), number(hi), number(obj)))
@@ -390,7 +420,7 @@ class NumericalStore:
     def gather(self,axis,fields,ids):
         if self.db is None: raise MIPFrameError('Model is closed')
         table='rows' if axis=='row' else 'variables' if axis=='var' else None
-        allowed={'name','lo','hi'} | ({'kind','obj'} if axis=='var' else set())
+        allowed={'name','lo','hi','line'} | ({'kind','obj'} if axis=='var' else set())
         if table is None or not set(fields)<=allowed: raise ValueError('Invalid entity fields')
         if not ids: return {}
         columns=tuple(fields)
@@ -456,22 +486,23 @@ class NumericalStore:
             yield int(np.searchsorted(self.row_ptr, p, side="right") - 1)
 
     def close(self):
-        if getattr(self, "db", None) is not None:
-            self.db.close()
-            self.db = None
-        if hasattr(self, "_num_cache"):
-            self._num_cache.clear()
-        for name in ("row_ptr", "col_idx", "coeff_id", "col_ptr", "col_positions"):
-            array = getattr(self, name, None)
-            mmap = getattr(array, "_mmap", None)
+        from mipframe.store.lifecycle import release_all, close_connection
+        actions = [lambda: close_connection(self)]
+        for name in ('row_ptr', 'col_idx', 'coeff_id', 'col_ptr', 'col_positions'):
+            mmap = getattr(getattr(self, name, None), '_mmap', None)
             if mmap is not None and not mmap.closed:
-                mmap.close()
+                actions.append(mmap.close)
+        if hasattr(self, '_num_cache'):
+            self._num_cache.clear()
+        release_all(actions)
+
+    _close_connection = close
 
     def __del__(self):
         if hasattr(self, "db"):
             try:
                 self.close()
-            except (sqlite3.Error, AttributeError):
+            except Exception:
                 pass
 
 
@@ -485,7 +516,7 @@ def build_numerical(source, out, memory_mb=128, format=None, **options):
         raise MIPFrameError("Output directory must be empty")
     out.mkdir(parents=True, exist_ok=True)
     start = time.perf_counter()
-    w = Writer(out)
+    w = Writer(out, memory_mb=memory_mb)
     try:
         if format == "mps" or (format is None and str(source).lower().endswith(".mps")):
             from mipframe.store.mps import parse

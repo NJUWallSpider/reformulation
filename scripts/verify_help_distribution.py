@@ -45,7 +45,7 @@ def forbidden(*a, **kw): raise AssertionError("Help attempted model execution")
 mf.read = mf.load = forbidden
 assert mf.help("recipe.coordinates", format="json")["results"][0]["id"] == "recipe.coordinates"
 for query, wanted in [
-    ("many linear certificates", "api.Checker.batch"),
+    ("many linear certificates", "api.Checker.linear_batch"),
     ("Frame native batch certificates", "api.Checker.linear_many"),
     ("how to tighten a big-M coefficient", "concept.big-m"),
     ("find a minimum weighted set cover", "concept.resource-cover"),

@@ -1,23 +1,42 @@
 """Exact finite decimals. Fractions are created only for queried/active rows."""
-from decimal import Decimal
 from fractions import Fraction
+import operator
+from math import isinf
+
+
+def exact_binary(op, a, b):
+    """Arithmetic on exact finite scalars and signed infinite bounds.
+
+    Handle infinities before Python can coerce a large integer to float or
+    create NaN. Every finite quotient remains a Fraction.
+    """
+    ai = isinstance(a, float) and isinf(a)
+    bi = isinstance(b, float) and isinf(b)
+    if not ai and not bi:
+        return (Fraction(a) / Fraction(b) if op == 'div' else
+                {'add': operator.add, 'sub': operator.sub, 'mul': operator.mul}[op](a, b))
+    if op == 'sub':
+        return exact_binary('add', a, -b)
+    if op == 'add' and not (ai and bi and (a > 0) != (b > 0)):
+        return a if ai else b
+    if op == 'mul' and a != 0 and b != 0:
+        return float('inf') if (a > 0) == (b > 0) else -float('inf')
+    if op == 'div':
+        if b == 0:
+            raise ZeroDivisionError('division by zero')
+        if not ai:
+            return Fraction(0)
+        if not bi:
+            return float('inf') if (a > 0) == (b > 0) else -float('inf')
+    from mipframe.linear.scalar import ExactArithmeticError
+    raise ExactArithmeticError(f'Indeterminate exact arithmetic: {a} {op} {b}')
 
 class MIPFrameError(ValueError):
     """
     MIPFRAME HELP BEGIN
-    MIPFrameError [api.MIPFrameError]
-
     Diagnostic exception; inspect original message and any attached complete Report.
 
-    MIPFrameError [type]
-
-    When to use: Diagnostic exception; inspect original message and any attached complete Report.
-
-    Returns: Exception type, not a mathematical result.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.errors
+    Full contract: mf.help("api.MIPFrameError")
     MIPFRAME HELP END
     """
     def __init__(self, *args):
@@ -76,14 +95,3 @@ def decimal(value):
         return str(n)
     s = str(abs(n)).zfill(k+1)
     return ('-' if n < 0 else '') + s[:-k] + '.' + s[-k:]
-
-def encoding(value):
-    t = Decimal(decimal(value)).as_tuple()
-    m = int(''.join(map(str, t.digits))) * (-1 if t.sign else 1)
-    e = t.exponent
-    if not m:
-        return '0', 0
-    while m % 10 == 0:
-        m //= 10
-        e += 1
-    return str(m), e

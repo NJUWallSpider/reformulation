@@ -32,14 +32,14 @@ class CoefficientPattern(tuple):
 
 
 @dataclass(frozen=True)
-class AlgebraicSignature:
+class _AlgebraicKey:
     """
     MIPFRAME HELP BEGIN
-    AlgebraicSignature [api.AlgebraicSignature]
+    _AlgebraicKey [api._AlgebraicKey]
 
     Canonical exact single-row coefficient pattern, distinct from the original row formula.
 
-    AlgebraicSignature [type]
+    _AlgebraicKey [type]
 
     When to use: Canonical exact single-row coefficient pattern, distinct from the original row formula.
 
@@ -82,17 +82,9 @@ def canonical_ratio(coefficients):
     Positive rational gcd; reject floats rather than silently approximate them.
 
     MIPFRAME HELP BEGIN
-    canonical_ratio [api.canonical_ratio]
-
     Compute a canonical exact coefficient ratio for signature observations.
 
-    canonical_ratio(coefficients)
-
-    When to use: Compute a canonical exact coefficient ratio for signature observations.
-
-    Does not establish: A signature, name or draft identity does not establish a model equivalence.
-
-    See also: concept.frame, concept.identity
+    Full contract: mf.help("api.canonical_ratio")
     MIPFRAME HELP END
     """
     scale = Fraction(0)
@@ -137,7 +129,7 @@ def algebraic_signature(owner, row_id):
         values[(m.num(ident),)] += count
     sense, pairs, lo, hi, scale = _canonical_form(m, row_id, values)
     pattern = CoefficientPattern((token[0], n) for token, n in pairs)
-    return AlgebraicSignature(sense, stop - start, pattern, lo, hi,
+    return _AlgebraicKey(sense, stop - start, pattern, lo, hi,
                               scale=scale)
 
 
@@ -147,14 +139,14 @@ def _typed_signature(owner, row_id):
 
 
 def _decode_typed(key):
-    from mipframe.ir.typed import TypedSignature
-    return TypedSignature.from_key(key)
+    from mipframe.ir.typed import _TypedKey
+    return _TypedKey.from_key(key)
 
 
 # Dispatch point for future signature kinds; retain the spelling requested by the API.
 _SIGNATURES = {
-    "algebratic": (algebraic_signature, AlgebraicSignature.from_key),
-    "algebraic": (algebraic_signature, AlgebraicSignature.from_key),
+    "algebratic": (algebraic_signature, _AlgebraicKey.from_key),
+    "algebraic": (algebraic_signature, _AlgebraicKey.from_key),
     "typed": (_typed_signature, _decode_typed),
 }
 

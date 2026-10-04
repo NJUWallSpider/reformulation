@@ -14,17 +14,9 @@ EDITS = WeakValueDictionary()
 class DraftRef:
     """
     MIPFRAME HELP BEGIN
-    DraftRef [api.DraftRef]
-
     Detached Edit-local draft identity, distinct from a source snapshot Ref.
 
-    DraftRef [type]
-
-    When to use: Detached Edit-local draft identity, distinct from a source snapshot Ref.
-
-    Does not establish: A signature, name or draft identity does not establish a model equivalence.
-
-    See also: concept.frame, concept.identity
+    Full contract: mf.help("api.DraftRef")
     MIPFRAME HELP END
     """
     edit_uid: str
@@ -214,7 +206,7 @@ class DraftExpr:
             name = (
                 DraftVar(self._edit, v).name
                 if ns
-                else self._edit._owner.vars.by_id(v).name
+                else self._edit._owner.vars.loc[v].name
             )
             out.append(f"{c}*{name}")
         if self.constant:

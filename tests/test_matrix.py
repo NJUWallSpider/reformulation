@@ -13,7 +13,7 @@ from mipframe.frame.row import Formula
 
 def counts(frame):
     axis=frame.key[0]
-    return {r[axis].id:r["nnz"] for r in frame.collect()}
+    return {r[axis].id:r["nnz"] for r in frame.to_records()}
 
 def ref(model,axis,ident):
     return mf.Ref(model.uid,model.version,axis,ident)
@@ -113,7 +113,7 @@ def test_selection_deduplicates_and_validates(model, tmp_path):
 
 def test_family_members_remain_lazy_and_coefficients_original(model, monkeypatch):
     families = model.rows.families()
-    rows = families.relations["members"].where(family="F0").refs("row")
+    rows = families.related("members").where(family="F0").refs("row")
     assert tuple(rows.ids) == (0, 4)
     index_type = type(rows.ids)
     with monkeypatch.context() as patch:
@@ -122,7 +122,7 @@ def test_family_members_remain_lazy_and_coefficients_original(model, monkeypatch
         s = model.matrix.view(rows=rows)
         assert s.rows.ids is rows.ids
         assert s.rows.ids is rows.ids
-    local = model.matrix.view(rows=rows, vars=rows.neighbors())
+    local = model.matrix.view(rows=rows, vars=rows.vars)
     del families, rows
     gc.collect()
     assert local.shape == (2, 3)
@@ -333,7 +333,7 @@ def test_all_live_views_guard_model_close(model):
         lambda: repr(s), lambda: rows.ids, lambda: variables.ids,
         lambda: entries.head(), lambda: entries.to_records(), lambda: iter(entries),
         lambda: len(entries), lambda: repr(entries), lambda: next(iterator),
-        lambda: counts[0].collect(), lambda: counts[1].iloc[0],
+        lambda: counts[0].to_records(), lambda: counts[1].iloc[0],
     ):
         with pytest.raises(mf.MIPFrameError, match="closed"):
             action()
@@ -408,7 +408,7 @@ def test_all_zero_slice_and_zero_model(model, tmp_path):
     assert counts(s.row_nnz) == {3: 0}
     assert counts(s.var_nnz) == dict.fromkeys(range(5), 0)
     assert s.var_nnz.column("nnz").count() == 5
-    assert s.var_nnz.column("nnz").value_counts().collect() == [{"nnz":0,"count":5}]
+    assert s.var_nnz.column("nnz").value_counts().to_records() == [{"nnz":0,"count":5}]
     assert s.entries.to_records() == []
     for strategy in ("first", "most_active", "largest_coef"):
         text = s.preview(choose_vars=strategy)
@@ -430,7 +430,7 @@ def test_scipy_sampled_axes_match_exact_entries(model):
                           vars=model.vars.sample(5, random_state=20))
     a = s.to_scipy()
     for i, row in enumerate(s.rows.ids):
-        exact = model.constraints[row].coefficients
+        exact = {t.var.id: t.coef for t in model.rows.loc[row].terms}
         for j, var in enumerate(s.vars.ids):
             assert a[i, j] == float(exact.get(var, 0))
 
@@ -484,7 +484,7 @@ def test_counts_use_sparse_opposite_axis_and_family_masks(tmp_path, monkeypatch)
         assert [r['nnz'] for r in result] == [1, 1] + [0] * 22
         assert axes == ['row']
 
-        family = m.vars.family('V0@1')
+        family = m.family('V0@1').vars
         assert list(counts(m.matrix.nnz(vars=family)).values()) == [2] * 12
 
         stage = Context.stage

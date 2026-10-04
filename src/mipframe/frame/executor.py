@@ -2,7 +2,6 @@
 
 from fractions import Fraction
 from tempfile import TemporaryDirectory
-from math import isfinite
 import sqlite3
 import sys
 import weakref
@@ -10,24 +9,15 @@ from mipframe.store.lifecycle import close_store, close_connection, finalize_sto
 from mipframe.store.query_store import memory_bytes
 from mipframe.store.numbers import MIPFrameError
 from mipframe.store.numbers import compare_numeric_text
+from mipframe.store.numbers import exact_binary
 
 
 class QueryMemoryError(MIPFrameError):
     """
     MIPFRAME HELP BEGIN
-    QueryMemoryError [api.QueryMemoryError]
-
     Diagnostic exception; inspect original message and any attached complete Report.
 
-    QueryMemoryError [type]
-
-    When to use: Diagnostic exception; inspect original message and any attached complete Report.
-
-    Returns: Exception type, not a mathematical result.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.resources
+    Full contract: mf.help("api.QueryMemoryError")
     MIPFRAME HELP END
     """
     pass
@@ -36,19 +26,9 @@ class QueryMemoryError(MIPFrameError):
 class MaterializationLimitError(MIPFrameError):
     """
     MIPFRAME HELP BEGIN
-    MaterializationLimitError [api.MaterializationLimitError]
-
     Diagnostic exception; inspect original message and any attached complete Report.
 
-    MaterializationLimitError [type]
-
-    When to use: Diagnostic exception; inspect original message and any attached complete Report.
-
-    Returns: Exception type, not a mathematical result.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.resources
+    Full contract: mf.help("api.MaterializationLimitError")
     MIPFRAME HELP END
     """
     pass
@@ -96,6 +76,11 @@ def unpack(value, typ):
 
 
 class Context:
+    @property
+    def query_context(self):
+        """The execution context used by Frame operators."""
+        return self
+
     def __init__(self, models=(), memory_mb=None):
         from mipframe.options import options
 
@@ -104,11 +89,24 @@ class Context:
         )
         self.models = tuple(models)
         self.db = self.temp = None
-        try:
-            self._open()
-        except BaseException:
-            self.close()
-            raise
+        self._closed = False
+        self.serial = 0
+        self.staged = {}
+        self.members = {}
+        self.retained = False
+        self._aggregate_error = None
+        from mipframe.store.lifecycle import register
+        for model in self.models:
+            register(model, self)
+
+    def ensure_storage(self):
+        self.guard()
+        if self.db is None:
+            try:
+                self._open()
+            except BaseException:
+                self.close()
+                raise
 
     def _open(self):
         self.temp = TemporaryDirectory(prefix="mipframe-frame-")
@@ -136,21 +134,17 @@ class Context:
 
             def step(self, v):
                 if v is not None:
-                    self.total += numeric(v)
-                    context.check_size(self.total)
+                    try:
+                        self.total = exact_binary("add", self.total, numeric(v))
+                        context.check_size(self.total)
+                    except MIPFrameError as exc:
+                        context._aggregate_error = exc
+                        raise
 
             def finalize(self):
                 return str(self.total)
 
         self.db.create_aggregate("exact_sum", 1, Sum)
-        self.serial = 0
-        self.staged = {}
-        self.members = {}
-        self.retained = False
-        for m in self.models:
-            if not hasattr(m, "_query_stores"):
-                m._query_stores = weakref.WeakSet()
-            m._query_stores.add(self)
 
     def _progress(self):
         self.guard()
@@ -159,7 +153,7 @@ class Context:
     def guard(self):
         for model in self.models:
             model.model
-        if self.db is None:
+        if self._closed:
             raise MIPFrameError("Query storage is closed")
 
     def check_size(self, row):
@@ -169,7 +163,7 @@ class Context:
             )
 
     def execute(self, sql, args=()):
-        self.guard()
+        self.ensure_storage()
         return self.db.execute(sql, args)
 
     def table(self, schema):
@@ -193,7 +187,17 @@ class Context:
         )
         return name
 
+    def index(self, table, columns, *, unique=False):
+        """Reuse an index for a staged table, including across workspace resets."""
+        columns = tuple(columns)
+        name = f"{table}_{'unique' if unique else 'index'}_{'_'.join(columns)}"
+        self.execute(
+            f"CREATE {'UNIQUE ' if unique else ''}INDEX IF NOT EXISTS {name} "
+            f"ON {table}({','.join(columns)})"
+        )
+
     def append(self, table, schema, rows):
+        self.ensure_storage()
         names = tuple(schema)
         marks = ",".join("?" for _ in range(len(names) + 1))
 
@@ -206,6 +210,10 @@ class Context:
         self.db.executemany(f"INSERT INTO {table} VALUES({marks})", encoded())
 
     def stage(self, frame, fields=None):
+        # Query plans must stay alive while id-based staging and membership caches refer to them.
+        if not hasattr(self, "_staged_frames"):
+            self._staged_frames = {}
+        self._staged_frames[id(frame)] = frame
         fields = tuple(frame.schema if fields is None else fields)
         key = (id(frame), fields)
         if key not in self.staged:
@@ -216,18 +224,26 @@ class Context:
         return self.staged[key]
 
     def rows(self, query, schema, args=()):
-        for values in self.execute(query, args):
-            self.guard()
-            yield {
-                name: unpack(value, typ)
-                for (name, typ), value in zip(schema.items(), values)
-            }
+        try:
+            for values in self.execute(query, args):
+                self.guard()
+                yield {
+                    name: unpack(value, typ)
+                    for (name, typ), value in zip(schema.items(), values)
+                }
+        except sqlite3.OperationalError:
+            # SQLite hides exceptions raised in aggregate callbacks. Preserve
+            # the exact-arithmetic/resource diagnostic for public Frame reads.
+            if self._aggregate_error is not None:
+                error, self._aggregate_error = self._aggregate_error, None
+                raise error from None
+            raise
 
     def contains(self, frame, ident):
         if id(frame) not in self.members:
             key = frame.key[0]
             table, schema = self.stage(frame, (key,))
-            self.execute(f"CREATE INDEX {table}_member ON {table}(c0)")
+            self.index(table, ("c0",))
             self.members[id(frame)] = (table, schema[key])
         table, typ = self.members[id(frame)]
         return (
@@ -237,10 +253,19 @@ class Context:
             is not None
         )
 
+    def clear_caches(self):
+        self.staged.clear()
+        self.members.clear()
+        self.__dict__.pop("_staged_frames", None)
+
     def close(self):
+        self._closed = True
         close_store(self)
+        if hasattr(self, "staged"):
+            self.clear_caches()
 
     def _close_connection(self):
+        self._closed = True
         close_connection(self)
 
     def __del__(self):
@@ -287,7 +312,8 @@ def blocking(frame, fields, context):
         query = f"SELECT {outputs} FROM {table} ORDER BY {order},ordinal"
     elif op == "distinct":
         group = ",".join(c(n) for n in names)
-        query = f"SELECT {outputs} FROM {table} GROUP BY {group} ORDER BY min(ordinal)"
+        query = (f"SELECT {outputs} FROM {table} GROUP BY {group} ORDER BY min(ordinal)"
+                 if group else f"SELECT 1 FROM {table} LIMIT 1")
     elif op == "slice":
         n = context.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
         selected = range(n)[p["slice"]]
@@ -307,26 +333,11 @@ def blocking(frame, fields, context):
             raise ValueError("Sample larger than population")
         # External random ranking keeps Python state independent of sample size.
         rng = random.Random(p["seed"])
-        ranks = context.table(
-            {
-                "position": __import__(
-                    "mipframe.frame.schema", fromlist=["DType"]
-                ).DType("int"),
-                "rank": __import__("mipframe.frame.schema", fromlist=["DType"]).DType(
-                    "int"
-                ),
-            }
-        )
+        from mipframe.frame.schema import DType
+        rank_schema = {"position": DType("int"), "rank": DType("int")}
+        ranks = context.table(rank_schema)
         context.append(
-            ranks,
-            {
-                "position": __import__(
-                    "mipframe.frame.schema", fromlist=["DType"]
-                ).DType("int"),
-                "rank": __import__("mipframe.frame.schema", fromlist=["DType"]).DType(
-                    "int"
-                ),
-            },
+            ranks, rank_schema,
             ({"position": i, "rank": rng.getrandbits(128)} for i in range(1, n + 1)),
         )
         query = f"SELECT {outputs} FROM {table} WHERE ordinal IN (SELECT CAST(c0 AS INTEGER) FROM {ranks} ORDER BY c1,ordinal LIMIT {amount}) ORDER BY ordinal"
@@ -341,7 +352,7 @@ def blocking(frame, fields, context):
 
         def values():
             for row in context.rows(
-                f"SELECT {','.join(c(n) for n in names)} FROM {table} ORDER BY ordinal",
+                f"SELECT {','.join(c(n) for n in names) or '1'} FROM {table} ORDER BY ordinal",
                 schema,
             ):
                 yield {
@@ -368,7 +379,8 @@ def blocking(frame, fields, context):
         order = ",".join(
             f"{expressions[k]} IS NULL,{expressions[k]}" for k in p["keys"]
         )
-        outputs = ",".join(expressions[n] for n in fields) or "1"
+        # An ungrouped aggregate still emits one row when its outputs are pruned.
+        outputs = ",".join(expressions[n] for n in fields) or ("1" if group else "count(*)")
         query = f"SELECT {outputs} FROM {stage}" + (
             f" GROUP BY {group} ORDER BY {order}" if group else ""
         )
@@ -395,11 +407,8 @@ def join(frame, fields, ctx):
     keys_l = [f"c{ln.index(k)}" for k in pairs]
     keys_r = [f"c{rn.index(k)}" for k in pairs.values()]
     for table, keys in ((lt, keys_l), (rt, keys_r)):
-        ctx.serial += 1
-        ctx.execute(f"CREATE INDEX qjoin{ctx.serial} ON {table}({','.join(keys)})")
+        ctx.index(table, keys)
     match = " AND ".join(f"l.{a}=r.{b}" for a, b in zip(keys_l, keys_r))
-    null_l = " AND ".join(f"{a} IS NOT NULL" for a in keys_l)
-    null_r = " AND ".join(f"{a} IS NOT NULL" for a in keys_r)
     violations = []
     card = frame._params["cardinality"]
     for side, table, keys, unique in [

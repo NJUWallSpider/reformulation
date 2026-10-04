@@ -15,7 +15,7 @@ m.uid, m.version, m.source, m.stage
 m.shape, m.nnz
 ```
 
-read/load 同步准备默认 IR 和 indexed；后续 `m.structure.indexed()` 直接取得结果。
+read/load 同步准备默认 IR 和 indexed；后续 `m.indexed()` 直接取得结果。
 自定义选区或签名配置在显式请求时计算。展示不运行新的结构搜索，不隐式生成稠密矩阵。
 独立 read 分配不同 uid；save/load 保留 uid/version。Native v3 保存完整精确值，
 不依赖原 LP/MPS 文件仍存在。旧 v2 需要从 LP/MPS 重新导入。
@@ -65,40 +65,47 @@ one 要求恰好一个成员，零个或多个成员均抛 CardinalityError。
 m.ir.show()
 summary = m.ir.to_dict()
 json_text = m.ir.to_json()
-F0 = m.rows.family("F0@2")
-V2 = m.vars.family("V2@1")
-family = m.structure.signatures().family("F0", depth=2)
+F0 = m.family("F0@2").rows
+V2 = m.family("V2@1").vars
+family = m.family("F0", depth=2)
 family.inspect()
-family.params
-family.params.relations["histogram"]
+family.related("parameters").where(basis="canonical")
+family.related("histogram").where(basis="canonical")
 ```
 
-IR schema 0.3 仅保存摘要、ID、深度和配置，不再提供字符串句柄解析。
-详细对象使用类型接口访问：族用 `signatures.family()`，成员用 `m.rows.family()` /
-`m.vars.family()`，索引对象用 `m.structure.indexed().tensor()` / `.operator()`。
+IR schema 0.3 保存摘要、ID、深度和配置。`m.family()` 返回单行 Frame；
+`.rows` 或 `.vars` 返回该族的原始成员。族筛选后关联成员和统计也随之收缩。
+默认行族和变量族都为深度 2；IR 中解释行模板的变量角色仍为深度 1，
+因为深度 d 的行使用深度 d−1 的变量角色。
 
-标签属于指定模型、IR 配置和深度，不是跨模型身份。默认 IR 的变量角色深度为 1、
-行 family 深度为 2。family 图角色提出假设，不能代替原始成员和精确数值验证。
-变化的系数角色会在 inspect 中醒目显示；params 明确采用 canonical 数值基准，
-原始系数始终从 Terms 读取。
+`family_key` 绑定模型版本、算法配置和深度；F/V 标签仅用于当前配置中的展示。
+子集 `families()` 不重新编号，`count` 为选中成员数，`total_count` 为全模型成员数。
+数值表用 basis 区分 canonical、raw、scale_normalized，orientation 保留等式双方向。
 
 ```python
-sig = m.structure.signatures(depth=3, mode="exact")
-sig.rows
-sig.row_families(2)
-sig.row_families(2).relations["members"]
-sig.family("F0", depth=2).inspect()
+F = m.family("F0")
+F.rows
+F.related("pattern")
+F.related("parameters").where(basis="canonical")
+F.related("sources").where(basis="scale_normalized")
+F.inspect(verbose=True)
+mf.analysis.families(m.rows, method="exact_structural", depth=3)
+mf.analysis.signatures(m.rows, method="typed")
+m.refinement(1, 2)
 ```
+
+高级算法集中在 `mf.analysis`；Structure、Signature、Family 等公共对象已删除。
+参见 [接口迁移表](FAMILIES.md)。
 
 ## 全量坐标验证与系数关联
 
 以下标签对应 test10 示例；其他模型的标签应从 IR 中选择。
 
 ```python
-F0 = m.rows.family("F0@2")
-F1 = m.rows.family("F1@2")
-F2 = m.rows.family("F2@2")
-V2 = m.vars.family("V2@1")
+F0 = m.family("F0@2").rows
+F1 = m.family("F1@2").rows
+F2 = m.family("F2@2").rows
+V2 = m.family("V2@1").vars
 P = V2.project(i=F0, k=F1, j=F2)
 P.check("product", ("i", "j")).require()
 P.check("function", key="i", value="k").require()
@@ -125,7 +132,7 @@ Fraction/Decimal 可以作常量，有限 float 必须先显式转换。
 C = m.matrix.nnz(rows=F0, vars=V2, axis="var")
 rare = C.where(col("nnz") <= 2).refs("var")
 hub = C.where(col("nnz") >= 20).refs("var")
-patterns = V2.pattern_counts("family")
+patterns = V2.pattern_counts()
 patterns.relations["members"]
 patterns.relations["items"]
 rhs = F1.column("ub")
@@ -154,7 +161,7 @@ most_active 按整个选区中的列非零次数排序，largest_coef 按精确�
 并列保持变量轴顺序。自动选列不保证展示的前 8 行中一定出现这些变量。
 Terms 按原始行/变量 ID 排序，SciPy 的行列位置则严格对应 S.rows.ids/S.vars.ids。
 SciPy 延迟导入，需要 `mipframe[scipy]`。导出 float64，检查溢出、非有限值和
-非零下溢，结果与模型不共享可写数组。`m.A` 是完整模型的独立 CSR 导出。
+非零下溢，结果与模型不共享可写数组。完整模型使用 `m.matrix.view().to_scipy()` 显式导出。
 
 ```python
 binary = A.copy()
@@ -165,7 +172,7 @@ row_overlap = binary @ binary.T
 ## Indexed
 
 ```python
-I = m.structure.indexed()
+I = m.indexed()
 I.tensors, I.operators, I.partitions, I.evidence
 T = I.tensor(I.tensors.head(1).one().id)
 T.vars, T.axes, T.coordinates
@@ -186,7 +193,7 @@ repr 只读有界前缀，未知总数显示 total not computed；count/len 显�
 SQLite。预算不代表整个 Python 进程的内存上限。
 
 ```python
-records = Q.collect()             # 默认最多 128 MiB，超限报错
+records = Q.to_records()             # 默认最多 128 MiB，超限报错
 for batch in Q.iter_batches(4096):
     process(batch.to_records())
 Q.write("coefficients.jsonl")     # 完整、精确、原子发布
@@ -214,7 +221,7 @@ primitives verify explicit evidence and return the same Report type used by Fram
 and indexed checks. See [the complete guide](CHECK.md) for conditional proofs,
 integer scope, local enumeration, point verification, and certificate replay.
 
-Migration: `ValidationReport` remains an alias of `Report`; `.ok`, `.summary`,
+Verification uses `Report`; `.ok`, `.summary`,
 `.violations` and `.require()` continue to work. Reports have no implicit truth
 value. Use `.status` to distinguish `REFUTED` from `INCONCLUSIVE`. Var handles are
 now hashable by snapshot identity for substitution mappings, while `x == y` still
@@ -223,7 +230,10 @@ compares entity identity. Mathematical equality uses `x.eq(y)`.
 ## Modify a snapshot explicitly
 
 Use `candidate = m.edit().build()` to create an independent descendant; declare
-changes on the Edit before building it. Source entities and existing proofs are
+changes on the Edit before building it. The default `prepare="logical"` validates
+the edit but defers structural IR/indexed analysis until requested; use
+`prepare="indexed"` for eager preparation. `read()` and `load()` stay eager.
+Source entities and existing proofs are
 never mutated. Bound Frames align by typed keys, not positions. The detailed
 [Edit guide](EDIT.md) covers bulk rows, auxiliary variables, strict `because`
 contracts, batch linear certificates, direct-parent diffs, persistence and LP

@@ -9,7 +9,7 @@ with mf.read(Path(__file__).parent / 'data' / 'tiny.lp') as model:
     families = snapshot['structure']['row_families']
     if families:
         record = families[0]
-        rows = model.rows.family(f"{record['id']}@{record['depth']}")
+        rows = model.family(f"{record['id']}@{record['depth']}").rows
         view = model.matrix.view(rows=rows, vars=rows.vars)
         print(view.entries.head(5))
 

@@ -7,19 +7,9 @@ from mipframe.check.report import ValidationError
 class QueryTooLarge(MIPFrameError):
     """
     MIPFRAME HELP BEGIN
-    QueryTooLarge [api.QueryTooLarge]
-
     Diagnostic exception; inspect original message and any attached complete Report.
 
-    QueryTooLarge [type]
-
-    When to use: Diagnostic exception; inspect original message and any attached complete Report.
-
-    Returns: Exception type, not a mathematical result.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.resources
+    Full contract: mf.help("api.QueryTooLarge")
     MIPFRAME HELP END
     """
     def __init__(self, limit, count):
@@ -32,19 +22,9 @@ class QueryTooLarge(MIPFrameError):
 class DiskBudgetExceeded(MIPFrameError):
     """
     MIPFRAME HELP BEGIN
-    DiskBudgetExceeded [api.DiskBudgetExceeded]
-
     Diagnostic exception; inspect original message and any attached complete Report.
 
-    DiskBudgetExceeded [type]
-
-    When to use: Diagnostic exception; inspect original message and any attached complete Report.
-
-    Returns: Exception type, not a mathematical result.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.resources
+    Full contract: mf.help("api.DiskBudgetExceeded")
     MIPFRAME HELP END
     """
     pass
@@ -53,17 +33,9 @@ class DiskBudgetExceeded(MIPFrameError):
 class NotDAGError(ValidationError):
     """
     MIPFRAME HELP BEGIN
-    NotDAGError [api.NotDAGError]
-
     Directed graph is not a DAG; inspect the attached cycle evidence.
 
-    NotDAGError [type]
-
-    When to use: Directed graph is not a DAG; inspect the attached cycle evidence.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: api.ops.graph.topological_order
+    Full contract: mf.help("api.NotDAGError")
     MIPFRAME HELP END
     """
     pass
@@ -72,19 +44,9 @@ class NotDAGError(ValidationError):
 class GraphCycleError(NotDAGError):
     """
     MIPFRAME HELP BEGIN
-    GraphCycleError [api.GraphCycleError]
-
     Diagnostic exception; inspect original message and any attached complete Report.
 
-    GraphCycleError [type]
-
-    When to use: Diagnostic exception; inspect original message and any attached complete Report.
-
-    Returns: Exception type, not a mathematical result.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: api.ops.graph.topological_order
+    Full contract: mf.help("api.GraphCycleError")
     MIPFRAME HELP END
     """
     pass
@@ -95,19 +57,9 @@ class SearchBudgetExceeded(MIPFrameError):
     Search did not finish; no partially successful Frame is attached.
 
     MIPFRAME HELP BEGIN
-    SearchBudgetExceeded [api.SearchBudgetExceeded]
-
     Diagnostic exception; inspect original message and any attached complete Report.
 
-    SearchBudgetExceeded [type]
-
-    When to use: Diagnostic exception; inspect original message and any attached complete Report.
-
-    Returns: Exception type, not a mathematical result.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.search
+    Full contract: mf.help("api.SearchBudgetExceeded")
     MIPFRAME HELP END
     """
 

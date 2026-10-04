@@ -70,7 +70,7 @@ def test_exact_literals_and_algebra(model):
         e.evaluate({x: 2})
     assert e.substitute({x: y + 1, y: x}).evaluate({x: 2, y: 3}) == 25
     assert (x + 2 * y).substitute({x: y, y: x}) == y + 2 * x
-    assert x == model.vars.by_id(x.id) and hash(x) == hash(model.vars.by_id(x.id))
+    assert x == model.vars.loc[x.id] and hash(x) == hash(model.vars.loc[x.id])
     assert x != y
     for f in (lambda: x * y, lambda: e * x, lambda: e * e):
         with pytest.raises(mf.NonlinearExpressionError):
@@ -196,7 +196,7 @@ def test_assumptions_domains_rounding_and_contradiction(model):
     # An arbitrary valid data assertion cannot be used as an inequality.
     with pytest.raises(mf.InvalidCertificateError):
         model.check.linear(x >= 1, using=[model.vars.check("unique", ("var",))])
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         model.check.linear(x >= 0, arithmetic="fast")
 
 
@@ -306,7 +306,7 @@ def test_identity_and_lifecycle_across_native_reload(model, tmp_path):
     path = tmp_path / "saved"
     model.save(path)
     with mf.load(path) as other:
-        xx = other.vars.by_id(x.id)
+        xx = other.vars.loc[x.id]
         assert x == xx and hash(x) == hash(xx)
         e = x + xx
         r = model.check.identity(e, 2 * x)
@@ -457,7 +457,7 @@ def test_shared_enumerator_empty_domain_and_constant_claims(model):
 
 
 def test_report_replay_relational_diagnostics_and_indexed(model):
-    I = model.structure.indexed()
+    I = model.indexed()
     r = I.verify()
     assert isinstance(r, mf.Report)
     assert mf.Report.replay(r.to_spec(), models=[model]).ok
@@ -674,7 +674,7 @@ def test_public_checker_signatures_and_constant_budget(model):
     ):
         signature = inspect.signature(getattr(model.check, method))
         assert "ctx" not in signature.parameters
-        assert signature.parameters["arithmetic"].default == "exact"
+        assert "arithmetic" not in signature.parameters
         assert signature.parameters["memory_mb"].default == 128
     with pytest.raises(ValueError):
         model.linexpr(constant=0, memory_mb=0)

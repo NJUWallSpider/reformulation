@@ -263,17 +263,17 @@ See also: concept.proofs
 
 LinearBatch [api.LinearBatch]
 
-Incremental linear certificate builder obtained through m.check.batch("linear").
+Incremental linear certificate builder obtained through m.check.linear_batch().
 
 LinearBatch [type]
 
-When to use: Incremental linear certificate builder obtained through m.check.batch("linear").
+When to use: Incremental linear certificate builder obtained through m.check.linear_batch().
 
 Returns: A public domain type. Obtain live handles through their owning Model or query.
 
 Does not establish: No model change or additional mathematical conclusion is implied.
 
-See also: api.Checker.batch, concept.report-resources
+See also: api.Checker.linear_batch, concept.report-resources
 
 ## api.CompressedIR
 
@@ -306,38 +306,6 @@ Returns: A public domain type. Obtain live handles through their owning Model or
 Does not establish: No model change or additional mathematical conclusion is implied.
 
 See also: recipe.coordinates
-
-## api.IndexedTensor
-
-IndexedTensor [api.IndexedTensor]
-
-Verified coordinate view with explicit declared axes.
-
-IndexedTensor [type]
-
-When to use: Verified coordinate view with explicit declared axes.
-
-Returns: A public domain type. Obtain live handles through their owning Model or query.
-
-Does not establish: No model change or additional mathematical conclusion is implied.
-
-See also: recipe.coordinates
-
-## api.IndexedOperator
-
-IndexedOperator [api.IndexedOperator]
-
-Recovered exact operator with original bindings and kernel.
-
-IndexedOperator [type]
-
-When to use: Recovered exact operator with original bindings and kernel.
-
-Returns: A public domain type. Obtain live handles through their owning Model or query.
-
-Does not establish: No model change or additional mathematical conclusion is implied.
-
-See also: api.IndexedOperator.verify
 
 ## api.Ref
 
@@ -584,7 +552,7 @@ Model.diff [api.Model.diff]
 
 Compare the current snapshot with its direct parent or identical snapshot.
 
-Model.diff(source, *, memory_mb=128, disk_mb=None)
+Model.diff(source, *, verify='auto', memory_mb=128, disk_mb=None)
 
 When to use: Compare the current snapshot with its direct parent or identical snapshot.
 
@@ -592,7 +560,7 @@ Returns: ModelDiff; unrelated snapshots are rejected.
 
 Does not establish: No model change or additional mathematical conclusion is implied.
 
-Live results require all referenced snapshots to remain open. Explicit records are detached.
+Live results require all referenced snapshots to remain open. Explicit records are detached. verify="auto" reuses a process-local verified source/target receipt when available, otherwise replays lineage and checks target facts. verify="replay" always performs that independent verification. Diff Frames and degree statistics are materialized on access; native files never grant a live receipt.
 
 See also: concept.identity
 
@@ -660,7 +628,7 @@ Model.verify()
 
 When to use: Validate numerical storage and replay prepared indexed results.
 
-Returns: Verification summary; not a general MIP feasibility or optimality proof.
+Returns: Report scoped to model integrity and prepared indexed runs; not MIP feasibility or optimality.
 
 Does not establish: No model change or additional mathematical conclusion is implied.
 
@@ -832,13 +800,13 @@ See also: concept.identity
 
 Model.ir [api.Model.ir]
 
-Prepared factual compressed IR; reading this property does not start another search.
+Factual compressed IR; prepared by read/load, or lazily on first access after a logical Edit build.
 
 Model.ir [property]
 
-When to use: Prepared factual compressed IR; reading this property does not start another search.
+When to use: Factual compressed IR; prepared by read/load, or lazily on first access after a logical Edit build.
 
-Returns: Prepared factual compressed IR; reading this property does not start another search.
+Returns: Factual compressed IR; prepared by read/load, or lazily on first access after a logical Edit build.
 
 Does not establish: No model change or additional mathematical conclusion is implied.
 
@@ -876,17 +844,33 @@ Does not establish: No model change or additional mathematical conclusion is imp
 
 See also: concept.identity
 
-## api.Model.structure
+## api.Model.row_families
 
-Model.structure [api.Model.structure]
+Model.row_families [api.Model.row_families]
 
-Signature and indexed analysis access.
+Template row-family Frame at depth 2.
 
-Model.structure [property]
+Model.row_families [property]
 
-When to use: Signature and indexed analysis access.
+When to use: Template row-family Frame at depth 2.
 
-Returns: Signature and indexed analysis access.
+Returns: Template row-family Frame at depth 2.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.identity
+
+## api.Model.var_families
+
+Model.var_families [api.Model.var_families]
+
+Template variable-family Frame at depth 2.
+
+Model.var_families [property]
+
+When to use: Template variable-family Frame at depth 2.
+
+Returns: Template variable-family Frame at depth 2.
 
 Does not establish: No model change or additional mathematical conclusion is implied.
 
@@ -919,22 +903,6 @@ Model.lineage [property]
 When to use: Saved Edit history, not automatically trusted live proof.
 
 Returns: Saved Edit history, not automatically trusted live proof.
-
-Does not establish: No model change or additional mathematical conclusion is implied.
-
-See also: concept.identity
-
-## api.Model.A
-
-Model.A [api.Model.A]
-
-Independent float64 SciPy CSR export of the full model; conversion is explicit and can fail.
-
-Model.A [property]
-
-When to use: Independent float64 SciPy CSR export of the full model; conversion is explicit and can fail.
-
-Returns: Independent float64 SciPy CSR export of the full model; conversion is explicit and can fail.
 
 Does not establish: No model change or additional mathematical conclusion is implied.
 
@@ -1336,41 +1304,15 @@ Use explicit declared domains for coverage checks. A subset check never proves a
 
 See also: concept.frame
 
-## api.Frame.collect
-
-Frame.collect [api.Frame.collect]
-
-Explicitly materialize detached records within a budget.
-
-Frame.collect(*, memory_mb=None)
-
-When to use: Explicitly materialize detached records within a budget.
-
-Inputs: Optional memory_mb.
-
-Returns: Independent list; over limit raises MaterializationLimitError without a partial return.
-
-Establishes: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-Does not establish: No model change or additional mathematical conclusion is implied.
-
-Failures: Schema/type errors or execution/resource errors preserve their diagnostics.
-
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.
-
-See also: concept.frame
-
 ## api.Frame.to_records
 
 Frame.to_records [api.Frame.to_records]
 
-Export independent records using the collect contract.
+Export independent records within the materialization budget.
 
 Frame.to_records(*, memory_mb=None)
 
-When to use: Export independent records using the collect contract.
+When to use: Export independent records within the materialization budget.
 
 Inputs: Optional memory_mb.
 
@@ -1733,7 +1675,7 @@ RowFrame.project [api.RowFrame.project]
 
 Map each source to exactly one neighbor in every named target domain.
 
-RowFrame.project(*, exactly_one=True, memory_mb=128, **bindings)
+RowFrame.project(*, memory_mb=128, **bindings)
 
 When to use: Map each source to exactly one neighbor in every named target domain.
 
@@ -1749,17 +1691,17 @@ P.check("product", ("i", "j")).require()
 
 See also: recipe.coordinates, concept.frame
 
-## api.RowFrame.family
+## api.RowFrame.families
 
-RowFrame.family [api.RowFrame.family]
+RowFrame.families [api.RowFrame.families]
 
-Select a family from the bound structural signature configuration.
+Group selected members by full-model template families.
 
-RowFrame.family(label)
+RowFrame.families(*, depth=2, **options)
 
-When to use: Select a family from the bound structural signature configuration.
+When to use: Group selected members by full-model template families.
 
-Returns: Entity Frame; family labels are local to snapshot/configuration/depth.
+Returns: Frame retaining global family identity and selected-member counts.
 
 Does not establish: No coefficient or mathematical equivalence is inferred from navigation.
 
@@ -1785,31 +1727,13 @@ Failures: Invalid selections, unknown labels/names and closed owners raise expli
 
 See also: recipe.coordinates, concept.frame
 
-## api.RowFrame.at
-
-RowFrame.at [api.RowFrame.at]
-
-Find one entity by positional index.
-
-RowFrame.at(position)
-
-When to use: Find one entity by positional index.
-
-Returns: Row or Var; negative positions allowed, bool rejected.
-
-Does not establish: No coefficient or mathematical equivalence is inferred from navigation.
-
-Failures: Invalid selections, unknown labels/names and closed owners raise explicit errors.
-
-See also: recipe.coordinates, concept.frame
-
 ## api.RowFrame.family_membership
 
 RowFrame.family_membership [api.RowFrame.family_membership]
 
 Expose family membership as a normalized relation.
 
-RowFrame.family_membership(*, depth=None, signatures=None)
+RowFrame.family_membership(*, depth=2, **options)
 
 When to use: Expose family membership as a normalized relation.
 
@@ -1827,7 +1751,7 @@ RowFrame.pattern_counts [api.RowFrame.pattern_counts]
 
 Count source entities by their family-neighborhood pattern.
 
-RowFrame.pattern_counts(column='family', *, depth=None, memory_mb=128)
+RowFrame.pattern_counts(*, depth=None, memory_mb=128)
 
 When to use: Count source entities by their family-neighborhood pattern.
 
@@ -1899,7 +1823,7 @@ VarFrame.project [api.VarFrame.project]
 
 Map each source to exactly one neighbor in every named target domain.
 
-VarFrame.project(*, exactly_one=True, memory_mb=128, **bindings)
+VarFrame.project(*, memory_mb=128, **bindings)
 
 When to use: Map each source to exactly one neighbor in every named target domain.
 
@@ -1915,17 +1839,17 @@ P.check("product", ("i", "j")).require()
 
 See also: recipe.coordinates, concept.frame
 
-## api.VarFrame.family
+## api.VarFrame.families
 
-VarFrame.family [api.VarFrame.family]
+VarFrame.families [api.VarFrame.families]
 
-Select a family from the bound structural signature configuration.
+Group selected members by full-model template families.
 
-VarFrame.family(label)
+VarFrame.families(*, depth=2, **options)
 
-When to use: Select a family from the bound structural signature configuration.
+When to use: Group selected members by full-model template families.
 
-Returns: Entity Frame; family labels are local to snapshot/configuration/depth.
+Returns: Frame retaining global family identity and selected-member counts.
 
 Does not establish: No coefficient or mathematical equivalence is inferred from navigation.
 
@@ -1951,31 +1875,13 @@ Failures: Invalid selections, unknown labels/names and closed owners raise expli
 
 See also: recipe.coordinates, concept.frame
 
-## api.VarFrame.at
-
-VarFrame.at [api.VarFrame.at]
-
-Find one entity by positional index.
-
-VarFrame.at(position)
-
-When to use: Find one entity by positional index.
-
-Returns: Row or Var; negative positions allowed, bool rejected.
-
-Does not establish: No coefficient or mathematical equivalence is inferred from navigation.
-
-Failures: Invalid selections, unknown labels/names and closed owners raise explicit errors.
-
-See also: recipe.coordinates, concept.frame
-
 ## api.VarFrame.family_membership
 
 VarFrame.family_membership [api.VarFrame.family_membership]
 
 Expose family membership as a normalized relation.
 
-VarFrame.family_membership(*, depth=None, signatures=None)
+VarFrame.family_membership(*, depth=2, **options)
 
 When to use: Expose family membership as a normalized relation.
 
@@ -1993,7 +1899,7 @@ VarFrame.pattern_counts [api.VarFrame.pattern_counts]
 
 Count source entities by their family-neighborhood pattern.
 
-VarFrame.pattern_counts(column='family', *, depth=None, memory_mb=128)
+VarFrame.pattern_counts(*, depth=None, memory_mb=128)
 
 When to use: Count source entities by their family-neighborhood pattern.
 
@@ -2058,6 +1964,24 @@ Does not establish: No coefficient or mathematical equivalence is inferred from 
 Failures: Invalid selections, unknown labels/names and closed owners raise explicit errors.
 
 See also: concept.frame
+
+## api.Row.source_line
+
+Row.source_line [api.Row.source_line]
+
+Read the original source_line field or entity relation.
+
+Row.source_line [property]
+
+When to use: Read the original source_line field or entity relation.
+
+Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
+
+See also: concept.frame, concept.proofs
 
 ## api.Row.id
 
@@ -2338,6 +2262,24 @@ Export an independent exact record; subsequent mutation cannot change the model.
 Row.to_record()
 
 When to use: Export an independent exact record; subsequent mutation cannot change the model.
+
+Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
+
+See also: concept.frame, concept.proofs
+
+## api.Var.source_line
+
+Var.source_line [api.Var.source_line]
+
+Read the original source_line field or entity relation.
+
+Var.source_line [property]
+
+When to use: Read the original source_line field or entity relation.
 
 Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
 
@@ -4010,7 +3952,7 @@ Checker.cases [api.Checker.cases]
 
 Discharge an exhaustive finite integer split over one variable.
 
-Checker.cases(target, *, var, cases, memory_mb=128, disk_mb=None, domain='auto', arithmetic='exact')
+Checker.cases(target, *, var, cases, memory_mb=128, disk_mb=None, domain='auto')
 
 When to use: Discharge an exhaustive finite integer split over one variable.
 
@@ -4041,7 +3983,7 @@ Checker.identity [api.Checker.identity]
 
 Check an exact affine identity or explicit equality combination.
 
-Checker.identity(left, right, *, using=(), assume=(), memory_mb=128, disk_mb=None, domain='auto', arithmetic='exact')
+Checker.identity(left, right, *, using=(), assume=(), memory_mb=128, disk_mb=None, domain='auto')
 
 When to use: Check an exact affine identity or explicit equality combination.
 
@@ -4067,7 +4009,7 @@ Checker.linear [api.Checker.linear]
 
 Verify that supplied sources imply the target inequality or equality.
 
-Checker.linear(target, *, using=(), residual='exact', assume=(), memory_mb=128, disk_mb=None, domain='auto', arithmetic='exact')
+Checker.linear(target, *, using=(), residual='exact', assume=(), memory_mb=128, disk_mb=None, domain='auto')
 
 When to use: Verify that supplied sources imply the target inequality or equality.
 
@@ -4093,7 +4035,7 @@ Checker.infeasible [api.Checker.infeasible]
 
 Verify an explicit contradiction certificate.
 
-Checker.infeasible(*, using=(), residual='exact', assume=(), memory_mb=128, disk_mb=None, domain='auto', arithmetic='exact')
+Checker.infeasible(*, using=(), residual='exact', assume=(), memory_mb=128, disk_mb=None, domain='auto')
 
 When to use: Verify an explicit contradiction certificate.
 
@@ -4119,7 +4061,7 @@ Checker.round [api.Checker.round]
 
 Round a proved bound on a model-integer-valued expression.
 
-Checker.round(target, *, from_, memory_mb=128, disk_mb=None, domain='auto', arithmetic='exact')
+Checker.round(target, *, from_, memory_mb=128, disk_mb=None, domain='auto')
 
 When to use: Round a proved bound on a model-integer-valued expression.
 
@@ -4145,7 +4087,7 @@ Checker.enumerate [api.Checker.enumerate]
 
 Verify a claim on a finite local integer domain.
 
-Checker.enumerate(target, *, vars, using=(), assume=(), max_states=100000, time_limit=None, memory_mb=128, disk_mb=None, domain='auto', arithmetic='exact')
+Checker.enumerate(target, *, vars, using=(), assume=(), max_states=100000, time_limit=None, memory_mb=128, disk_mb=None, domain='auto')
 
 When to use: Verify a claim on a finite local integer domain.
 
@@ -4171,7 +4113,7 @@ Checker.solution [api.Checker.solution]
 
 Validate a complete exact point against the mathematical integer model, including integrality, original bounds and both row sides.
 
-Checker.solution(values, *, value='value', missing='error', memory_mb=128, disk_mb=None, domain='auto', arithmetic='exact')
+Checker.solution(values, *, value='value', missing='error', memory_mb=128, disk_mb=None, domain='auto')
 
 When to use: Validate a complete exact point against the mathematical integer model, including integrality, original bounds and both row sides.
 
@@ -4217,22 +4159,22 @@ Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is ex
 targets has target/relation/rhs, with unique string target IDs; terms has target/var/coef.
 using has target and exactly one source field row/var/proof per record, plus side and multiplier (direction for equality target sides).
 Reference columns use m.rows.schema["row"] or m.vars.schema["var"]. A proof source is a string key in the explicit reports mapping.
-Use residual="bounds" for bound compensation. This Frame-native entry point has no assume parameter; use check.batch("linear").add(..., assume=...) for per-target assumptions and ordinary Claim/Report inputs.
+Use residual="bounds" for bound compensation. This Frame-native entry point has no assume parameter; use check.linear_batch().add(..., assume=...) for per-target assumptions and ordinary Claim/Report inputs.
 The result shares paged storage across targets; inspect evidence and use for_target(target_id) for one conclusion. require() on the batch requires every target to be PROVED.
 
-See also: concept.proofs, concept.conditions, api.Checker.batch, api.Frame.schema, api.Report.for_target, concept.report-resources
+See also: concept.proofs, concept.conditions, api.Checker.linear_batch, api.Frame.schema, api.Report.for_target, concept.report-resources
 
-## api.Checker.batch
+## api.Checker.linear_batch
 
-Checker.batch [api.Checker.batch]
+Checker.linear_batch [api.Checker.linear_batch]
 
 Build a batch of linear certificates with scalar arguments and per-target assumptions.
 
-Checker.batch(method='linear', *, residual='exact', domain='auto', memory_mb=128, disk_mb=None)
+Checker.linear_batch(*, residual='exact', domain='auto', memory_mb=128, disk_mb=None)
 
 When to use: Build a batch of linear certificates with scalar arguments and per-target assumptions.
 
-Inputs: method="linear"; residual="exact" or "bounds"; domain="auto", "relaxation" or "integer"; memory_mb and disk_mb apply to the whole batch.
+Inputs: residual="exact" or "bounds"; domain="auto", "relaxation" or "integer"; memory_mb and disk_mb apply to the whole batch.
 
 Returns: LinearBatch context manager. add stages each check; run verifies all targets and returns a Report.
 
@@ -4245,7 +4187,7 @@ Failures: Unsupported methods or options raise. Invalid inputs, cancellation and
 Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
 
 Illustrative example (requires caller-provided inputs):
-with m.check.batch("linear", residual="bounds") as batch:
+with m.check.linear_batch(residual="bounds") as batch:
     for row in m.rows:
         batch.add(key=str(row.id), target=row.ub_claim, using=[row.ub_claim])
     report = batch.run()
@@ -4277,7 +4219,7 @@ Does not establish: No model change or additional mathematical conclusion is imp
 
 Failures: Duplicate keys, invalid sources and staging failures abort and close the builder. A closed or already-run builder rejects further additions.
 
-See also: api.Checker.batch, api.Checker.linear, api.LinearBatch.run, concept.conditions
+See also: api.Checker.linear_batch, api.Checker.linear, api.LinearBatch.run, concept.conditions
 
 ## api.LinearBatch.run
 
@@ -4317,7 +4259,7 @@ Establishes: Idempotent. Reports already returned by run remain valid.
 
 Does not establish: No model change or additional mathematical conclusion is implied.
 
-See also: api.Checker.batch, api.LinearBatch.run, concept.report-resources
+See also: api.Checker.linear_batch, api.LinearBatch.run, concept.report-resources
 
 ## api.Report.status
 
@@ -4927,13 +4869,13 @@ See also: recipe.edits, concept.conditions
 
 Edit.build [api.Edit.build]
 
-Atomically build an independent edited snapshot and prepare its own IR/indexed.
+Atomically build an independent exact snapshot; structural analyses are lazy by default.
 
-Edit.build(*, allow_infeasible=False)
+Edit.build(*, allow_infeasible=False, prepare='logical')
 
-When to use: Atomically build an independent edited snapshot and prepare its own IR/indexed.
+When to use: Atomically build an independent exact snapshot; structural analyses are lazy by default.
 
-Inputs: allow_infeasible=False rejects directly visible impossible bounds/empty rows.
+Inputs: allow_infeasible=False rejects directly visible impossible bounds/empty rows. prepare="logical" defers IR/indexed; prepare="indexed" prepares both before returning.
 
 Returns: New staging result, Formula summary or independent Model as appropriate.
 
@@ -5015,9 +4957,9 @@ Establishes: Rendering uses completed summaries and does not run discovery.
 
 Does not establish: The summary does not embed the full numerical model, member lists or parameter histograms. Structural groups do not prove mathematical equivalence.
 
-IR schema 0.3 retains IDs, depths, scopes and configurations. Access detailed objects through m.rows, m.vars, m.matrix and m.structure. For a family use m.structure.signatures().family(id, depth=depth); for indexed tensors and operators use m.structure.indexed().tensor(id) or .operator(id).
+IR schema 0.3 retains IDs, depths, scopes and configurations. Access detailed objects through m.rows, m.vars, m.matrix and m.families(). For a family use m.family(id, depth=depth); for indexed tensors and operators use m.indexed().tensor(id) or .operator(id).
 
-See also: api.Model.ir, api.StructuralSignatures.family, api.Structure.indexed
+See also: api.Model.ir, api.Model.family, api.Model.indexed
 
 ## api.CompressedIR.to_dict
 
@@ -5035,9 +4977,9 @@ Establishes: The exported data outlives the model and is not truncated by displa
 
 Does not establish: The summary does not embed the full numerical model, member lists or parameter histograms. Structural groups do not prove mathematical equivalence.
 
-IR schema 0.3 retains IDs, depths, scopes and configurations. Access detailed objects through m.rows, m.vars, m.matrix and m.structure. For a family use m.structure.signatures().family(id, depth=depth); for indexed tensors and operators use m.structure.indexed().tensor(id) or .operator(id).
+IR schema 0.3 retains IDs, depths, scopes and configurations. Access detailed objects through m.rows, m.vars, m.matrix and m.families(). For a family use m.family(id, depth=depth); for indexed tensors and operators use m.indexed().tensor(id) or .operator(id).
 
-See also: api.Model.ir, api.StructuralSignatures.family, api.Structure.indexed
+See also: api.Model.ir, api.Model.family, api.Model.indexed
 
 ## api.CompressedIR.to_json
 
@@ -5055,387 +4997,229 @@ Establishes: The exported data outlives the model and is not truncated by displa
 
 Does not establish: The summary does not embed the full numerical model, member lists or parameter histograms. Structural groups do not prove mathematical equivalence.
 
-IR schema 0.3 retains IDs, depths, scopes and configurations. Access detailed objects through m.rows, m.vars, m.matrix and m.structure. For a family use m.structure.signatures().family(id, depth=depth); for indexed tensors and operators use m.structure.indexed().tensor(id) or .operator(id).
+IR schema 0.3 retains IDs, depths, scopes and configurations. Access detailed objects through m.rows, m.vars, m.matrix and m.families(). For a family use m.family(id, depth=depth); for indexed tensors and operators use m.indexed().tensor(id) or .operator(id).
 
-See also: api.Model.ir, api.StructuralSignatures.family, api.Structure.indexed
+See also: api.Model.ir, api.Model.family, api.Model.indexed
 
 ## api.IndexedResult.tensors
 
 IndexedResult.tensors [api.IndexedResult.tensors]
 
-Inspect or verify IndexedResult tensors.
+Query the indexed tensors directory.
 
 IndexedResult.tensors [property]
 
-When to use: Inspect or verify IndexedResult tensors.
+When to use: Query the indexed tensors directory.
 
-Returns: Public summary, domain handle, Frame or verification Report.
+Returns: Ordinary Frame with selected-key related navigation.
 
-Establishes: Large coordinates, bindings and kernels stay in queryable Frames; rendering is bounded.
+Establishes: Verification recipes replay exact checks; directory navigation follows the selected identity keys.
 
 Does not establish: A structural signature alone does not prove coordinates, symmetry or a valid cut.
 
-See also: recipe.coordinates, concept.frame
+Counts use row_count/var_count; members use rows/vars. Dimensions, AST and numerical details are related tables. Singular lookups reject unknown IDs with KeyError.
+
+See also: concept.indexed, recipe.coordinates, concept.frame
 
 ## api.IndexedResult.partitions
 
 IndexedResult.partitions [api.IndexedResult.partitions]
 
-Inspect or verify IndexedResult partitions.
+Query the indexed partitions directory.
 
 IndexedResult.partitions [property]
 
-When to use: Inspect or verify IndexedResult partitions.
+When to use: Query the indexed partitions directory.
 
-Returns: Public summary, domain handle, Frame or verification Report.
+Returns: Ordinary Frame with selected-key related navigation.
 
-Establishes: Large coordinates, bindings and kernels stay in queryable Frames; rendering is bounded.
+Establishes: Verification recipes replay exact checks; directory navigation follows the selected identity keys.
 
 Does not establish: A structural signature alone does not prove coordinates, symmetry or a valid cut.
 
-See also: recipe.coordinates, concept.frame
+Counts use row_count/var_count; members use rows/vars. Dimensions, AST and numerical details are related tables. Singular lookups reject unknown IDs with KeyError.
+
+See also: concept.indexed, recipe.coordinates, concept.frame
 
 ## api.IndexedResult.operators
 
 IndexedResult.operators [api.IndexedResult.operators]
 
-Inspect or verify IndexedResult operators.
+Query the indexed operators directory.
 
 IndexedResult.operators [property]
 
-When to use: Inspect or verify IndexedResult operators.
+When to use: Query the indexed operators directory.
 
-Returns: Public summary, domain handle, Frame or verification Report.
+Returns: Ordinary Frame with selected-key related navigation.
 
-Establishes: Large coordinates, bindings and kernels stay in queryable Frames; rendering is bounded.
+Establishes: Verification recipes replay exact checks; directory navigation follows the selected identity keys.
 
 Does not establish: A structural signature alone does not prove coordinates, symmetry or a valid cut.
 
-See also: recipe.coordinates, concept.frame
+Counts use row_count/var_count; members use rows/vars. Dimensions, AST and numerical details are related tables. Singular lookups reject unknown IDs with KeyError.
+
+See also: concept.indexed, recipe.coordinates, concept.frame
 
 ## api.IndexedResult.evidence
 
 IndexedResult.evidence [api.IndexedResult.evidence]
 
-Inspect or verify IndexedResult evidence.
+Query the indexed evidence directory.
 
 IndexedResult.evidence [property]
 
-When to use: Inspect or verify IndexedResult evidence.
+When to use: Query the indexed evidence directory.
 
-Returns: Public summary, domain handle, Frame or verification Report.
+Returns: Ordinary Frame with selected-key related navigation.
 
-Establishes: Large coordinates, bindings and kernels stay in queryable Frames; rendering is bounded.
+Establishes: Verification recipes replay exact checks; directory navigation follows the selected identity keys.
 
 Does not establish: A structural signature alone does not prove coordinates, symmetry or a valid cut.
 
-See also: recipe.coordinates, concept.frame
+Counts use row_count/var_count; members use rows/vars. Dimensions, AST and numerical details are related tables. Singular lookups reject unknown IDs with KeyError.
+
+See also: concept.indexed, recipe.coordinates, concept.frame
 
 ## api.IndexedResult.tensor
 
 IndexedResult.tensor [api.IndexedResult.tensor]
 
-Inspect or verify IndexedResult tensor.
+Select one indexed item by its required ID.
 
 IndexedResult.tensor(ident)
 
-When to use: Inspect or verify IndexedResult tensor.
+When to use: Select one indexed item by its required ID.
 
-Returns: Public summary, domain handle, Frame or verification Report.
+Returns: Ordinary Frame with selected-key related navigation.
 
-Establishes: Large coordinates, bindings and kernels stay in queryable Frames; rendering is bounded.
+Establishes: Verification recipes replay exact checks; directory navigation follows the selected identity keys.
 
 Does not establish: A structural signature alone does not prove coordinates, symmetry or a valid cut.
 
-See also: recipe.coordinates, concept.frame
+Counts use row_count/var_count; members use rows/vars. Dimensions, AST and numerical details are related tables. Singular lookups reject unknown IDs with KeyError.
+
+See also: concept.indexed, recipe.coordinates, concept.frame
 
 ## api.IndexedResult.operator
 
 IndexedResult.operator [api.IndexedResult.operator]
 
-Inspect or verify IndexedResult operator.
+Select one indexed item by its required ID.
 
 IndexedResult.operator(ident)
 
-When to use: Inspect or verify IndexedResult operator.
+When to use: Select one indexed item by its required ID.
 
-Returns: Public summary, domain handle, Frame or verification Report.
+Returns: Ordinary Frame with selected-key related navigation.
 
-Establishes: Large coordinates, bindings and kernels stay in queryable Frames; rendering is bounded.
+Establishes: Verification recipes replay exact checks; directory navigation follows the selected identity keys.
 
 Does not establish: A structural signature alone does not prove coordinates, symmetry or a valid cut.
 
-See also: recipe.coordinates, concept.frame
+Counts use row_count/var_count; members use rows/vars. Dimensions, AST and numerical details are related tables. Singular lookups reject unknown IDs with KeyError.
+
+See also: concept.indexed, recipe.coordinates, concept.frame
 
 ## api.IndexedResult.partition
 
 IndexedResult.partition [api.IndexedResult.partition]
 
-Inspect or verify IndexedResult partition.
+Select one indexed item by its required ID.
 
 IndexedResult.partition(ident)
 
-When to use: Inspect or verify IndexedResult partition.
+When to use: Select one indexed item by its required ID.
 
-Returns: Public summary, domain handle, Frame or verification Report.
+Returns: Ordinary Frame with selected-key related navigation.
 
-Establishes: Large coordinates, bindings and kernels stay in queryable Frames; rendering is bounded.
+Establishes: Verification recipes replay exact checks; directory navigation follows the selected identity keys.
 
 Does not establish: A structural signature alone does not prove coordinates, symmetry or a valid cut.
 
-See also: recipe.coordinates, concept.frame
+Counts use row_count/var_count; members use rows/vars. Dimensions, AST and numerical details are related tables. Singular lookups reject unknown IDs with KeyError.
+
+See also: concept.indexed, recipe.coordinates, concept.frame
 
 ## api.IndexedResult.evidence_item
 
 IndexedResult.evidence_item [api.IndexedResult.evidence_item]
 
-Inspect or verify IndexedResult evidence_item.
+Select one indexed item by its required ID.
 
 IndexedResult.evidence_item(ident)
 
-When to use: Inspect or verify IndexedResult evidence_item.
+When to use: Select one indexed item by its required ID.
 
-Returns: Public summary, domain handle, Frame or verification Report.
+Returns: Ordinary Frame with selected-key related navigation.
 
-Establishes: Large coordinates, bindings and kernels stay in queryable Frames; rendering is bounded.
+Establishes: Verification recipes replay exact checks; directory navigation follows the selected identity keys.
 
 Does not establish: A structural signature alone does not prove coordinates, symmetry or a valid cut.
 
-See also: recipe.coordinates, concept.frame
+Counts use row_count/var_count; members use rows/vars. Dimensions, AST and numerical details are related tables. Singular lookups reject unknown IDs with KeyError.
+
+See also: concept.indexed, recipe.coordinates, concept.frame
 
 ## api.IndexedResult.verify
 
 IndexedResult.verify [api.IndexedResult.verify]
 
-Inspect or verify IndexedResult verify.
+Replay prepared tensors/operators or an explicit directory selection.
 
-IndexedResult.verify()
+IndexedResult.verify(selection=None)
 
-When to use: Inspect or verify IndexedResult verify.
+When to use: Replay prepared tensors/operators or an explicit directory selection.
 
-Returns: Public summary, domain handle, Frame or verification Report.
+Returns: Report with explicit indexed scope.
 
-Establishes: Large coordinates, bindings and kernels stay in queryable Frames; rendering is bounded.
+Establishes: Verification recipes replay exact checks; directory navigation follows the selected identity keys.
 
 Does not establish: A structural signature alone does not prove coordinates, symmetry or a valid cut.
 
-See also: recipe.coordinates, concept.frame
+An explicit selection must retain indexed_key and belong to this snapshot and run. Partitions can be selected; evidence cannot. Empty selection returns checked=0. Summary checked/failures count primary items, not diagnostic rows; evidence["checks"] lists items, evidence["details"] includes their details. Inconclusive or skipped checks cannot produce PROVED. Inconsistency returns REFUTED; require() raises. Input and execution errors raise directly.
+
+See also: concept.indexed, recipe.coordinates, concept.frame
 
 ## api.IndexedResult.validate
 
 IndexedResult.validate [api.IndexedResult.validate]
 
-Inspect or verify IndexedResult validate.
+Validate an independently supplied indexed hypothesis.
 
 IndexedResult.validate(spec)
 
-When to use: Inspect or verify IndexedResult validate.
+When to use: Validate an independently supplied indexed hypothesis.
 
-Returns: Public summary, domain handle, Frame or verification Report.
+Returns: Report with explicit indexed scope.
 
-Establishes: Large coordinates, bindings and kernels stay in queryable Frames; rendering is bounded.
+Establishes: Verification recipes replay exact checks; directory navigation follows the selected identity keys.
 
 Does not establish: A structural signature alone does not prove coordinates, symmetry or a valid cut.
 
-See also: recipe.coordinates, concept.frame
+Candidate metadata, AST, coordinates, bindings, kernels, alignment and partition memberships accept Frames. Complete independent candidate dictionaries remain supported. Identity never bypasses exact verification. Diagnostic reports cannot be used as linear certificates.
+
+See also: concept.indexed, recipe.coordinates, concept.frame
 
 ## api.IndexedResult.to_record
 
 IndexedResult.to_record [api.IndexedResult.to_record]
 
-Inspect or verify IndexedResult to_record.
+Export detached run metadata.
 
 IndexedResult.to_record()
 
-When to use: Inspect or verify IndexedResult to_record.
+When to use: Export detached run metadata.
 
-Returns: Public summary, domain handle, Frame or verification Report.
+Returns: Detached run metadata.
 
-Establishes: Large coordinates, bindings and kernels stay in queryable Frames; rendering is bounded.
-
-Does not establish: A structural signature alone does not prove coordinates, symmetry or a valid cut.
-
-See also: recipe.coordinates, concept.frame
-
-## api.IndexedTensor.vars
-
-IndexedTensor.vars [api.IndexedTensor.vars]
-
-Inspect or verify IndexedTensor vars.
-
-IndexedTensor.vars [property]
-
-When to use: Inspect or verify IndexedTensor vars.
-
-Returns: Public summary, domain handle, Frame or verification Report.
-
-Establishes: Large coordinates, bindings and kernels stay in queryable Frames; rendering is bounded.
+Establishes: Verification recipes replay exact checks; directory navigation follows the selected identity keys.
 
 Does not establish: A structural signature alone does not prove coordinates, symmetry or a valid cut.
 
-See also: recipe.coordinates, concept.frame
+Counts use row_count/var_count; members use rows/vars. Dimensions, AST and numerical details are related tables. Singular lookups reject unknown IDs with KeyError.
 
-## api.IndexedTensor.axes
-
-IndexedTensor.axes [api.IndexedTensor.axes]
-
-Inspect or verify IndexedTensor axes.
-
-IndexedTensor.axes [property]
-
-When to use: Inspect or verify IndexedTensor axes.
-
-Returns: Public summary, domain handle, Frame or verification Report.
-
-Establishes: Large coordinates, bindings and kernels stay in queryable Frames; rendering is bounded.
-
-Does not establish: A structural signature alone does not prove coordinates, symmetry or a valid cut.
-
-See also: recipe.coordinates, concept.frame
-
-## api.IndexedTensor.coordinates
-
-IndexedTensor.coordinates [api.IndexedTensor.coordinates]
-
-Inspect or verify IndexedTensor coordinates.
-
-IndexedTensor.coordinates [property]
-
-When to use: Inspect or verify IndexedTensor coordinates.
-
-Returns: Public summary, domain handle, Frame or verification Report.
-
-Establishes: Large coordinates, bindings and kernels stay in queryable Frames; rendering is bounded.
-
-Does not establish: A structural signature alone does not prove coordinates, symmetry or a valid cut.
-
-See also: recipe.coordinates, concept.frame
-
-## api.IndexedTensor.verify
-
-IndexedTensor.verify [api.IndexedTensor.verify]
-
-Inspect or verify IndexedTensor verify.
-
-IndexedTensor.verify()
-
-When to use: Inspect or verify IndexedTensor verify.
-
-Returns: Public summary, domain handle, Frame or verification Report.
-
-Establishes: Large coordinates, bindings and kernels stay in queryable Frames; rendering is bounded.
-
-Does not establish: A structural signature alone does not prove coordinates, symmetry or a valid cut.
-
-See also: recipe.coordinates, concept.frame
-
-## api.IndexedOperator.rows
-
-IndexedOperator.rows [api.IndexedOperator.rows]
-
-Inspect or verify IndexedOperator rows.
-
-IndexedOperator.rows [property]
-
-When to use: Inspect or verify IndexedOperator rows.
-
-Returns: Public summary, domain handle, Frame or verification Report.
-
-Establishes: Large coordinates, bindings and kernels stay in queryable Frames; rendering is bounded.
-
-Does not establish: A structural signature alone does not prove coordinates, symmetry or a valid cut.
-
-See also: recipe.coordinates, concept.frame
-
-## api.IndexedOperator.bindings
-
-IndexedOperator.bindings [api.IndexedOperator.bindings]
-
-Inspect or verify IndexedOperator bindings.
-
-IndexedOperator.bindings [property]
-
-When to use: Inspect or verify IndexedOperator bindings.
-
-Returns: Public summary, domain handle, Frame or verification Report.
-
-Establishes: Large coordinates, bindings and kernels stay in queryable Frames; rendering is bounded.
-
-Does not establish: A structural signature alone does not prove coordinates, symmetry or a valid cut.
-
-See also: recipe.coordinates, concept.frame
-
-## api.IndexedOperator.kernel
-
-IndexedOperator.kernel [api.IndexedOperator.kernel]
-
-Inspect or verify IndexedOperator kernel.
-
-IndexedOperator.kernel [property]
-
-When to use: Inspect or verify IndexedOperator kernel.
-
-Returns: Public summary, domain handle, Frame or verification Report.
-
-Establishes: Large coordinates, bindings and kernels stay in queryable Frames; rendering is bounded.
-
-Does not establish: A structural signature alone does not prove coordinates, symmetry or a valid cut.
-
-See also: recipe.coordinates, concept.frame
-
-## api.IndexedOperator.alignment
-
-IndexedOperator.alignment [api.IndexedOperator.alignment]
-
-Inspect or verify IndexedOperator alignment.
-
-IndexedOperator.alignment [property]
-
-When to use: Inspect or verify IndexedOperator alignment.
-
-Returns: Public summary, domain handle, Frame or verification Report.
-
-Establishes: Large coordinates, bindings and kernels stay in queryable Frames; rendering is bounded.
-
-Does not establish: A structural signature alone does not prove coordinates, symmetry or a valid cut.
-
-See also: recipe.coordinates, concept.frame
-
-## api.IndexedOperator.formula
-
-IndexedOperator.formula [api.IndexedOperator.formula]
-
-Inspect or verify IndexedOperator formula.
-
-IndexedOperator.formula()
-
-When to use: Inspect or verify IndexedOperator formula.
-
-Returns: Public summary, domain handle, Frame or verification Report.
-
-Establishes: Large coordinates, bindings and kernels stay in queryable Frames; rendering is bounded.
-
-Does not establish: A structural signature alone does not prove coordinates, symmetry or a valid cut.
-
-See also: recipe.coordinates, concept.frame
-
-## api.IndexedOperator.verify
-
-IndexedOperator.verify [api.IndexedOperator.verify]
-
-Inspect or verify IndexedOperator verify.
-
-IndexedOperator.verify()
-
-When to use: Inspect or verify IndexedOperator verify.
-
-Returns: Public summary, domain handle, Frame or verification Report.
-
-Establishes: Large coordinates, bindings and kernels stay in queryable Frames; rendering is bounded.
-
-Does not establish: A structural signature alone does not prove coordinates, symmetry or a valid cut.
-
-See also: recipe.coordinates, concept.frame
+See also: concept.indexed, recipe.coordinates, concept.frame
 
 ## api.Ref.bind
 
@@ -5486,374 +5270,6 @@ Returns: Frame; externally claimed uniqueness is not trusted.
 Does not establish: No model change or additional mathematical conclusion is implied.
 
 See also: concept.identity, api.Frame.write
-
-## api.Structure
-
-Structure [api.Structure]
-
-Read-only Structure domain facade.
-
-Structure [type]
-
-When to use: Read-only Structure domain facade.
-
-Returns: Obtain from the corresponding Model analysis or lineage property.
-
-Does not establish: No model change or additional mathematical conclusion is implied.
-
-See also: concept.identity
-
-## api.Structure.indexed
-
-Structure.indexed [api.Structure.indexed]
-
-Retrieve default completed indexed results or discover an explicitly selected custom scope.
-
-Structure.indexed(*, rows=None, vars=None, signatures=None, memory_mb=128)
-
-When to use: Retrieve default completed indexed results or discover an explicitly selected custom scope.
-
-Returns: Bounded summary, Frame or domain result.
-
-Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-See also: concept.identity, recipe.roles
-
-## api.Structure.signatures
-
-Structure.signatures [api.Structure.signatures]
-
-Compute or reuse structural refinement with explicit mode, depth and numeric policy.
-
-Structure.signatures(*, depth=2, mode='template', coefficient=None, rhs='sign', objective='sign', memory_mb=128, multiplicity_ratio=2)
-
-When to use: Compute or reuse structural refinement with explicit mode, depth and numeric policy.
-
-Returns: Bounded summary, Frame or domain result.
-
-Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-See also: concept.identity, recipe.roles
-
-## api.Structure.summary
-
-Structure.summary [api.Structure.summary]
-
-Read Structure summary.
-
-Structure.summary(*, depth=2, max_families=15, max_splits=5, **options)
-
-When to use: Read Structure summary.
-
-Returns: Bounded summary, Frame or domain result.
-
-Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-See also: concept.identity, recipe.roles
-
-## api.Structure.splits
-
-Structure.splits [api.Structure.splits]
-
-Read Structure splits.
-
-Structure.splits(*, depth=2, from_depth=None, kind='row', **options)
-
-When to use: Read Structure splits.
-
-Returns: Bounded summary, Frame or domain result.
-
-Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-See also: concept.identity, recipe.roles
-
-## api.StructuralSignatures
-
-StructuralSignatures [api.StructuralSignatures]
-
-Read-only StructuralSignatures domain facade.
-
-StructuralSignatures [type]
-
-When to use: Read-only StructuralSignatures domain facade.
-
-Returns: Obtain from the corresponding Model analysis or lineage property.
-
-Does not establish: No model change or additional mathematical conclusion is implied.
-
-See also: concept.identity
-
-## api.StructuralSignatures.config
-
-StructuralSignatures.config [api.StructuralSignatures.config]
-
-Read StructuralSignatures config.
-
-StructuralSignatures.config [property]
-
-When to use: Read StructuralSignatures config.
-
-Returns: Bounded summary, Frame or domain result.
-
-Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-See also: concept.identity, recipe.roles
-
-## api.StructuralSignatures.mode
-
-StructuralSignatures.mode [api.StructuralSignatures.mode]
-
-Read StructuralSignatures mode.
-
-StructuralSignatures.mode [property]
-
-When to use: Read StructuralSignatures mode.
-
-Returns: Bounded summary, Frame or domain result.
-
-Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-See also: concept.identity, recipe.roles
-
-## api.StructuralSignatures.rows
-
-StructuralSignatures.rows [api.StructuralSignatures.rows]
-
-Read StructuralSignatures rows.
-
-StructuralSignatures.rows [property]
-
-When to use: Read StructuralSignatures rows.
-
-Returns: Bounded summary, Frame or domain result.
-
-Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-See also: concept.identity, recipe.roles
-
-## api.StructuralSignatures.vars
-
-StructuralSignatures.vars [api.StructuralSignatures.vars]
-
-Read StructuralSignatures vars.
-
-StructuralSignatures.vars [property]
-
-When to use: Read StructuralSignatures vars.
-
-Returns: Bounded summary, Frame or domain result.
-
-Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-See also: concept.identity, recipe.roles
-
-## api.StructuralSignatures.row_families
-
-StructuralSignatures.row_families [api.StructuralSignatures.row_families]
-
-Read StructuralSignatures row_families.
-
-StructuralSignatures.row_families(depth=None)
-
-When to use: Read StructuralSignatures row_families.
-
-Returns: Bounded summary, Frame or domain result.
-
-Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-See also: concept.identity, recipe.roles
-
-## api.StructuralSignatures.var_families
-
-StructuralSignatures.var_families [api.StructuralSignatures.var_families]
-
-Read StructuralSignatures var_families.
-
-StructuralSignatures.var_families(depth=None)
-
-When to use: Read StructuralSignatures var_families.
-
-Returns: Bounded summary, Frame or domain result.
-
-Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-See also: concept.identity, recipe.roles
-
-## api.StructuralSignatures.family
-
-StructuralSignatures.family [api.StructuralSignatures.family]
-
-Read StructuralSignatures family.
-
-StructuralSignatures.family(label, *, depth=None)
-
-When to use: Read StructuralSignatures family.
-
-Returns: Bounded summary, Frame or domain result.
-
-Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-See also: concept.identity, recipe.roles
-
-## api.StructuralSignatures.summary
-
-StructuralSignatures.summary [api.StructuralSignatures.summary]
-
-Read StructuralSignatures summary.
-
-StructuralSignatures.summary(depth=None, *, max_families=15, max_splits=5)
-
-When to use: Read StructuralSignatures summary.
-
-Returns: Bounded summary, Frame or domain result.
-
-Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-See also: concept.identity, recipe.roles
-
-## api.StructuralSignatures.splits
-
-StructuralSignatures.splits [api.StructuralSignatures.splits]
-
-Read StructuralSignatures splits.
-
-StructuralSignatures.splits(*, depth=None, from_depth=None, kind='row')
-
-When to use: Read StructuralSignatures splits.
-
-Returns: Bounded summary, Frame or domain result.
-
-Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-See also: concept.identity, recipe.roles
-
-## api.StructuralConstraintFamily
-
-StructuralConstraintFamily [api.StructuralConstraintFamily]
-
-Read-only StructuralConstraintFamily domain facade.
-
-StructuralConstraintFamily [type]
-
-When to use: Read-only StructuralConstraintFamily domain facade.
-
-Returns: Obtain from the corresponding Model analysis or lineage property.
-
-Does not establish: No model change or additional mathematical conclusion is implied.
-
-See also: concept.identity
-
-## api.StructuralConstraintFamily.rows
-
-StructuralConstraintFamily.rows [api.StructuralConstraintFamily.rows]
-
-Read StructuralConstraintFamily rows.
-
-StructuralConstraintFamily.rows [property]
-
-When to use: Read StructuralConstraintFamily rows.
-
-Returns: Bounded summary, Frame or domain result.
-
-Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-See also: concept.identity, recipe.roles
-
-## api.StructuralConstraintFamily.params
-
-StructuralConstraintFamily.params [api.StructuralConstraintFamily.params]
-
-Inspect observed signed-role coefficient parameters, distinct values and ranges.
-
-StructuralConstraintFamily.params [property]
-
-When to use: Inspect observed signed-role coefficient parameters, distinct values and ranges.
-
-Returns: Bounded summary, Frame or domain result.
-
-Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-See also: concept.identity, recipe.roles
-
-## api.StructuralConstraintFamily.inspect
-
-StructuralConstraintFamily.inspect [api.StructuralConstraintFamily.inspect]
-
-Display bounded family details, including changing numeric roles.
-
-StructuralConstraintFamily.inspect(*, verbose=False, samples=3, sample_formula='auto', max_terms=12)
-
-When to use: Display bounded family details, including changing numeric roles.
-
-Returns: Bounded summary, Frame or domain result.
-
-Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-See also: concept.identity, recipe.roles
-
-## api.VariableFamily
-
-VariableFamily [api.VariableFamily]
-
-Read-only VariableFamily domain facade.
-
-VariableFamily [type]
-
-When to use: Read-only VariableFamily domain facade.
-
-Returns: Obtain from the corresponding Model analysis or lineage property.
-
-Does not establish: No model change or additional mathematical conclusion is implied.
-
-See also: concept.identity
-
-## api.VariableFamily.vars
-
-VariableFamily.vars [api.VariableFamily.vars]
-
-Read VariableFamily vars.
-
-VariableFamily.vars [property]
-
-When to use: Read VariableFamily vars.
-
-Returns: Bounded summary, Frame or domain result.
-
-Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-See also: concept.identity, recipe.roles
-
-## api.VariableFamily.params
-
-VariableFamily.params [api.VariableFamily.params]
-
-Inspect observed signed-role coefficient parameters, distinct values and ranges.
-
-VariableFamily.params [property]
-
-When to use: Inspect observed signed-role coefficient parameters, distinct values and ranges.
-
-Returns: Bounded summary, Frame or domain result.
-
-Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-See also: concept.identity, recipe.roles
-
-## api.VariableFamily.inspect
-
-VariableFamily.inspect [api.VariableFamily.inspect]
-
-Display bounded family details, including changing numeric roles.
-
-VariableFamily.inspect(*, verbose=False, samples=3, sample_formula='auto', max_terms=12)
-
-When to use: Display bounded family details, including changing numeric roles.
-
-Returns: Bounded summary, Frame or domain result.
-
-Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-See also: concept.identity, recipe.roles
 
 ## api.Lineage
 
@@ -6146,62 +5562,6 @@ Establishes: No model data reads or side effects; unrecognized APIs are not inve
 Does not establish: No model change or additional mathematical conclusion is implied.
 
 See also: home, skill
-
-## api.AlgebraicSignature
-
-AlgebraicSignature [api.AlgebraicSignature]
-
-Canonical exact single-row coefficient pattern, distinct from the original row formula.
-
-AlgebraicSignature [type]
-
-When to use: Canonical exact single-row coefficient pattern, distinct from the original row formula.
-
-Does not establish: A signature, name or draft identity does not establish a model equivalence.
-
-See also: concept.frame, concept.identity
-
-## api.TypedSignature
-
-TypedSignature [api.TypedSignature]
-
-Single-row pattern with variable-domain observations.
-
-TypedSignature [type]
-
-When to use: Single-row pattern with variable-domain observations.
-
-Does not establish: A signature, name or draft identity does not establish a model equivalence.
-
-See also: concept.frame, concept.identity
-
-## api.StructuralSignature
-
-StructuralSignature [api.StructuralSignature]
-
-One entity role in a bound structural refinement configuration.
-
-StructuralSignature [type]
-
-When to use: One entity role in a bound structural refinement configuration.
-
-Does not establish: A signature, name or draft identity does not establish a model equivalence.
-
-See also: concept.frame, concept.identity
-
-## api.ConstraintFamily
-
-ConstraintFamily [api.ConstraintFamily]
-
-Read-only family facade with explicit original members.
-
-ConstraintFamily [type]
-
-When to use: Read-only family facade with explicit original members.
-
-Does not establish: A signature, name or draft identity does not establish a model equivalence.
-
-See also: concept.frame, concept.identity
 
 ## api.NameIndex
 
@@ -6563,16 +5923,194 @@ Does not establish: No model change or additional mathematical conclusion is imp
 
 See also: api.ops.graph.topological_order
 
-## api.ValidationReport
+## api.Model.families
 
-ValidationReport [api.ValidationReport]
+Model.families [api.Model.families]
 
-Compatibility name for the same Report implementation.
+Inspect template structural family directories and their members.
 
-ValidationReport [type]
+Model.families(*, kind='row', depth=2, **options)
 
-When to use: Compatibility name for the same Report implementation.
+When to use: Inspect template structural family directories and their members.
 
-Does not establish: No model change or additional mathematical conclusion is implied.
+Returns: Frame; kind=row or var, depth=2 by default.
 
-See also: concept.proofs
+Establishes: Snapshot and analysis configuration remain bound. Family and indexed views share storage; original mathematical facts remain accessible through entity members.
+
+Does not establish: A repeated structure is an observation, not symmetry, redundancy, coordinates or a mathematical proof.
+
+See also: concept.families, concept.frame, recipe.roles
+
+## api.Model.family
+
+Model.family [api.Model.family]
+
+Select one template family by F/V label and explicit depth.
+
+Model.family(label, *, depth=None, **options)
+
+When to use: Select one template family by F/V label and explicit depth.
+
+Returns: Exactly one-row Frame; unknown labels raise KeyError, conflicting depths raise ValueError.
+
+Establishes: Snapshot and analysis configuration remain bound. Family and indexed views share storage; original mathematical facts remain accessible through entity members.
+
+Does not establish: A repeated structure is an observation, not symmetry, redundancy, coordinates or a mathematical proof.
+
+See also: concept.families, concept.frame, recipe.roles
+
+## api.Model.refinement
+
+Model.refinement [api.Model.refinement]
+
+Inspect parent/child family transitions, including unchanged groups.
+
+Model.refinement(start=1, stop=2, *, kind='row', entities=None, **options)
+
+When to use: Inspect parent/child family transitions, including unchanged groups.
+
+Returns: Frame with selected/global counts and related before/after directories.
+
+Establishes: Snapshot and analysis configuration remain bound. Family and indexed views share storage; original mathematical facts remain accessible through entity members.
+
+Does not establish: A repeated structure is an observation, not symmetry, redundancy, coordinates or a mathematical proof.
+
+See also: concept.families, concept.frame, recipe.roles
+
+## api.Model.indexed
+
+Model.indexed [api.Model.indexed]
+
+Retrieve or discover indexed coordinates with explicit structural configuration.
+
+Model.indexed(*, rows=None, vars=None, depth=2, method='template', memory_mb=128, **options)
+
+When to use: Retrieve or discover indexed coordinates with explicit structural configuration.
+
+Returns: IndexedResult; cached full-model results are reused.
+
+Establishes: Snapshot and analysis configuration remain bound. Family and indexed views share storage; original mathematical facts remain accessible through entity members.
+
+Does not establish: A repeated structure is an observation, not symmetry, redundancy, coordinates or a mathematical proof.
+
+See also: concept.families, concept.frame, recipe.roles
+
+## api.Frame.related
+
+Frame.related [api.Frame.related]
+
+Navigate a declared relation using the current selected keys.
+
+Frame.related(name)
+
+When to use: Navigate a declared relation using the current selected keys.
+
+Returns: Frame, RowFrame or VarFrame according to the relation declaration.
+
+Establishes: Snapshot and analysis configuration remain bound. Family and indexed views share storage; original mathematical facts remain accessible through entity members.
+
+Does not establish: A repeated structure is an observation, not symmetry, redundancy, coordinates or a mathematical proof.
+
+See also: concept.families, concept.frame, recipe.roles
+
+## api.Frame.rows
+
+Frame.rows [api.Frame.rows]
+
+Read declared row members of the current family or indexed selection.
+
+Frame.rows [property]
+
+When to use: Read declared row members of the current family or indexed selection.
+
+Returns: Deduplicated RowFrame; selections without a declared row-member axis reject access.
+
+Establishes: Snapshot and analysis configuration remain bound. Family and indexed views share storage; original mathematical facts remain accessible through entity members.
+
+Does not establish: A repeated structure is an observation, not symmetry, redundancy, coordinates or a mathematical proof.
+
+See also: concept.families, concept.frame, recipe.roles
+
+## api.Frame.vars
+
+Frame.vars [api.Frame.vars]
+
+Read declared variable members of the current family or indexed selection.
+
+Frame.vars [property]
+
+When to use: Read declared variable members of the current family or indexed selection.
+
+Returns: Deduplicated VarFrame; selections without a declared variable-member axis reject access.
+
+Establishes: Snapshot and analysis configuration remain bound. Family and indexed views share storage; original mathematical facts remain accessible through entity members.
+
+Does not establish: A repeated structure is an observation, not symmetry, redundancy, coordinates or a mathematical proof.
+
+See also: concept.families, concept.frame, recipe.roles
+
+## api.Frame.inspect
+
+Frame.inspect [api.Frame.inspect]
+
+Render a bounded table or provider-specific family/indexed details.
+
+Frame.inspect(*, verbose=False, samples=3, sample_formula='auto', max_terms=12, max_items=15, max_splits=5)
+
+When to use: Render a bounded table or provider-specific family/indexed details.
+
+Returns: String; verbose includes all-orientation diagnostics as bounded previews.
+
+Establishes: Snapshot and analysis configuration remain bound. Family and indexed views share storage; original mathematical facts remain accessible through entity members.
+
+Does not establish: A repeated structure is an observation, not symmetry, redundancy, coordinates or a mathematical proof.
+
+max_items bounds the preview for every Frame. Family views also support max_splits, samples, sample_formula, max_terms and verbose; indexed views support max_items and verbose. Unsupported non-default display options raise ValueError.
+
+See also: concept.families, concept.frame, recipe.roles
+
+## api.analysis.families
+
+analysis.families [api.analysis.families]
+
+Group entities with an explicit advanced feature rule.
+
+analysis.families(entities, *, method, depth=None, **options)
+
+When to use: Group entities with an explicit advanced feature rule.
+
+Returns: Frame with global identities and selected member counts.
+
+Establishes: Snapshot and analysis configuration remain bound. Family and indexed views share storage; original mathematical facts remain accessible through entity members.
+
+Does not establish: A repeated structure is an observation, not symmetry, redundancy, coordinates or a mathematical proof.
+
+See also: concept.families, concept.frame, recipe.roles
+
+## api.analysis.signatures
+
+analysis.signatures [api.analysis.signatures]
+
+Read exact entity features, patterns and structural levels.
+
+analysis.signatures(entities, *, method, depth=None, **options)
+
+When to use: Read exact entity features, patterns and structural levels.
+
+Returns: Frame; one Row input produces one row, never a Signature object.
+
+Establishes: Snapshot and analysis configuration remain bound. Family and indexed views share storage; original mathematical facts remain accessible through entity members.
+
+Does not establish: A repeated structure is an observation, not symmetry, redundancy, coordinates or a mathematical proof.
+
+See also: concept.families, concept.frame, recipe.roles
+
+## api.analysis
+
+Advanced feature analysis [api.analysis]
+
+Explicit feature rules returning Frames.
+
+Use analysis.families or analysis.signatures with an explicit method. The Model family methods default to template structural.
+
+See also: api.analysis.families, api.analysis.signatures, concept.families

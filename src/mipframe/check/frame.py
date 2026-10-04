@@ -16,13 +16,13 @@ from mipframe.frame.materialized import stored_frame
 
 
 def report(ctx, rows, schema, summary, *, relations=None):
-    from mipframe.check.report import ValidationReport
+    from mipframe.check.report import Report
 
     table = ctx.table(schema)
     ctx.append(table, schema, rows)
     total = ctx.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
     violations = stored_frame(ctx, table, schema, relations=relations)
-    return ValidationReport(
+    return Report(
         ctx, total == 0, dict(summary, violations=total), violations
     )
 
@@ -80,18 +80,15 @@ def join_failure(frame, ctx, lt, ls, rt, rs, pairs, card, require, match):
     return CardinalityError("Join cardinality or match requirement failed", checked)
 
 
-def project(source, bindings, *, exactly_one=True, memory_mb=128):
+def project(source, bindings, *, memory_mb=128):
     from mipframe.store.incidence import Target
-    from mipframe.store.incidence import IncidenceCollection
     from mipframe.store.query_store import QueryStore
     from mipframe.store.query_store import memory_bytes
     from mipframe.check.report import CardinalityError
-    from mipframe.check.report import ValidationReport
+    from mipframe.check.report import Report
     from mipframe.frame.adapters import sql_frame
 
     memory_bytes(memory_mb)
-    if exactly_one is not True:
-        raise ValueError("Only exactly_one=True is supported")
     if not bindings:
         raise ValueError("Specify at least one projection column")
     axis = source._entity_axis
@@ -134,13 +131,12 @@ def project(source, bindings, *, exactly_one=True, memory_mb=128):
             bad = store.table(
                 "ordinal INTEGER PRIMARY KEY, source_id INTEGER, column_name TEXT, count INTEGER"
             )
-            relation = IncidenceCollection(source)
             block = max(1, store.memory // max(256, 64 * width))
             source_count = 0
             for ident in source.ids:
                 source_count += 1
                 counts, values = [0] * width, [None] * width
-                for ids, _ in relation._blocks(ident, block):
+                for ids, _ in source._owner.model.sparse.blocks(axis, ident, block):
                     for i, target in enumerate(prepared.values()):
                         matched = ids[target.mask(ids)]
                         counts[i] += len(matched)
@@ -183,7 +179,7 @@ def project(source, bindings, *, exactly_one=True, memory_mb=128):
                         f"SELECT source_id,column_name FROM {bad} ORDER BY ordinal"
                     ):
                         target = prepared[name]
-                        for ids, positions in relation._blocks(ident, block):
+                        for ids, positions in source._owner.model.sparse.blocks(axis, ident, block):
                             keep = target.mask(ids)
                             for other, pos in zip(ids[keep], positions[keep]):
                                 values = {
@@ -201,11 +197,11 @@ def project(source, bindings, *, exactly_one=True, memory_mb=128):
                     models=merge_models(source, *targets.values()),
                     source=matches,
                 )
-                match_frame._resource = store
+                match_frame._query.resource = store
                 violations._relations = __import__("types").MappingProxyType(
                     {"matches": match_frame, "sources": source}
                 )
-                checked = ValidationReport(
+                checked = Report(
                     store,
                     False,
                     dict(
@@ -252,7 +248,7 @@ def project(source, bindings, *, exactly_one=True, memory_mb=128):
         domains=targets,
         relations={"sources": source},
     )
-    result._source_spec = {"kind": "project", "source": source, "bindings": targets}
+    result._query.spec = {"kind": "project", "source": source, "bindings": targets}
     result._params = {"barrier": True}
     return result
 

@@ -1,30 +1,16 @@
-"""Shared reports and integer pattern aggregation for the Frame executor."""
+"""Immutable assertion reports and mathematical certificates."""
 
 from mipframe._help.diagnostics import hint as _help_hint
 
-import numpy as np
-from types import SimpleNamespace
 from mipframe.store.numbers import MIPFrameError
-from mipframe.store.query_store import QueryStore
-from mipframe.store.query_store import SQLIndex
 
 
 class CardinalityError(MIPFrameError):
     """
     MIPFRAME HELP BEGIN
-    CardinalityError [api.CardinalityError]
-
     Diagnostic exception; inspect original message and any attached complete Report.
 
-    CardinalityError [type]
-
-    When to use: Diagnostic exception; inspect original message and any attached complete Report.
-
-    Returns: Exception type, not a mathematical result.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: error.join
+    Full contract: mf.help("api.CardinalityError")
     MIPFRAME HELP END
     """
     def __init__(self, message, report=None):
@@ -35,19 +21,9 @@ class CardinalityError(MIPFrameError):
 class ValidationError(MIPFrameError):
     """
     MIPFRAME HELP BEGIN
-    ValidationError [api.ValidationError]
-
     Diagnostic exception; inspect original message and any attached complete Report.
 
-    ValidationError [type]
-
-    When to use: Diagnostic exception; inspect original message and any attached complete Report.
-
-    Returns: Exception type, not a mathematical result.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.proofs
+    Full contract: mf.help("api.ValidationError")
     MIPFRAME HELP END
     """
     def __init__(self, report):
@@ -55,52 +31,14 @@ class ValidationError(MIPFrameError):
         self.report = report
 
 
-def setup(relation, memory_mb):
-    store = QueryStore(relation._owner, memory_mb)
-    try:
-        if hasattr(relation, "_ensure"):
-            relation._ensure(store)
-        filters = tuple(
-            (target.prepared(store), exclude) for target, exclude in relation._filters
-        )
-        return store, filters, max(1, store.memory // 256)
-    except BaseException:
-        store.close()
-        raise
-
-
-def source_index(relation, store):
-    """Deduplicate arbitrary source selections within this query's own budget."""
-    if hasattr(relation, "ident"):
-        return (relation.ident,)
-    index = relation._frame.ids
-    if isinstance(index, range) or getattr(index, "unique", False):
-        return index
-    table = store.table("ordinal INTEGER PRIMARY KEY,id INTEGER UNIQUE")
-    store.db.executemany(
-        f"INSERT OR IGNORE INTO {table}(id) VALUES(?)", ((int(i),) for i in index)
-    )
-    return SQLIndex(store, f"SELECT id FROM {table} ORDER BY ordinal", unique=True)
-
-
 class Report:
     """
     One live immutable report for data assertions and mathematical certificates.
 
     MIPFRAME HELP BEGIN
-    Report [api.Report]
-
     Immutable checker outcome with scope, dependencies and complete pageable evidence.
 
-    Report [type]
-
-    When to use: Immutable checker outcome with scope, dependencies and complete pageable evidence.
-
-    Returns: A public domain type. Obtain live handles through their owning Model or query.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.proofs
+    Full contract: mf.help("api.Report")
     MIPFRAME HELP END
     """
 
@@ -167,19 +105,9 @@ class Report:
     def status(self):
         """
         MIPFRAME HELP BEGIN
-        Report.status [api.Report.status]
-
         Read report status with the original conclusion and scope.
 
-        Report.status [property]
-
-        When to use: Read report status with the original conclusion and scope.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.proofs
+        Full contract: mf.help("api.Report.status")
         MIPFRAME HELP END
         """
         self._guard()
@@ -189,19 +117,9 @@ class Report:
     def ok(self):
         """
         MIPFRAME HELP BEGIN
-        Report.ok [api.Report.ok]
-
         Read report ok with the original conclusion and scope.
 
-        Report.ok [property]
-
-        When to use: Read report ok with the original conclusion and scope.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.proofs
+        Full contract: mf.help("api.Report.ok")
         MIPFRAME HELP END
         """
         return self.status == "PROVED"
@@ -210,19 +128,9 @@ class Report:
     def summary(self):
         """
         MIPFRAME HELP BEGIN
-        Report.summary [api.Report.summary]
-
         Read report summary with the original conclusion and scope.
 
-        Report.summary [property]
-
-        When to use: Read report summary with the original conclusion and scope.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.proofs
+        Full contract: mf.help("api.Report.summary")
         MIPFRAME HELP END
         """
         from copy import deepcopy
@@ -234,19 +142,9 @@ class Report:
     def scope(self):
         """
         MIPFRAME HELP BEGIN
-        Report.scope [api.Report.scope]
-
         Read report scope with the original conclusion and scope.
 
-        Report.scope [property]
-
-        When to use: Read report scope with the original conclusion and scope.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.proofs
+        Full contract: mf.help("api.Report.scope")
         MIPFRAME HELP END
         """
         from copy import deepcopy
@@ -258,19 +156,9 @@ class Report:
     def conclusion(self):
         """
         MIPFRAME HELP BEGIN
-        Report.conclusion [api.Report.conclusion]
-
         Read report conclusion with the original conclusion and scope.
 
-        Report.conclusion [property]
-
-        When to use: Read report conclusion with the original conclusion and scope.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.proofs
+        Full contract: mf.help("api.Report.conclusion")
         MIPFRAME HELP END
         """
         from copy import deepcopy
@@ -286,19 +174,9 @@ class Report:
     def method(self):
         """
         MIPFRAME HELP BEGIN
-        Report.method [api.Report.method]
-
         Read report method with the original conclusion and scope.
 
-        Report.method [property]
-
-        When to use: Read report method with the original conclusion and scope.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.proofs
+        Full contract: mf.help("api.Report.method")
         MIPFRAME HELP END
         """
         self._guard()
@@ -308,19 +186,9 @@ class Report:
     def violations(self):
         """
         MIPFRAME HELP BEGIN
-        Report.violations [api.Report.violations]
-
         Read report violations with the original conclusion and scope.
 
-        Report.violations [property]
-
-        When to use: Read report violations with the original conclusion and scope.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.proofs
+        Full contract: mf.help("api.Report.violations")
         MIPFRAME HELP END
         """
         self._guard()
@@ -330,19 +198,9 @@ class Report:
     def evidence(self):
         """
         MIPFRAME HELP BEGIN
-        Report.evidence [api.Report.evidence]
-
         Read report evidence with the original conclusion and scope.
 
-        Report.evidence [property]
-
-        When to use: Read report evidence with the original conclusion and scope.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.proofs
+        Full contract: mf.help("api.Report.evidence")
         MIPFRAME HELP END
         """
         self._guard()
@@ -366,19 +224,9 @@ class Report:
     def dependencies(self):
         """
         MIPFRAME HELP BEGIN
-        Report.dependencies [api.Report.dependencies]
-
         Read report dependencies with the original conclusion and scope.
 
-        Report.dependencies [property]
-
-        When to use: Read report dependencies with the original conclusion and scope.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.proofs
+        Full contract: mf.help("api.Report.dependencies")
         MIPFRAME HELP END
         """
         self._guard()
@@ -388,19 +236,9 @@ class Report:
     def counterexample(self):
         """
         MIPFRAME HELP BEGIN
-        Report.counterexample [api.Report.counterexample]
-
         Read report counterexample with the original conclusion and scope.
 
-        Report.counterexample [property]
-
-        When to use: Read report counterexample with the original conclusion and scope.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.proofs
+        Full contract: mf.help("api.Report.counterexample")
         MIPFRAME HELP END
         """
         self._guard()
@@ -414,19 +252,9 @@ class Report:
     def require(self):
         """
         MIPFRAME HELP BEGIN
-        Report.require [api.Report.require]
-
         Raise ValidationError carrying this report unless status is PROVED.
 
-        Report.require()
-
-        When to use: Raise ValidationError carrying this report unless status is PROVED.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.proofs
+        Full contract: mf.help("api.Report.require")
         MIPFRAME HELP END
         """
         if not self.ok:
@@ -436,19 +264,9 @@ class Report:
     def explain(self):
         """
         MIPFRAME HELP BEGIN
-        Report.explain [api.Report.explain]
-
         Read report explain with the original conclusion and scope.
 
-        Report.explain()
-
-        When to use: Read report explain with the original conclusion and scope.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.proofs
+        Full contract: mf.help("api.Report.explain")
         MIPFRAME HELP END
         """
         from mipframe.frame.row import Formula
@@ -467,19 +285,9 @@ class Report:
     def for_target(self, key):
         """
         MIPFRAME HELP BEGIN
-        Report.for_target [api.Report.for_target]
-
         Select one conclusion from a batch Report, retaining shared evidence storage.
 
-        Report.for_target(key)
-
-        When to use: Select one conclusion from a batch Report, retaining shared evidence storage.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.proofs
+        Full contract: mf.help("api.Report.for_target")
         MIPFRAME HELP END
         """
         self._guard()
@@ -489,19 +297,9 @@ class Report:
     def to_spec(self):
         """
         MIPFRAME HELP BEGIN
-        Report.to_spec [api.Report.to_spec]
-
         Read report to_spec with the original conclusion and scope.
 
-        Report.to_spec()
-
-        When to use: Read report to_spec with the original conclusion and scope.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.proofs
+        Full contract: mf.help("api.Report.to_spec")
         MIPFRAME HELP END
         """
         from mipframe.check.serialization import report_spec
@@ -511,19 +309,9 @@ class Report:
     def write(self, path):
         """
         MIPFRAME HELP BEGIN
-        Report.write [api.Report.write]
-
         Atomically export the exact certificate package, not the whole model.
 
-        Report.write(path)
-
-        When to use: Atomically export the exact certificate package, not the whole model.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.proofs
+        Full contract: mf.help("api.Report.write")
         MIPFRAME HELP END
         """
         from mipframe.check.serialization import write_report
@@ -536,19 +324,9 @@ class Report:
     ):
         """
         MIPFRAME HELP BEGIN
-        Report.replay [api.Report.replay]
-
         Bind dependencies and rerun certificate verification; never trust saved status.
 
-        Report.replay(spec_or_path, *, models, relations=None, memory_mb=128, disk_mb=None)
-
-        When to use: Bind dependencies and rerun certificate verification; never trust saved status.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.proofs
+        Full contract: mf.help("api.Report.replay")
         MIPFRAME HELP END
         """
         from mipframe.check.serialization import replay
@@ -586,119 +364,3 @@ class Report:
 
     def _repr_pretty_(self, printer, cycle):
         printer.text(repr(self))
-
-
-ValidationReport = Report
-
-
-def family_counts(relation, depth, memory_mb, *, patterns):
-    from mipframe.store.incidence import default_depth
-
-    store, filters, block = setup(relation, memory_mb)
-    try:
-        owner, kind = relation._owner, relation.target_kind
-        depth = default_depth(owner, kind) if depth is None else depth
-        if type(depth) is not int or depth < 0:
-            raise ValueError("depth must be a nonnegative integer")
-        result = owner.ir._result
-        result._check_depth(depth)
-        colors = result._store.array(result._config, kind, depth)
-        families = (
-            result._row_families(depth)
-            if kind == "row"
-            else result._var_families(depth)
-        )
-        # Store canonical display ordinals, not text labels, in aggregation keys.
-        family_db = families._store.db
-
-        def ordinal(color):
-            return (
-                int(color)
-                if kind == "var"
-                else family_db.execute(
-                    "SELECT position FROM families WHERE color=?", (int(color),)
-                ).fetchone()[0]
-            )
-
-        def label(code):
-            owner.model
-            return f"{'F' if kind == 'row' else 'V'}{code}"
-
-        work = store.table("color INTEGER PRIMARY KEY, n INTEGER")
-        nodes = (
-            store.table(
-                "node INTEGER PRIMARY KEY,parent INTEGER,color INTEGER,n INTEGER,UNIQUE(parent,color,n)"
-            )
-            if patterns
-            else None
-        )
-        members = (
-            store.table("ordinal INTEGER PRIMARY KEY,id INTEGER UNIQUE,node INTEGER")
-            if patterns
-            else None
-        )
-        for source in source_index(relation, store):
-            if patterns:
-                store.execute(f"DELETE FROM {work}")
-            for ids, _ in relation._blocks(source, block, filters):
-                values, amounts = np.unique(colors[ids], return_counts=True)
-                store.db.executemany(
-                    f"INSERT INTO {work} VALUES(?,?) ON CONFLICT(color) DO UPDATE SET n=n+excluded.n",
-                    ((ordinal(c), int(n)) for c, n in zip(values, amounts)),
-                )
-            if patterns:
-                parent = 0
-                for color, n in store.execute(
-                    f"SELECT color,n FROM {work} ORDER BY color"
-                ):
-                    store.execute(
-                        f"INSERT OR IGNORE INTO {nodes}(parent,color,n) VALUES(?,?,?)",
-                        (parent, color, n),
-                    )
-                    parent = store.execute(
-                        f"SELECT node FROM {nodes} WHERE parent=? AND color=? AND n=?",
-                        (parent, color, n),
-                    ).fetchone()[0]
-                store.execute(
-                    f"INSERT INTO {members}(id,node) VALUES(?,?)", (int(source), parent)
-                )
-        if not patterns:
-            raise ValueError("Edge frequencies use Terms joined to family_membership")
-        # Lexicographic trie walk assigns a bounded-memory, exact pattern order.
-        store.execute(f"CREATE INDEX {nodes}_parent ON {nodes}(parent,color,n)")
-        order = store.table("node INTEGER PRIMARY KEY, rank INTEGER")
-        stack = store.table(
-            "level INTEGER PRIMARY KEY,node INTEGER,color INTEGER,n INTEGER"
-        )
-        store.execute(f"INSERT INTO {stack} VALUES(0,0,-1,-1)")
-        rank, level = 0, 0
-        store.execute(f"INSERT INTO {order} VALUES(0,0)")
-        while level >= 0:
-            parent, color, n = store.execute(
-                f"SELECT node,color,n FROM {stack} WHERE level=?", (level,)
-            ).fetchone()
-            child = store.execute(
-                f"SELECT node,color,n FROM {nodes} WHERE parent=? AND (color,n)>(?,?) ORDER BY color,n LIMIT 1",
-                (parent, color, n),
-            ).fetchone()
-            if child is None:
-                store.execute(f"DELETE FROM {stack} WHERE level=?", (level,))
-                level -= 1
-            else:
-                rank += 1
-                store.execute(
-                    f"UPDATE {stack} SET color=?,n=? WHERE level=?", (*child[1:], level)
-                )
-                store.execute(f"INSERT INTO {order} VALUES(?,?)", (child[0], rank))
-                level += 1
-                store.execute(
-                    f"INSERT INTO {stack} VALUES(?,?, -1,-1)", (level, child[0])
-                )
-        store.execute(f"CREATE INDEX {members}_node ON {members}(node,ordinal)")
-        query = f"SELECT m.node,count(*) AS count FROM {members} m JOIN {order} o USING(node) GROUP BY m.node ORDER BY count DESC,o.rank"
-        return SimpleNamespace(
-            _store=store, _nodes=nodes, _members=members, _query=query, depth=depth
-        )
-    except BaseException:
-        store.close()
-        raise

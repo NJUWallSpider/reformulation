@@ -13,7 +13,7 @@ from mipframe.frame.schema import encode
 from mipframe.edit.plan import num
 
 
-def build(edit, p, allow_infeasible):
+def build(edit, p, allow_infeasible, *, prepare="logical"):
     from mipframe.model import Model
 
     temp = TemporaryDirectory(prefix="mipframe-edit-")
@@ -131,8 +131,10 @@ def build(edit, p, allow_infeasible):
         dump(out / "manifest.json", manifest)
         edit._store.disk_check()
         store = NumericalStore(out)
-        target = Model._from_store(store, temp, memory_mb=edit.memory_mb)
+        target = Model._from_store(store, temp, memory_mb=edit.memory_mb, prepare=prepare)
         store = None
+        from mipframe.edit.verified import remember
+        remember(target, edit._owner, p, memory_mb=edit.memory_mb, disk_mb=edit.disk_mb)
         edit._store.disk_check()
         return target
     except BaseException:

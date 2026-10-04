@@ -3,7 +3,7 @@
 from mipframe.store.algorithm_store import KeyIndex, key_column
 from mipframe.frame.schema import SchemaError, DType
 from mipframe.check.algorithm import GraphCycleError
-from mipframe.check.report import ValidationReport
+from mipframe.check.report import Report
 
 
 class Graph:
@@ -205,7 +205,7 @@ def cycle_error(graph, error=GraphCycleError):
         relations={"witness": witness},
         limited=False,
     )
-    report = ValidationReport(
+    report = Report(
         ctx,
         False,
         {

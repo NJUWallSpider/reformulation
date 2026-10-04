@@ -2,6 +2,7 @@
 
 import atexit
 import sys
+import weakref
 
 
 _pending = {}
@@ -17,6 +18,38 @@ def retry_cleanup():
 
 
 atexit.register(retry_cleanup)
+
+
+def register(owner, resource):
+    if not hasattr(owner, '_query_stores'):
+        owner._query_stores = weakref.WeakSet()
+    owner._query_stores.add(resource)
+
+
+def release_all(actions):
+    """Attempt every release; preserve an active error and annotate cleanup errors."""
+    active = sys.exception()
+    errors = []
+    for action in actions:
+        try:
+            action()
+        except Exception as error:
+            errors.append(error)
+    if errors:
+        primary = active or errors.pop(0)
+        for error in errors:
+            primary.add_note(f'Resource cleanup also failed: {error}')
+        if active is None:
+            raise primary
+
+
+def cleanup_directory(temp):
+    if temp is not None:
+        try:
+            temp.cleanup()
+        except OSError:
+            _pending[temp.name] = temp
+            raise
 
 
 def close_connection(store):

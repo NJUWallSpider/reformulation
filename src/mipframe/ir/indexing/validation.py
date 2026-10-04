@@ -15,30 +15,30 @@ def validate(result, spec):
     if kind == "indexed_operator":
         candidate = spec.get("candidate")
         card = (
-            candidate["operator"]
+            candidate.operator
             if candidate
-            else result.operator(spec["id"]).to_record()
+            else result._card("operators", spec["id"])
         )
         errors = check_operator(
             s,
             card,
-            kernel=candidate["kernel"] if candidate else spec.get("kernel"),
-            rows=candidate["rows"] if candidate else spec.get("rows"),
-            coordinates=candidate["coordinates"] if candidate else None,
+            kernel=candidate.kernel if candidate else spec.get("kernel"),
+            rows=candidate.rows if candidate else spec.get("rows"),
+            coordinates=candidate.coordinates if candidate else None,
             ast=spec.get("ast"),
         )
         return report(s, errors, operation=kind, checked_rows=card["rows"])
     if kind == "cartesian" and "partitions" in spec:
         return explicit_cartesian(result, spec)
     if kind == "cartesian":
-        t = result.tensor(spec["id"])
+        t = result._card("tensors", spec["id"])
         if "coordinates" not in spec:
-            p = t.coordinates
+            p = result.tensor(t["id"]).related("coordinates")
             answer = p.check("unique", ("i", "j"))
             # Check each recorded coordinate is an actual edge in both declared axes.
             m = s.owner.model
             for v, i, j in s.execute(
-                "SELECT v,i,j FROM coordinates WHERE t=?", (t.id,)
+                "SELECT v,i,j FROM coordinates WHERE t=?", (t["id"],)
             ):
                 for r in (i, j):
                     import numpy as np
@@ -62,9 +62,9 @@ def validate(result, spec):
                 s,
                 errors,
                 operation=kind,
-                complete_product=t.complete_product,
+                complete_product=t["complete_product"],
                 checked_variables=len(p),
-                missing_cells=t.missing_cells,
+                missing_cells=t["missing_cells"],
             )
         table = s.table("v INTEGER PRIMARY KEY,a INTEGER,b INTEGER,UNIQUE(a,b)")
         try:
@@ -78,7 +78,7 @@ def validate(result, spec):
                     f"SELECT v,a,b FROM {table} EXCEPT SELECT v,a,b FROM coordinates WHERE t=?",
                     f"SELECT v,a,b FROM coordinates WHERE t=? EXCEPT SELECT v,a,b FROM {table}",
                 ):
-                    if s.db.execute(query + " LIMIT 1", (t.id,)).fetchone():
+                    if s.db.execute(query + " LIMIT 1", (t["id"],)).fetchone():
                         errors.append(
                             dict(reason="coordinate universe or mapping mismatch")
                         )
@@ -86,17 +86,17 @@ def validate(result, spec):
             except (sqlite3.IntegrityError, KeyError):
                 errors.append(dict(reason="duplicate or invalid coordinate"))
             return report(
-                s, errors, operation=kind, complete_product=t.complete_product
+                s, errors, operation=kind, complete_product=t["complete_product"]
             )
         finally:
             s.discard(table)
     if kind == "indexed_partition":
         if "sets" not in spec:
-            card = result.partition(spec["id"])
+            card = result._card("partitions", spec["id"])
             from mipframe.ir.indexing.discovery import partition
 
             ok, _, _ = partition(
-                s, result.id, card.g, card.rows_domain, card.vars_domain
+                s, result.id, card["g"], card["rows_domain"], card["vars_domain"]
             )
             return report(
                 s, [] if ok else [dict(reason="invalid partition")], operation=kind
@@ -150,12 +150,12 @@ def validate(result, spec):
         finally:
             s.discard(table)
     if kind == "row_bundle":
-        card = result.operator(spec["id"]).to_record()
+        card = result._card("operators", spec["id"])
         errors = check_operator(s, card, rows=spec.get("rows"))
         return report(s, errors, operation=kind, checked_rows=card["rows"])
     if kind == "axis_alignment":
-        op = result.operator(spec["id"])
-        if "alignment" not in op.kernel_statistics:
+        op = result._card("operators", spec["id"])
+        if "alignment" not in op["kernel_statistics"]:
             return report(
                 s, [dict(reason="no unique maximum bijection")], operation=kind
             )
@@ -171,7 +171,7 @@ def validate(result, spec):
                         f"SELECT p,j FROM {table} EXCEPT SELECT p,j FROM alignment WHERE o=?",
                         f"SELECT p,j FROM alignment WHERE o=? EXCEPT SELECT p,j FROM {table}",
                     ):
-                        if s.db.execute(q + " LIMIT 1", (op.id,)).fetchone():
+                        if s.db.execute(q + " LIMIT 1", (op["id"],)).fetchone():
                             errors.append(dict(reason="alignment mismatch"))
                             break
                 except sqlite3.IntegrityError:
@@ -275,3 +275,19 @@ def explicit_cartesian(result, spec):
     finally:
         for table in [*axes, coords]:
             s.discard(table)
+
+
+def recipe_spec(value):
+    from mipframe.frame import Frame, Record
+    from mipframe.frame.schema import encode
+    if isinstance(value,Frame):return {'$frame':value.to_spec()}
+    if isinstance(value,Record):value=value.to_record()
+    if isinstance(value,dict):return {k:recipe_spec(v) for k,v in value.items()}
+    if isinstance(value,(list,tuple)):return [recipe_spec(v) for v in value]
+    return encode(value)
+
+
+def restore_spec(value, owner):
+    from mipframe.frame.serialization import frame_from_spec
+    from mipframe.frame.schema import decode_tree
+    return decode_tree(value,frame_decoder=lambda spec:frame_from_spec(spec,models={owner.uid:owner}))

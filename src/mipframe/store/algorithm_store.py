@@ -11,7 +11,7 @@ from mipframe.frame.executor import Context, pack, unpack
 from mipframe.frame.schema import DType, SchemaError
 from mipframe.frame.materialized import stored_frame
 from mipframe.check.algorithm import QueryTooLarge, DiskBudgetExceeded
-from mipframe.check.report import CardinalityError, ValidationReport
+from mipframe.check.report import CardinalityError, Report
 
 
 class AlgorithmStore(Context):
@@ -40,6 +40,7 @@ class AlgorithmStore(Context):
         self._quota_error = None
         self._ticks = 0
         super().__init__(models, memory_mb)
+        self.ensure_storage()
         self.limit = max_output_rows
         self.disk_limit = None if disk_mb is None else int(disk_mb * 1024**2)
         self.reserved = 0
@@ -205,7 +206,7 @@ class AlgorithmStore(Context):
         violations = self.publish(schema, rows, relations=relations, limited=False)
         if not len(violations):
             return
-        report = ValidationReport(
+        report = Report(
             self,
             False,
             {

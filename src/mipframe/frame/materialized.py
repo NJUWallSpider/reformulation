@@ -28,7 +28,7 @@ def stored_frame(ctx, table, schema, *, key=None, domains=None, relations=None):
         domains=domains,
         relations=relations,
     )
-    result._resource = ctx
+    result._query.resource = ctx
     ctx.retained = True
-    result._source_spec = {"kind": "relation", "relation": f"query:{id(ctx)}:{table}"}
+    result._query.spec = {"kind": "relation", "relation": f"query:{id(ctx)}:{table}"}
     return result

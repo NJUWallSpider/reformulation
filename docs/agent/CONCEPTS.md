@@ -20,7 +20,7 @@ edge = T.head(1).one()
 edge.row, edge.var, edge.coef
 
 Use r.vars and x.rows for deduplicated neighborhoods; use r.terms, x.terms or m.terms(rows=R, vars=V) for coefficients.
-Use .iloc for positions, .loc for declared keys, .by_name for names and .family for a bound IR family.
+Use .iloc for positions, .loc for declared keys, .by_name for names and m.family(label).rows or .vars for family members.
 RowFrame.loc and VarFrame.loc accept integer IDs or same-snapshot, same-axis Refs within the selection.
 select/join return ordinary Frames. where/head/sort preserve entity type. Entity sets support &, | and -.
 Ref columns retain their snapshot and axis. .refs("var") returns the corresponding entity set.
@@ -175,7 +175,7 @@ Establishes: Scalar mathematical checkers release their temporary workspace afte
 
 Does not establish: Report and LinExpr have no public close() method. Retained evidence still uses memory and disk. Unrelated queries and separately retained batches have their own storage; memory_mb is not a global process budget.
 
-Use check.batch("linear") for a loop of explicit claims, sources and per-target assumptions. Use check.linear_many when the inputs already exist as Frames.
+Use check.linear_batch() for a loop of explicit claims, sources and per-target assumptions. Use check.linear_many when the inputs already exist as Frames.
 Retaining thousands of scalar mathematical Reports does not allocate one persistent SQLite connection per Report. Releasing the last Report, Claim, evidence Frame and dependent proof for a node makes its stored rows reclaimable; free database pages can be reused.
 Small expressions use bounded exact in-memory terms; larger materialized expressions share spill storage. Temporary SQLite callbacks do not keep discarded workspaces alive; manual garbage collection is not part of the API contract.
 Keep source models and proof dependencies alive until verification and any Edit that consumes them are complete.
@@ -184,7 +184,7 @@ Release unneeded reports, evidence Frames, expressions and containers holding th
 Model.close releases owned query resources and invalidates dependent live results. Close a model only when its live results are no longer needed.
 Do not call private report stores to close shared evidence. This release offers no per-report deterministic close API.
 
-See also: api.Checker.batch, api.Checker.linear_many, api.Report.for_target, api.Report.write, api.Report.replay, api.Model.close, concept.resources
+See also: api.Checker.linear_batch, api.Checker.linear_many, api.Report.for_target, api.Report.write, api.Report.replay, api.Model.close, concept.resources
 
 ## Exact arithmetic and external numerical values
 
@@ -200,7 +200,8 @@ Illustrative example (requires caller-provided inputs):
 a = mf.q("9.6")
 b = mf.q("43/39")
 
-Booleans, NaN, infinity and Python floats are rejected as algebraic scalars. Infinity is allowed only in documented bound fields.
+Booleans, NaN, infinity and Python floats are rejected as algebraic scalars. Infinity is allowed in Frame number columns representing bounds.
+Frame arithmetic keeps finite quotients exact, including finite/infinity = Fraction(0). Indeterminate infinity arithmetic (infinity-infinity, zero*infinity, infinity/infinity and sums of opposite infinities) raises ExactArithmeticError.
 If an external approximate value is useful for candidate ranking, explicitly choose and record its conversion outside mipframe.
 For proof multipliers, replay the resulting rational certificate including residual bound compensation.
 Exact solution checking may reject a rounded solver point. Do not silently add a tolerance or label it exact.
@@ -219,7 +220,7 @@ Establishes: Complete ops finish or raise; no truncated mathematical result is r
 Does not establish: head() cannot bypass a join validation barrier, sort or aggregation. repr does not promise constant-time upstream work.
 
 Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. Parsing has a separate 32 MiB minimum.
-collect/to_records explicitly materialize and can raise MaterializationLimitError; use iter_batches/write for large outputs.
+to_records explicitly materialize and can raise MaterializationLimitError; use iter_batches/write for large outputs.
 Most ops default to 1,000,000 output records. Set max_output_rows=None only when full output is intended.
 alg *_candidates may stop early and record scope/stop reason. Exhaustive algorithms raise SearchBudgetExceeded when incomplete.
 check.enumerate returns INCONCLUSIVE when its enumeration budget is exhausted; this is different from alg.integer.enumerate.
@@ -391,3 +392,45 @@ options.display, options.ir and options.query configure presentation or working 
 Does not establish: Display limits do not reduce the mathematical scope of a query or verification.
 
 See also: concept.resources
+
+## Families as Frames
+
+Families as Frames [concept.families]
+
+Start with m.row_families, m.var_families or m.family(label).
+
+m.families(kind="row", depth=2) returns a family Frame; m.family("F0") returns a single-row Frame.
+Both row_families and var_families default to depth 2. Row patterns at depth d explicitly reference variable roles at d-1.
+Use f.rows for row members and v.vars for variable members. f.rows.vars and v.vars.rows traverse neighboring entities.
+Filtering a directory restricts related members and statistics; selected entity families retain global labels and family_key.
+count describes selected members; total_count describes the full-model family. Use family_key for cross-table identity, not display labels alone.
+related("pattern") exposes complete normalized patterns. related("parameters"), related("histogram") and related("sources") retain basis and orientation.
+Use .where(basis="canonical") for canonical observations, or raw / scale_normalized explicitly. sources retains original row and transformation factors.
+config records the bound options; levels exposes depth overview. Scalar columns and normalized relations replace all old Family/Signature facades.
+Keep family_key when projecting if subsequent family navigation is required; direct renaming is supported. Aggregation removes navigation.
+Use mf.analysis.families/signatures with explicit method=algebraic, typed, template or exact_structural for advanced work. Typo aliases algebratic/exact_strctural exist only there.
+Model.refinement returns parent/child transitions; Model.indexed accepts explicit depth/method/options rather than a signatures object.
+Views are live and require the model to stay open; they do not own one database per family. repr is bounded and does not compute numeric profiles.
+
+See also: api.Model.families, api.Model.family, api.Frame.related, api.Frame.inspect, api.analysis.families, api.analysis.signatures
+
+## Indexed directories and related Frames
+
+Indexed directories and related Frames [concept.indexed]
+
+Use ordinary Frames for indexed coordinates, partitions, operators and evidence.
+
+I = m.indexed() binds a snapshot, configuration and declared scope.
+I.tensors, I.operators, I.partitions and I.evidence are ordinary Frames.
+I.tensor(id), I.operator(id), I.partition(id), I.evidence_item(id) return exactly one-row Frames; unknown IDs raise KeyError.
+Use O.one().row_count for metadata, O.rows for original rows, and O.related("kernel"), "bindings", "alignment", "ast", "statistics" or "dimensions" for complete data.
+Use T.vars, T.related("coordinates"), and T.related("axes").where(axis=0).rows. Coordinates retain the complete declared axis domains.
+Frame.shape always means table dimensions. Indexed dimensions live in related("dimensions") as component,axis,size.
+AST, origins and diagnostics use path,node_type,text,number,boolean node tables; empty containers and array order are preserved. Statistics retain exact numeric values.
+Filtering, sorting, slicing and key-preserving projection restrict related results. Keep indexed_key for navigation; axes additionally require axis. Members are deduplicated.
+I.verify(selection=None) checks prepared tensors/operators by default; an explicit directory selection can also verify partitions. Empty selection checks zero items. Discovery evidence is not a proposition.
+I.validate(spec) checks independently supplied hypotheses, including Frame relations. Neither directory identity nor saved status grants proof authority.
+m.verify() returns Report for storage integrity and prepared indexed runs. Inconsistency returns REFUTED; require() raises. Corrupt base data skips dependent checks; execution and input errors still raise.
+These reports cannot be used as linear certificates or Edit justifications. Live views share stores; detached records remain usable after close.
+
+See also: api.Model.indexed, api.IndexedResult.verify, api.IndexedResult.validate, api.Frame.related, api.Model.verify

@@ -10,137 +10,93 @@ from mipframe.edit.plan import num
 class ModelDiff:
     """
     MIPFRAME HELP BEGIN
-    ModelDiff [api.ModelDiff]
-
     Parent-child comparison with actual identity maps and verified semantic directions.
 
-    ModelDiff [type]
-
-    When to use: Parent-child comparison with actual identity maps and verified semantic directions.
-
-    Returns: A public domain type. Obtain live handles through their owning Model or query.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: recipe.edits
+    Full contract: mf.help("api.ModelDiff")
     MIPFRAME HELP END
     """
-    def __init__(self, target, source, *, memory_mb=128, disk_mb=None):
-        self._target = target
-        self._source = source
-        self._s = AlgorithmStore(
-            (source, target), memory_mb=memory_mb, disk_mb=disk_mb, max_output_rows=None
-        )
+    def __init__(self, target, source, *, verify="auto", memory_mb=128, disk_mb=None):
+        if verify not in ("auto", "replay"):
+            raise ValueError("verify must be 'auto' or 'replay'")
+        self._target, self._source = target, source
+        self._s = AlgorithmStore((source, target), memory_mb=memory_mb,
+                                 disk_mb=disk_mb, max_output_rows=None)
         self._edit = None
+        self._frames, self._stats = {}, {}
         try:
-            if (source.uid, source.version) == (target.uid, target.version):
-                self._edit = source.edit(memory_mb=memory_mb, disk_mb=disk_mb)
-            else:
-                self._edit = target.lineage._restore(
-                    source, memory_mb=memory_mb, disk_mb=disk_mb
-                )
-            p = self._edit._prepare()
-            p.require(True)
-            self._verify_target(p)
+            from mipframe.edit.verified import find, remember
+            p = find(target, source) if verify == "auto" else None
+            if p is None:
+                if (source.uid, source.version) == (target.uid, target.version):
+                    self._edit = source.edit(memory_mb=memory_mb, disk_mb=disk_mb)
+                else:
+                    self._edit = target.lineage._restore(
+                        source, memory_mb=memory_mb, disk_mb=disk_mb)
+                prepared = self._edit._prepare()
+                prepared.require(True)
+                self._verify_target(prepared)
+                p = remember(target, source, prepared, memory_mb=memory_mb, disk_mb=disk_mb)
+                self._edit.close()
+                self._edit = None
+            self._plan = p
             self._semantic = deepcopy(p.semantic)
-            self._frames = {}
-            for axis, t in (("row", p.rows), ("var", p.vars)):
-                typ = ref_type(target, axis)
-                oldtyp = ref_type(source, axis)
-                self._frames[axis + "s_added"] = self._s.publish(
-                    {axis: typ},
-                    (
-                        {axis: i}
-                        for i, in p.s.execute(
-                            f"SELECT id FROM {t} WHERE ns=1 ORDER BY id"
-                        )
-                    ),
-                    key=(axis,),
-                )
-                self._frames[axis + "s_dropped"] = self._s.publish(
-                    {axis: oldtyp},
-                    (
-                        {axis: i}
-                        for i in range(source.shape[0 if axis == "row" else 1])
-                        if not p.s.execute(
-                            f"SELECT 1 FROM {t} WHERE ns=0 AND old=?", (i,)
-                        ).fetchone()
-                    ),
-                    key=(axis,),
-                )
-                schema = {
-                    "old_" + axis: oldtyp,
-                    axis: typ,
-                    "old_lb": DType("number"),
-                    "old_ub": DType("number"),
-                    "lb": DType("number"),
-                    "ub": DType("number"),
-                }
-
-                def changes():
-                    for i, old, lo, hi in p.s.execute(
-                        f"SELECT id,old,lb,ub FROM {t} WHERE ns=0 ORDER BY id"
-                    ):
-                        obj = (source.rows if axis == "row" else source.vars).by_id(old)
-                        if (obj.lb, obj.ub) != (num(lo), num(hi)):
-                            yield {
-                                "old_" + axis: old,
-                                axis: i,
-                                "old_lb": obj.lb,
-                                "old_ub": obj.ub,
-                                "lb": num(lo),
-                                "ub": num(hi),
-                            }
-
-                self._frames[axis + "_bounds_changed"] = self._s.publish(
-                    schema, changes()
-                )
-            self._frames["domains_changed"] = self._s.publish(
-                {
-                    "old_var": ref_type(source, "var"),
-                    "var": ref_type(target, "var"),
-                    "old_kind": DType("str"),
-                    "kind": DType("str"),
-                },
-                (
-                    dict(
-                        old_var=old, var=i, old_kind=source.vars.by_id(old).kind, kind=k
-                    )
-                    for i, old, k in p.s.execute(
-                        f"SELECT id,old,kind FROM {p.vars} WHERE ns=0 ORDER BY id"
-                    )
-                    if source.vars.by_id(old).kind != k
-                ),
-            )
-            self._frames["rows_changed"] = self._s.publish(
-                {
-                    "old_row": ref_type(source, "row"),
-                    "row": ref_type(target, "row"),
-                    "nnz_before": DType("int"),
-                    "nnz_after": DType("int"),
-                },
-                (
-                    dict(
-                        old_row=old,
-                        row=i,
-                        nnz_before=source.rows.by_id(old).nnz,
-                        nnz_after=n,
-                    )
-                    for old, i, n in p.s.execute(
-                        f"SELECT r.old,t.id,t.n FROM replaces r JOIN {p.rows} t ON t.ns=1 AND t.old=r.new ORDER BY r.old,t.id"
-                    )
-                ),
-            )
-            self._stats = {}
-            for axis in ("row", "var"):
-                self._stats[axis] = dict(
-                    before=self._degree(source, axis), after=self._degree(target, axis)
-                )
         except BaseException:
             self._s.close()
-            if self._edit:
+            if self._edit is not None:
                 self._edit.close()
             raise
+
+    def _frame(self, name):
+        p, source, target = self._plan, self._source, self._target
+        if name in ("rows_added", "vars_added", "rows_dropped", "vars_dropped",
+                    "row_bounds_changed", "var_bounds_changed"):
+            axis = "row" if name.startswith("row") else "var"
+            table = p.rows if axis == "row" else p.vars
+            typ, oldtyp = ref_type(target, axis), ref_type(source, axis)
+            if name.endswith("_added"):
+                return self._s.publish({axis: typ},
+                    ({axis: i} for i, in p.s.execute(
+                        f"SELECT id FROM {table} WHERE ns=1 ORDER BY id")), key=(axis,))
+            if name.endswith("_dropped"):
+                def dropped():
+                    retained = iter(p.s.execute(f"SELECT old FROM {table} WHERE ns=0 ORDER BY old"))
+                    next_old = next(retained, (None,))[0]
+                    for i in range(source.shape[0 if axis == "row" else 1]):
+                        if i == next_old:
+                            next_old = next(retained, (None,))[0]
+                        else:
+                            yield {axis: i}
+                return self._s.publish({axis: oldtyp}, dropped(), key=(axis,))
+            def changes():
+                for i, old in p.s.execute(
+                        f"SELECT id,old FROM {table} WHERE ns=0 ORDER BY id"):
+                    obj = (source.rows if axis == "row" else source.vars).loc[old]
+                    new = (target.rows if axis == "row" else target.vars).loc[i]
+                    if (obj.lb, obj.ub) != (new.lb, new.ub):
+                        yield {"old_" + axis: old, axis: i, "old_lb": obj.lb,
+                               "old_ub": obj.ub, "lb": new.lb, "ub": new.ub}
+            return self._s.publish({"old_" + axis: oldtyp, axis: typ,
+                **{n: DType("number") for n in ("old_lb", "old_ub", "lb", "ub")}}, changes())
+        if name == "domains_changed":
+            return self._s.publish({"old_var": ref_type(source, "var"),
+                "var": ref_type(target, "var"), "old_kind": DType("str"), "kind": DType("str")},
+                (dict(old_var=old, var=i, old_kind=source.vars.loc[old].kind, kind=target.vars.loc[i].kind)
+                 for i, old in p.s.execute(f"SELECT id,old FROM {p.vars} WHERE ns=0 ORDER BY id")
+                 if source.vars.loc[old].kind != target.vars.loc[i].kind))
+        if name == "rows_changed":
+            return self._s.publish({"old_row": ref_type(source, "row"),
+                "row": ref_type(target, "row"), "nnz_before": DType("int"), "nnz_after": DType("int")},
+                (dict(old_row=old, row=i, nnz_before=source.rows.loc[old].nnz, nnz_after=target.rows.loc[i].nnz)
+                 for old, i in p.s.execute(
+                     f"SELECT r.old,t.id FROM {p.replaces} r JOIN {p.rows} t "
+                     "ON t.ns=1 AND t.old=r.new ORDER BY r.old,t.id")))
+        raise AttributeError(name)
+
+    def _statistics(self, axis):
+        if axis not in self._stats:
+            self._stats[axis] = dict(before=self._degree(self._source, axis),
+                                     after=self._degree(self._target, axis))
+        return deepcopy(self._stats[axis])
 
     def _verify_target(self, p):
         m = self._target
@@ -155,7 +111,7 @@ class ModelDiff:
         for i, name, k, lo, hi, obj in p.s.execute(
             f"SELECT id,name,kind,lb,ub,obj FROM {p.vars}"
         ):
-            v = m.vars.by_id(i)
+            v = m.vars.loc[i]
             if (v.name, v.kind, v.lb, v.ub, v.obj) != (
                 name,
                 k,
@@ -165,7 +121,7 @@ class ModelDiff:
             ):
                 raise SchemaError("Lineage variable mismatch")
         for i, name, lo, hi in p.s.execute(f"SELECT id,name,lb,ub FROM {p.rows}"):
-            r = m.rows.by_id(i)
+            r = m.rows.loc[i]
             if (r.name, r.lb, r.ub) != (name, num(lo), num(hi)):
                 raise SchemaError("Lineage row mismatch")
         position = 0
@@ -206,27 +162,17 @@ class ModelDiff:
         if n.startswith("_"):
             raise AttributeError(n)
         self._s.guard()
-        if n in self._frames:
-            return self._frames[n]
-        raise AttributeError(n)
+        if n not in self._frames:
+            self._frames[n] = self._frame(n)
+        return self._frames[n]
 
     @property
     def semantic(self):
         """
         MIPFRAME HELP BEGIN
-        ModelDiff.semantic [api.ModelDiff.semantic]
-
         Read declared semantic scope; saved lineage summaries are historical, not live proofs.
 
-        ModelDiff.semantic [property]
-
-        When to use: Read declared semantic scope; saved lineage summaries are historical, not live proofs.
-
-        Returns: Bounded summary, Frame or domain result.
-
-        Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-        See also: concept.identity, recipe.roles
+        Full contract: mf.help("api.ModelDiff.semantic")
         MIPFRAME HELP END
         """
         self._s.guard()
@@ -236,19 +182,9 @@ class ModelDiff:
     def objective_changed(self):
         """
         MIPFRAME HELP BEGIN
-        ModelDiff.objective_changed [api.ModelDiff.objective_changed]
-
         Read ModelDiff objective_changed.
 
-        ModelDiff.objective_changed [property]
-
-        When to use: Read ModelDiff objective_changed.
-
-        Returns: Bounded summary, Frame or domain result.
-
-        Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-        See also: concept.identity, recipe.roles
+        Full contract: mf.help("api.ModelDiff.objective_changed")
         MIPFRAME HELP END
         """
         self._s.guard()
@@ -258,19 +194,9 @@ class ModelDiff:
     def nnz_before(self):
         """
         MIPFRAME HELP BEGIN
-        ModelDiff.nnz_before [api.ModelDiff.nnz_before]
-
         Read ModelDiff nnz_before.
 
-        ModelDiff.nnz_before [property]
-
-        When to use: Read ModelDiff nnz_before.
-
-        Returns: Bounded summary, Frame or domain result.
-
-        Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-        See also: concept.identity, recipe.roles
+        Full contract: mf.help("api.ModelDiff.nnz_before")
         MIPFRAME HELP END
         """
         self._s.guard()
@@ -280,19 +206,9 @@ class ModelDiff:
     def nnz_after(self):
         """
         MIPFRAME HELP BEGIN
-        ModelDiff.nnz_after [api.ModelDiff.nnz_after]
-
         Read ModelDiff nnz_after.
 
-        ModelDiff.nnz_after [property]
-
-        When to use: Read ModelDiff nnz_after.
-
-        Returns: Bounded summary, Frame or domain result.
-
-        Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-        See also: concept.identity, recipe.roles
+        Full contract: mf.help("api.ModelDiff.nnz_after")
         MIPFRAME HELP END
         """
         self._s.guard()
@@ -302,45 +218,25 @@ class ModelDiff:
     def row_nnz_stats(self):
         """
         MIPFRAME HELP BEGIN
-        ModelDiff.row_nnz_stats [api.ModelDiff.row_nnz_stats]
-
         Read ModelDiff row_nnz_stats.
 
-        ModelDiff.row_nnz_stats [property]
-
-        When to use: Read ModelDiff row_nnz_stats.
-
-        Returns: Bounded summary, Frame or domain result.
-
-        Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-        See also: concept.identity, recipe.roles
+        Full contract: mf.help("api.ModelDiff.row_nnz_stats")
         MIPFRAME HELP END
         """
         self._s.guard()
-        return deepcopy(self._stats["row"])
+        return self._statistics("row")
 
     @property
     def col_nnz_stats(self):
         """
         MIPFRAME HELP BEGIN
-        ModelDiff.col_nnz_stats [api.ModelDiff.col_nnz_stats]
-
         Read ModelDiff col_nnz_stats.
 
-        ModelDiff.col_nnz_stats [property]
-
-        When to use: Read ModelDiff col_nnz_stats.
-
-        Returns: Bounded summary, Frame or domain result.
-
-        Does not establish: Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.
-
-        See also: concept.identity, recipe.roles
+        Full contract: mf.help("api.ModelDiff.col_nnz_stats")
         MIPFRAME HELP END
         """
         self._s.guard()
-        return deepcopy(self._stats["var"])
+        return self._statistics("var")
 
     def __repr__(self):
         return f"<ModelDiff: nnz {self.nnz_before:,} → {self.nnz_after:,}; {self.semantic}>"

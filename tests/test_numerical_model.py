@@ -40,7 +40,7 @@ def test_test1_against_independent_parser(test1):
         assert {int(m.variables[v][1][1:]): c for v, c in m.iter_terms(rid)} == row.a
         assert m.num(m.rows[rid][2]) == (row.rhs if row.sense != "<=" else None)
         assert m.num(m.rows[rid][3]) == (row.rhs if row.sense != ">=" else None)
-    assert test1.verify()["rows_verified"] == 4630
+    assert test1.verify().summary["rows_verified"] == 4630
 
 
 def test_renaming_permutation_and_index_mapping(test1, tmp_path):
@@ -60,7 +60,7 @@ def test_renaming_permutation_and_index_mapping(test1, tmp_path):
     )
     with mf.read(path) as other:
         n = other.model
-        assert other.verify()["rows_verified"] == 4630
+        assert other.verify().summary["rows_verified"] == 4630
         for r in m.rows:
             rid = n.row_names[rn[r[0]]]
             assert dict(n.iter_terms(rid)) == {

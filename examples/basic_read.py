@@ -16,7 +16,7 @@ def main():
         row = model.rows.by_name("demand")
         print(row.name, row.lb, row.ub, row.terms.to_records())
         print("Exact coefficient:", model.vars.iloc[0].obj)
-        print("Verification:", model.verify()["status"])
+        print("Verification:", model.verify().status)
 
 
 if __name__ == "__main__":

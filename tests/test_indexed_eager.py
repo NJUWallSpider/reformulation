@@ -24,8 +24,8 @@ def test_read_builds_once_load_restores_and_display_is_human(tmp_path, monkeypat
     monkeypatch.setattr(discovery, "discover", track)
     with mf.read(source) as m:
         assert len(calls) == 1
-        result = m.structure.indexed()
-        assert result is m.structure.indexed()
+        result = m.indexed()
+        assert result is m.indexed()
         assert len(calls) == 1
         assert m.ir.indexed["status"] == "complete"
         text = str(m.ir)
@@ -44,8 +44,8 @@ def test_read_builds_once_load_restores_and_display_is_human(tmp_path, monkeypat
     monkeypatch.setattr(operators, "recover", forbidden)
     with mf.load(saved) as m:
         assert m.ir.indexed["status"] == "complete"
-        assert len(m.structure.indexed().tensors) == 1
-        m.structure.indexed().verify().require()
+        assert len(m.indexed().tensors) == 1
+        m.indexed().verify().require()
 
 
 def test_load_without_indexed_artifact_computes_it(tmp_path, monkeypatch):
@@ -65,14 +65,14 @@ def test_load_without_indexed_artifact_computes_it(tmp_path, monkeypatch):
     with mf.load(saved) as m:
         assert len(calls) == 1
         assert m.ir.indexed["status"] == "complete"
-        assert m.structure.indexed() is m.structure.indexed()
+        assert m.indexed() is m.indexed()
 
 
 def test_multiple_scopes_use_readable_labels(tmp_path):
     source = tmp_path / "model.lp"
     source.write_text("Minimize\n obj:x+y\nSubject To\n r:x>=1\n s:y>=1\nEnd\n")
     with mf.read(source) as m:
-        m.structure.indexed(rows=m.rows.head(1))
+        m.indexed(rows=m.rows.head(1))
         text = str(m.ir.show())
         assert "Full model" in text and "Selection: 1 rows" in text
         assert "run_" not in text

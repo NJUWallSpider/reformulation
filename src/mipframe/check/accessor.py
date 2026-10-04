@@ -24,10 +24,21 @@ def checked(method):
         memory_mb=128,
         disk_mb=None,
         domain="auto",
-        arithmetic="exact",
         **kwargs,
     ):
         self._owner.model
+        runtime = None
+        if method.__name__ == "cases" and disk_mb is None:
+            from mipframe.check.workspace import ProofWorkspace
+            from mipframe.store.query_store import memory_bytes
+            amount = memory_bytes(memory_mb)
+            runtime = getattr(self._owner, "_case_workspace", None)
+            if runtime is None or runtime.db is None or runtime.memory != amount:
+                if runtime is not None:
+                    runtime.close()
+                runtime = ProofWorkspace((self._owner,), memory_mb=memory_mb, max_output_rows=None)
+                self._owner._case_workspace = runtime
+            runtime.begin()
         ctx = ProofContext.__new__(ProofContext)
         try:
             ctx.__init__(
@@ -36,15 +47,19 @@ def checked(method):
                 memory_mb=memory_mb,
                 disk_mb=disk_mb,
                 domain=domain,
-                arithmetic=arithmetic,
+                runtime=runtime,
             )
             report = method(self, ctx, *args, **kwargs)
             from mipframe.check.batch import retain_report
 
             result = retain_report(report)
             ctx.close()
+            if runtime is not None:
+                runtime.reset()
             return result
         except BaseException as exc:
+            if runtime is not None:
+                runtime.close()
             if isinstance(exc, InvalidCertificateError) and exc.violations is not None:
                 ctx.searching = False
             else:
@@ -63,7 +78,6 @@ def checked(method):
                 ("memory_mb", 128),
                 ("disk_mb", None),
                 ("domain", "auto"),
-                ("arithmetic", "exact"),
             )
         ]
     )
@@ -108,100 +122,35 @@ def direction_check(ctx, target, direction, residual, sign):
 class Checker:
     """
     MIPFRAME HELP BEGIN
-    Checker [api.Checker]
-
     Exact certificate verification through m.check.
 
-    Checker [type]
-
-    When to use: Exact certificate verification through m.check.
-
-    Returns: A public domain type. Obtain live handles through their owning Model or query.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.proofs
+    Full contract: mf.help("api.Checker")
     MIPFRAME HELP END
     """
     def __init__(self, owner):
         self._owner = owner
 
-    def batch(self, method="linear", *, residual="exact", domain="auto", memory_mb=128, disk_mb=None):
+    def linear_batch(self, *, residual="exact", domain="auto", memory_mb=128, disk_mb=None):
         """
         Incrementally stage linear checks with scalar arguments and per-target assumptions.
 
         MIPFRAME HELP BEGIN
-        Checker.batch [api.Checker.batch]
-
         Build a batch of linear certificates with scalar arguments and per-target assumptions.
 
-        Checker.batch(method='linear', *, residual='exact', domain='auto', memory_mb=128, disk_mb=None)
-
-        When to use: Build a batch of linear certificates with scalar arguments and per-target assumptions.
-
-        Inputs: method="linear"; residual="exact" or "bounds"; domain="auto", "relaxation" or "integer"; memory_mb and disk_mb apply to the whole batch.
-
-        Returns: LinearBatch context manager. add stages each check; run verifies all targets and returns a Report.
-
-        Establishes: Consumes inputs incrementally in shared storage. No caller-authored schemas or reports mapping are required.
-
-        Does not establish: No multiplier search, condition discharge, enumeration batch or model edit.
-
-        Failures: Unsupported methods or options raise. Invalid inputs, cancellation and resource failures abort unpublished work.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Illustrative example (requires caller-provided inputs):
-        with m.check.batch("linear", residual="bounds") as batch:
-            for row in m.rows:
-                batch.add(key=str(row.id), target=row.ub_claim, using=[row.ub_claim])
-            report = batch.run()
-        report.require()
-
-        The example requires finite upper bounds on the selected rows. Replace targets and sources with the actual propositions and certificates to verify.
-        Prefer this builder for ordinary Python loops. If targets/terms/using are already Frames, use linear_many instead.
-        The returned report remains usable after leaving the with block. Use report.for_target(key) for one conclusion, including its explicit and inherited assumptions.
-
-        See also: api.LinearBatch.add, api.LinearBatch.run, api.LinearBatch.close, api.Checker.linear_many, concept.report-resources, concept.conditions
+        Full contract: mf.help("api.Checker.linear_batch")
         MIPFRAME HELP END
         """
         from mipframe.check.batch import LinearBatch
 
-        if method != "linear":
-            raise ValueError('batch currently supports method="linear"')
         return LinearBatch(self, residual=residual, domain=domain,
                            memory_mb=memory_mb, disk_mb=disk_mb)
 
     def linear_many(self, *, targets, terms, using=(), reports=None, residual="exact", domain="auto", memory_mb=128, disk_mb=None):
         """
         MIPFRAME HELP BEGIN
-        Checker.linear_many [api.Checker.linear_many]
-
         Batch explicit linear certificates in shared paged working storage.
 
-        Checker.linear_many(*, targets, terms, using=(), reports=None, residual='exact', domain='auto', memory_mb=128, disk_mb=None)
-
-        When to use: Batch explicit linear certificates in shared paged working storage.
-
-        Inputs: Exact claims, original source sides or previously verified Reports; see signature.
-
-        Returns: Report with complete scope, dependencies and evidence.
-
-        Establishes: Targets keyed by strings; for_target returns one checked conclusion. Overall PROVED requires all targets proved.
-
-        Does not establish: No solver call, multiplier search, automatic condition discharge or model edit.
-
-        Failures: Invalid sources, missing input, bad multipliers, cross-snapshot input or unsupported domains raise; they are not INCONCLUSIVE.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        targets has target/relation/rhs, with unique string target IDs; terms has target/var/coef.
-        using has target and exactly one source field row/var/proof per record, plus side and multiplier (direction for equality target sides).
-        Reference columns use m.rows.schema["row"] or m.vars.schema["var"]. A proof source is a string key in the explicit reports mapping.
-        Use residual="bounds" for bound compensation. This Frame-native entry point has no assume parameter; use check.batch("linear").add(..., assume=...) for per-target assumptions and ordinary Claim/Report inputs.
-        The result shares paged storage across targets; inspect evidence and use for_target(target_id) for one conclusion. require() on the batch requires every target to be PROVED.
-
-        See also: concept.proofs, concept.conditions, api.Checker.batch, api.Frame.schema, api.Report.for_target, concept.report-resources
+        Full contract: mf.help("api.Checker.linear_many")
         MIPFRAME HELP END
         """
         from mipframe.check.batch import linear_many
@@ -213,34 +162,9 @@ class Checker:
         Discharge an exhaustive finite integer split over one variable.
 
         MIPFRAME HELP BEGIN
-        Checker.cases [api.Checker.cases]
-
         Discharge an exhaustive finite integer split over one variable.
 
-        Checker.cases(target, *, var, cases, memory_mb=128, disk_mb=None, domain='auto', arithmetic='exact')
-
-        When to use: Discharge an exhaustive finite integer split over one variable.
-
-        Inputs: Exact claims, original source sides or previously verified Reports; see signature.
-
-        Returns: Report with complete scope, dependencies and evidence.
-
-        Establishes: Every branch proves the same exact target; only its matching equality assumption is removed. Remaining assumptions are unioned. The result is integer-only.
-
-        Does not establish: No solver call, multiplier search, automatic condition discharge or model edit.
-
-        Failures: Invalid sources, missing input, bad multipliers, cross-snapshot input or unsupported domains raise; they are not INCONCLUSIVE.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        var is a same-snapshot Var or VarRef with integer kind and finite model bounds. cases maps exact integer values to verified exact PROVED Reports with the same target relation, constant and coefficients.
-        Keys must exactly cover ceil(lb)..floor(ub); duplicates after normalization, empty domains, floats and booleans are rejected. Coverage never uses branch assumptions.
-        Each branch must assume a*y+b==0 for this variable and value. Remove matching equalities only; preserve the union of every other explicit or inherited assumption. Nested calls can discharge multiple variables.
-        domain="auto" and "integer" produce integer proofs; "relaxation" is rejected. Missing/invalid branches raise, not REFUTED. Infeasible Reports cannot substitute for target proofs.
-        Use ordinary linear checks to align stronger or differently scaled conclusions first. Branches may contain continuous variables. Results support Edit.because only when no assumptions remain; all model fact dependencies and integer-domain coverage bounds remain auditable.
-        The cases and discharged evidence Frames record branch parent indices and removed assumptions. Replay rechecks all branches and coverage.
-
-        See also: concept.proofs, concept.conditions, recipe.cases
+        Full contract: mf.help("api.Checker.cases")
         MIPFRAME HELP END
         """
         from mipframe.check.cases import discharge_cases
@@ -251,29 +175,9 @@ class Checker:
     def identity(self, ctx, left, right, *, using=(), assume=()):
         """
         MIPFRAME HELP BEGIN
-        Checker.identity [api.Checker.identity]
-
         Check an exact affine identity or explicit equality combination.
 
-        Checker.identity(left, right, *, using=(), assume=(), memory_mb=128, disk_mb=None, domain='auto', arithmetic='exact')
-
-        When to use: Check an exact affine identity or explicit equality combination.
-
-        Inputs: Exact claims, original source sides or previously verified Reports; see signature.
-
-        Returns: Report with complete scope, dependencies and evidence.
-
-        Establishes: No-premise coefficient mismatch refutes identity; insufficient specified premises yield INCONCLUSIVE.
-
-        Does not establish: No solver call, multiplier search, automatic condition discharge or model edit.
-
-        Failures: Invalid sources, missing input, bad multipliers, cross-snapshot input or unsupported domains raise; they are not INCONCLUSIVE.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Without premises, compare the exact affine expressions. With using, verify the supplied equality combination.
-
-        See also: concept.proofs, concept.conditions
+        Full contract: mf.help("api.Checker.identity")
         MIPFRAME HELP END
         """
         left, right = coerce(self._owner, left), coerce(self._owner, right)
@@ -318,29 +222,9 @@ class Checker:
     def linear(self, ctx, target, *, using=(), residual="exact", assume=()):
         """
         MIPFRAME HELP BEGIN
-        Checker.linear [api.Checker.linear]
-
         Verify that supplied sources imply the target inequality or equality.
 
-        Checker.linear(target, *, using=(), residual='exact', assume=(), memory_mb=128, disk_mb=None, domain='auto', arithmetic='exact')
-
-        When to use: Verify that supplied sources imply the target inequality or equality.
-
-        Inputs: Exact claims, original source sides or previously verified Reports; see signature.
-
-        Returns: Report with complete scope, dependencies and evidence.
-
-        Establishes: Inequality multipliers nonnegative; equality multipliers may have either sign. bounds compensates exact residuals using required bounds.
-
-        Does not establish: No solver call, multiplier search, automatic condition discharge or model edit.
-
-        Failures: Invalid sources, missing input, bad multipliers, cross-snapshot input or unsupported domains raise; they are not INCONCLUSIVE.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Equality targets use equality-only sources, or explicit using={"le": ..., "ge": ...} certificates. residual="bounds" compensates coefficient residuals with original variable bounds.
-
-        See also: concept.proofs, concept.conditions
+        Full contract: mf.help("api.Checker.linear")
         MIPFRAME HELP END
         """
         if residual not in ("exact", "bounds"):
@@ -357,79 +241,15 @@ class Checker:
                 ctx.ingest(using[d], d)
         else:
             ctx.ingest(using)
-        ctx.prepare_assumptions()
-        evidence = {}
-        details = {}
-        if target.relation == "==" and not double:
-            if ctx.execute(
-                f"SELECT 1 FROM {ctx.sources} s JOIN {ctx.claims} c ON c.id=s.claim WHERE c.relation!='==' LIMIT 1"
-            ).fetchone():
-                raise InvalidCertificateError(
-                    "Equality requires equality sources or explicit le/ge certificates"
-                )
-            from itertools import chain
-
-            table, c = ctx.accumulate(
-                chain(
-                    ((1, target.expr),),
-                    ((-a, e) for a, e in ctx.source_terms(oriented=False)),
-                )
-            )
-            ok = empty_vector(ctx, table) and c == 0
-            evidence["residual"] = evidence_vector(ctx, table)
-            details["residual_constant"] = c
-        else:
-            ok = True
-            for d, sign in (
-                (("le", 1), ("ge", -1))
-                if double
-                else (("main", -1 if target.relation == ">=" else 1),)
-            ):
-                passed, table, c, upper = direction_check(
-                    ctx, target, d, residual, sign
-                )
-                ok = ok and passed
-                evidence["residual_" + d] = evidence_vector(ctx, table)
-                details[d + "_residual_constant"] = c
-                details[d + "_upper"] = upper
-        if ctx.contradiction:
-            ok = True
-            details["contradiction"] = ctx.contradiction
-        return ctx.finish_report(
-            "PROVED" if ok else "INCONCLUSIVE",
-            target,
-            dict(residual=residual, **details),
-            evidence=evidence,
-            recipe=dict(kind="linear", target=ident, residual=residual, double=double),
-        )
+        return verify_linear(ctx, ident, residual=residual, double=double)
 
     @checked
     def infeasible(self, ctx, *, using=(), residual="exact", assume=()):
         """
         MIPFRAME HELP BEGIN
-        Checker.infeasible [api.Checker.infeasible]
-
         Verify an explicit contradiction certificate.
 
-        Checker.infeasible(*, using=(), residual='exact', assume=(), memory_mb=128, disk_mb=None, domain='auto', arithmetic='exact')
-
-        When to use: Verify an explicit contradiction certificate.
-
-        Inputs: Exact claims, original source sides or previously verified Reports; see signature.
-
-        Returns: Report with complete scope, dependencies and evidence.
-
-        Establishes: PROVED means contradiction in the recorded scope; failure to find contradiction is INCONCLUSIVE, never feasible.
-
-        Does not establish: No solver call, multiplier search, automatic condition discharge or model edit.
-
-        Failures: Invalid sources, missing input, bad multipliers, cross-snapshot input or unsupported domains raise; they are not INCONCLUSIVE.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Supply a contradiction combination explicitly. Single-variable assumptions tighten bounds or substitute values and remain recorded in the conditional scope.
-
-        See also: concept.proofs, concept.conditions
+        Full contract: mf.help("api.Checker.infeasible")
         MIPFRAME HELP END
         """
         if residual not in ("exact", "bounds"):
@@ -490,29 +310,9 @@ class Checker:
     def round(self, ctx, target, *, from_):
         """
         MIPFRAME HELP BEGIN
-        Checker.round [api.Checker.round]
-
         Round a proved bound on a model-integer-valued expression.
 
-        Checker.round(target, *, from_, memory_mb=128, disk_mb=None, domain='auto', arithmetic='exact')
-
-        When to use: Round a proved bound on a model-integer-valued expression.
-
-        Inputs: Exact claims, original source sides or previously verified Reports; see signature.
-
-        Returns: Report with complete scope, dependencies and evidence.
-
-        Establishes: Same nonconstant integer coefficients and integer variables required; floor upper / ceil lower; scope becomes integer.
-
-        Does not establish: No solver call, multiplier search, automatic condition discharge or model edit.
-
-        Failures: Invalid sources, missing input, bad multipliers, cross-snapshot input or unsupported domains raise; they are not INCONCLUSIVE.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        The target must keep the same nonconstant integer-valued expression as the proved source bound. Round upper bounds down and lower bounds up.
-
-        See also: concept.proofs, concept.conditions
+        Full contract: mf.help("api.Checker.round")
         MIPFRAME HELP END
         """
         ident, target = target_claim(ctx, target)
@@ -537,7 +337,7 @@ class Checker:
                 "Rounding requires identical nonconstant coefficients"
             )
         for v, c in src.expr._items(ctx):
-            if c.denominator != 1 or ctx.owner.vars.by_id(v).kind != "I":
+            if c.denominator != 1 or ctx.owner.vars.loc[v].kind != "I":
                 raise InvalidCertificateError(
                     "Rounding requires integer coefficients and declared integer variables"
                 )
@@ -557,30 +357,9 @@ class Checker:
     def solution(self, ctx, values, *, value="value", missing="error"):
         """
         MIPFRAME HELP BEGIN
-        Checker.solution [api.Checker.solution]
-
         Validate a complete exact point against the mathematical integer model, including integrality, original bounds and both row sides.
 
-        Checker.solution(values, *, value='value', missing='error', memory_mb=128, disk_mb=None, domain='auto', arithmetic='exact')
-
-        When to use: Validate a complete exact point against the mathematical integer model, including integrality, original bounds and both row sides.
-
-        Inputs: Exact Frame(var,value) or Var/VarRef mapping from this snapshot. missing="error" requires every variable; missing="zero" explicitly fills absent values.
-
-        Returns: Report with complete scope, dependencies and evidence.
-
-        Establishes: Returns all violations or feasibility with exact objective. No optimality conclusion.
-
-        Does not establish: No solver call, multiplier search, automatic condition discharge or model edit.
-
-        Failures: Invalid sources, missing input, bad multipliers, cross-snapshot input or unsupported domains raise; they are not INCONCLUSIVE.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        missing="error" requires all model variables; missing="zero" is explicit. Inputs from a solver are not silently rounded.
-        domain="auto" and domain="integer" both enforce the original integer domains; domain="relaxation" is rejected. For fractional LP points, use m.matrix.activity(values) plus exact checks of both row sides and every variable bound. Verify complete variable coverage, including variables absent from all rows; see limitation.fractional-point.
-
-        See also: concept.proofs, concept.conditions, limitation.fractional-point
+        Full contract: mf.help("api.Checker.solution")
         MIPFRAME HELP END
         """
         if missing not in ("error", "zero"):
@@ -623,7 +402,7 @@ class Checker:
             nonlocal objective
             for v, x in ctx.execute(f"SELECT v,c FROM {table} ORDER BY v"):
                 x = Fraction(x)
-                var = ctx.owner.vars.by_id(v)
+                var = ctx.owner.vars.loc[v]
                 objective += var.obj * x
                 ctx.check_size(objective)
                 for side, b in (("lb", var.lb), ("ub", var.ub)):
@@ -662,7 +441,7 @@ class Checker:
                         if x:
                             total += x * m.num(int(m.coeff_id[int(p)]))
                             ctx.check_size(total)
-                row = ctx.owner.rows.by_id(r)
+                row = ctx.owner.rows.loc[r]
                 for side, b in (("lb", row.lb), ("ub", row.ub)):
                     delta = b - total if side == "lb" else total - b
                     if delta > 0:
@@ -735,31 +514,61 @@ class Checker:
     ):
         """
         MIPFRAME HELP BEGIN
-        Checker.enumerate [api.Checker.enumerate]
-
         Verify a claim on a finite local integer domain.
 
-        Checker.enumerate(target, *, vars, using=(), assume=(), max_states=100000, time_limit=None, memory_mb=128, disk_mb=None, domain='auto', arithmetic='exact')
-
-        When to use: Verify a claim on a finite local integer domain.
-
-        Inputs: Exact claims, original source sides or previously verified Reports; see signature.
-
-        Returns: Report with complete scope, dependencies and evidence.
-
-        Establishes: Exhaustion proves; a local counterexample refutes only this local proposition; budget exhaustion yields INCONCLUSIVE.
-
-        Does not establish: No solver call, multiplier search, automatic condition discharge or model edit.
-
-        Failures: Invalid sources, missing input, bad multipliers, cross-snapshot input or unsupported domains raise; they are not INCONCLUSIVE.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        vars must contain every remaining variable after substitutions; continuous or unbounded integer domains are unsupported.
-
-        See also: concept.proofs, concept.conditions
+        Full contract: mf.help("api.Checker.enumerate")
         MIPFRAME HELP END
         """
         from mipframe.check.enumeration import enumerate_claim
 
         return enumerate_claim(ctx, target, vars, using, assume, max_states, time_limit)
+
+
+def verify_linear(ctx, ident, *, residual, double):
+    """Verify already normalized inputs; shared by scalar, batch and replay."""
+    target = ctx.claim(ident)
+    ctx.prepare_assumptions()
+    evidence = {}
+    details = {}
+    if target.relation == "==" and not double:
+        if ctx.execute(
+            f"SELECT 1 FROM {ctx.sources} s JOIN {ctx.claims} c ON c.id=s.claim WHERE c.relation!='==' LIMIT 1"
+        ).fetchone():
+            raise InvalidCertificateError(
+                "Equality requires equality sources or explicit le/ge certificates"
+            )
+        from itertools import chain
+
+        table, c = ctx.accumulate(
+            chain(
+                ((1, target.expr),),
+                ((-a, e) for a, e in ctx.source_terms(oriented=False)),
+            )
+        )
+        ok = empty_vector(ctx, table) and c == 0
+        evidence["residual"] = evidence_vector(ctx, table)
+        details["residual_constant"] = c
+    else:
+        ok = True
+        for d, sign in (
+            (("le", 1), ("ge", -1))
+            if double
+            else (("main", -1 if target.relation == ">=" else 1),)
+        ):
+            passed, table, c, upper = direction_check(
+                ctx, target, d, residual, sign
+            )
+            ok = ok and passed
+            evidence["residual_" + d] = evidence_vector(ctx, table)
+            details[d + "_residual_constant"] = c
+            details[d + "_upper"] = upper
+    if ctx.contradiction:
+        ok = True
+        details["contradiction"] = ctx.contradiction
+    return ctx.finish_report(
+        "PROVED" if ok else "INCONCLUSIVE",
+        target,
+        dict(residual=residual, **details),
+        evidence=evidence,
+        recipe=dict(kind="linear", target=ident, residual=residual, double=double),
+    )

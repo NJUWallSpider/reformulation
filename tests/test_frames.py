@@ -81,15 +81,15 @@ def test_selection_order_identity_and_validation(model, axis):
     base = getattr(model, axis)
     f = base._select((2, 0, 2))
     assert list(f.ids) == [2, 0]
-    assert f.iloc[-1] == base.by_id(0) == f.by_name(base.by_id(0).name)
+    assert f.iloc[-1] == base.loc[0] == f.by_name(base.loc[0].name)
     assert list(f.iloc[::-1].ids) == [0, 2]
     assert list(f.iloc[:0].ids) == []
     with pytest.raises(KeyError):
-        f.by_id(1)
+        f.loc[1]
     with pytest.raises(TypeError):
         f.iloc[True]
     with pytest.raises(TypeError):
-        f.loc[base.by_id(0).name]
+        f.loc[base.loc[0].name]
     locator = f.iloc
     model.close()
     with pytest.raises(mf.MIPFrameError):
@@ -121,7 +121,7 @@ def test_name_and_family_namespaces(tmp_path):
     with mf.read(p) as m:
         assert m.rows.by_name("F0").name == "F0"
         assert m.vars.by_name("V0").name == "V0"
-        assert len(m.rows.family("F0@2")) == 2
+        assert len(m.family("F0@2").rows) == 2
         with pytest.raises(TypeError):
             m.rows["F0"]
 

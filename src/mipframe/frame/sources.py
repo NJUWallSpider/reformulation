@@ -21,7 +21,7 @@ def binary(kind, lo, hi):
 
 
 def entity_schema(owner, axis):
-    schema = {axis: ref_type(owner, axis), "name": DType("str")}
+    schema = {axis: ref_type(owner, axis), "name": DType("str"), "source_line": DType("int", True)}
     if axis == "var":
         schema["kind"] = DType("enum", values=("C", "I"))
     schema.update(lb=DType("number"), ub=DType("number"))
@@ -56,7 +56,7 @@ def entity_scan(frame, fields, ctx):
     else:
         ids = iter(frame._index)
     requested = set(fields)
-    metadata = {
+    metadata = {"source_line": "line",
         "name": "name",
         "lb": "lo",
         "ub": "hi",
@@ -91,6 +91,8 @@ def entity_scan(frame, fields, ctx):
             for n in fields:
                 if n == axis:
                     value = ident
+                elif n == "source_line":
+                    value = raw["line"] or None
                 elif n == "name":
                     value = raw["name"]
                 elif n == "kind":

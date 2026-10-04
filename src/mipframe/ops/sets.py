@@ -22,27 +22,9 @@ MEMBER_OPS = {"intersection", "union", "left_only", "right_only"}
 def equal_groups(ctx, S, *, set="set", member="member", value=None, sets=None):
     """
     MIPFRAME HELP BEGIN
-    ops.sets.equal_groups [api.ops.sets.equal_groups]
-
     Classify exact equal supports or member-to-value maps.
 
-    ops.sets.equal_groups(S, *, set='set', member='member', value=None, sets=None, memory_mb=128, max_output_rows=1000000, disk_mb=None)
-
-    When to use: Classify exact equal supports or member-to-value maps.
-
-    Inputs: Unique (set,member); optional value column and declared sets.
-
-    Returns: Frame(set,class) with class the smallest original set key.
-
-    Establishes: No hash-collision assumption. Equal support alone says nothing about row coefficients or bounds.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    Failures: Duplicate set/member records, domain violations and resource limits fail the complete call.
-
-    Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. max_output_rows defaults to 1,000,000; exceeding it fails the whole call. None explicitly removes that limit.
-
-    See also: recipe.support, concept.resources
+    Full contract: mf.help("api.ops.sets.equal_groups")
     MIPFRAME HELP END
     """
     system = Membership(ctx, S, set, member, sets=sets, value=value)
@@ -67,27 +49,9 @@ def pairs(
 ):
     """
     MIPFRAME HELP BEGIN
-    ops.sets.pairs [api.ops.sets.pairs]
-
     Compare exact set supports and their cardinalities.
 
-    ops.sets.pairs(S, *, set='set', member='member', sets=None, left=None, right=None, candidates=None, relation='overlap', ordered=None, include_self=False, memory_mb=128, max_output_rows=1000000, disk_mb=None)
-
-    When to use: Compare exact set supports and their cardinalities.
-
-    Inputs: Unique (set,member); optional declared sets, left/right or directed candidates.
-
-    Returns: Frame(left,right,left_n,right_n,intersection,left_only,right_only,union_n).
-
-    Establishes: equal/subset/strict_subset/superset/strict_superset/overlap/disjoint. Empty sets participate. Symmetric same-domain pairs default unordered without self.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    Failures: Duplicate set/member records, domain violations and resource limits fail the complete call.
-
-    Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. max_output_rows defaults to 1,000,000; exceeding it fails the whole call. None explicitly removes that limit.
-
-    See also: recipe.support, concept.resources
+    Full contract: mf.help("api.ops.sets.pairs")
     MIPFRAME HELP END
     """
     if relation not in RELATIONS:
@@ -300,27 +264,9 @@ def member_ids(system, a, b, op):
 def members(ctx, S, *, pairs, op="intersection", set="set", member="member", sets=None):
     """
     MIPFRAME HELP BEGIN
-    ops.sets.members [api.ops.sets.members]
-
     Expand a specified pair relation into exact members.
 
-    ops.sets.members(S, *, pairs, op='intersection', set='set', member='member', sets=None, memory_mb=128, max_output_rows=1000000, disk_mb=None)
-
-    When to use: Expand a specified pair relation into exact members.
-
-    Inputs: Unique membership and pairs(left,right).
-
-    Returns: Frame(left,right,member).
-
-    Establishes: intersection/union/left_only/right_only. Recomputes membership rather than trusting pair statistics.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    Failures: Duplicate set/member records, domain violations and resource limits fail the complete call.
-
-    Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. max_output_rows defaults to 1,000,000; exceeding it fails the whole call. None explicitly removes that limit.
-
-    See also: recipe.support, concept.resources
+    Full contract: mf.help("api.ops.sets.members")
     MIPFRAME HELP END
     """
     if op not in MEMBER_OPS:
@@ -355,27 +301,9 @@ def members(ctx, S, *, pairs, op="intersection", set="set", member="member", set
 def components(ctx, S, *, set="set", member="member", sets=None, vertices=None):
     """
     MIPFRAME HELP BEGIN
-    ops.sets.components [api.ops.sets.components]
-
     Find hypergraph member components without clique expansion.
 
-    ops.sets.components(S, *, set='set', member='member', sets=None, vertices=None, memory_mb=128, max_output_rows=1000000, disk_mb=None)
-
-    When to use: Find hypergraph member components without clique expansion.
-
-    Inputs: Unique membership; optional sets and full member vertices.
-
-    Returns: Frame(member,component), retaining isolated declared members.
-
-    Establishes: A structural component does not establish separability from excluded rows or the objective.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    Failures: Duplicate set/member records, domain violations and resource limits fail the complete call.
-
-    Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. max_output_rows defaults to 1,000,000; exceeding it fails the whole call. None explicitly removes that limit.
-
-    See also: recipe.support, concept.resources
+    Full contract: mf.help("api.ops.sets.components")
     MIPFRAME HELP END
     """
     if member == "component":
@@ -417,27 +345,9 @@ def aggregate(
 ):
     """
     MIPFRAME HELP BEGIN
-    ops.sets.aggregate [api.ops.sets.aggregate]
-
     Sum exact member attributes per set and optional group.
 
-    ops.sets.aggregate(membership, values, *, set='set', member='member', by=(), value='value', agg='sum', sets=None, memory_mb=128, max_output_rows=1000000, disk_mb=None)
-
-    When to use: Sum exact member attributes per set and optional group.
-
-    Inputs: membership(set,member), values unique on (member,*by).
-
-    Returns: Frame(set,*by,value).
-
-    Establishes: Finite exact values; absent attributes are sparse zero, explicit None fails. No-by empty sums are zero.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    Failures: Duplicate set/member records, domain violations and resource limits fail the complete call.
-
-    Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. max_output_rows defaults to 1,000,000; exceeding it fails the whole call. None explicitly removes that limit.
-
-    See also: recipe.support, concept.resources
+    Full contract: mf.help("api.ops.sets.aggregate")
     MIPFRAME HELP END
     """
     from mipframe.ops._aggregate import aggregate as execute
@@ -472,27 +382,9 @@ def pair_aggregate(
 ):
     """
     MIPFRAME HELP BEGIN
-    ops.sets.pair_aggregate [api.ops.sets.pair_aggregate]
-
     Aggregate members of pair unions/intersections/differences without double counting.
 
-    ops.sets.pair_aggregate(membership, pairs, values, *, set='set', member='member', op='union', by=(), value='value', agg='sum', sets=None, memory_mb=128, max_output_rows=1000000, disk_mb=None)
-
-    When to use: Aggregate members of pair unions/intersections/differences without double counting.
-
-    Inputs: membership, pairs(left,right), values unique on (member,*by).
-
-    Returns: Frame(left,right,*by,value).
-
-    Establishes: Only sum; absent attributes are zero. by-groups are observed, including exact cancellations to zero.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    Failures: Duplicate set/member records, domain violations and resource limits fail the complete call.
-
-    Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. max_output_rows defaults to 1,000,000; exceeding it fails the whole call. None explicitly removes that limit.
-
-    See also: recipe.support, concept.resources
+    Full contract: mf.help("api.ops.sets.pair_aggregate")
     MIPFRAME HELP END
     """
     from mipframe.ops._aggregate import pair_aggregate as execute

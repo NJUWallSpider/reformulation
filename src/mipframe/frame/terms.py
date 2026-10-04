@@ -15,19 +15,9 @@ from mipframe.entity import Entity
 class Term(Entity):
     """
     MIPFRAME HELP BEGIN
-    Term [api.Term]
-
     Read-only original matrix term with lazy exact coefficient.
 
-    Term [type]
-
-    When to use: Read-only original matrix term with lazy exact coefficient.
-
-    Returns: A public domain type. Obtain live handles through their owning Model or query.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.frame
+    Full contract: mf.help("api.Term")
     MIPFRAME HELP END
     """
     columns = ("row", "var", "coef")
@@ -49,67 +39,31 @@ class Term(Entity):
     def row(self):
         """
         MIPFRAME HELP BEGIN
-        Term.row [api.Term.row]
-
         Read the original row field or entity relation.
 
-        Term.row [property]
-
-        When to use: Read the original row field or entity relation.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Term.row")
         MIPFRAME HELP END
         """
-        return self._owner.rows.by_id(self._row)
+        return self._owner.rows.loc[self._row]
 
     @property
     def var(self):
         """
         MIPFRAME HELP BEGIN
-        Term.var [api.Term.var]
-
         Read the original var field or entity relation.
 
-        Term.var [property]
-
-        When to use: Read the original var field or entity relation.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Term.var")
         MIPFRAME HELP END
         """
-        return self._owner.vars.by_id(self._var)
+        return self._owner.vars.loc[self._var]
 
     @property
     def coef(self):
         """
         MIPFRAME HELP BEGIN
-        Term.coef [api.Term.coef]
-
         The original exact Fraction coefficient, decoded only when requested.
 
-        Term.coef [property]
-
-        When to use: The original exact Fraction coefficient, decoded only when requested.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Term.coef")
         MIPFRAME HELP END
         """
         m = self._owner.model
@@ -124,19 +78,9 @@ class Term(Entity):
 class TermFrame(Frame):
     """
     MIPFRAME HELP BEGIN
-    TermFrame [api.TermFrame]
-
     Original nonzero matrix terms keyed by row and var.
 
-    TermFrame [type]
-
-    When to use: Original nonzero matrix terms keyed by row and var.
-
-    Returns: A public domain type. Obtain live handles through their owning Model or query.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.frame, api.Model.terms
+    Full contract: mf.help("api.TermFrame")
     MIPFRAME HELP END
     """
     _term_frame = True
@@ -176,7 +120,7 @@ class TermFrame(Frame):
             },
             known_count=owner.nnz if rows is None and vars is None else None,
         )
-        self._source_spec = {
+        self._query.spec = {
             "kind": "terms",
             "uid": owner.uid,
             "version": owner.version,
@@ -191,14 +135,18 @@ class TermFrame(Frame):
 
     def _scan(self, fields, ctx):
         m = self._owner.model
+        for row, var, pos in self._positions(ctx):
+            self._guard()
+            yield {n: row if n == "row" else var if n == "var"
+                   else m.num(int(m.coeff_id[pos])) for n in fields}
+
+    def _positions(self, ctx):
+        m = self._owner.model
         rows = range(len(m.rows)) if self._rows is None else self._rows.ids
         # Canonical term order is row ID then variable ID, irrespective of selection order.
         if not isinstance(rows, range) or rows.step != 1:
             table, _ = ctx.stage(self._rows, ("row",))
-            rows = (
-                record[0]
-                for record in ctx.execute(f"SELECT c0 FROM {table} ORDER BY c0")
-            )
+            rows = (record[0] for record in ctx.execute(f"SELECT c0 FROM {table} ORDER BY c0"))
         all_vars = (
             self._vars is None
             or isinstance(self._vars.ids, range)
@@ -207,38 +155,41 @@ class TermFrame(Frame):
         if self._rows is None and not all_vars:
             from itertools import islice
 
+            def columns(variables):
+                for var in variables:
+                    for offset in range(int(m.col_ptr[var]), int(m.col_ptr[var + 1])):
+                        yield int(m.col_positions[offset]), var
+
             selected = [r["var"] for r in islice(self._vars._raw(("var",), ctx), 2)]
-            if len(selected) == 1:
-                var = selected[0]
-                for offset in range(int(m.col_ptr[var]), int(m.col_ptr[var + 1])):
-                    self._guard()
-                    pos = int(m.col_positions[offset])
-                    row = int(np.searchsorted(m.row_ptr, pos, side="right") - 1)
-                    yield {
-                        n: row
-                        if n == "row"
-                        else var
-                        if n == "var"
-                        else m.num(int(m.coeff_id[pos]))
-                        for n in fields
-                    }
-                return
             if not selected:
+                return
+            positions = None
+            if len(selected) == 1:
+                positions = columns(selected)
+            else:
+                variables, _ = ctx.stage(self._vars, ("var",))
+                def selected_vars():
+                    return (v for v, in ctx.execute(f"SELECT c0 FROM {variables}"))
+                degree = sum(int(m.col_ptr[v + 1]) - int(m.col_ptr[v]) for v in selected_vars())
+                if degree < len(m.col_idx) // 2:
+                    # Sort sparse column hits by CSR position under the query budget.
+                    schema = {"position": DType("int"), "var": self.schema["var"]}
+                    table = ctx.table(schema)
+                    ctx.append(table, schema, (
+                        {"position": pos, "var": var} for pos, var in columns(selected_vars())
+                    ))
+                    positions = ctx.execute(f"SELECT c0,c1 FROM {table} ORDER BY c0")
+            if positions is not None:
+                for pos, var in positions:
+                    pos = int(pos)
+                    yield int(np.searchsorted(m.row_ptr, pos, side="right") - 1), var, pos
                 return
         for row in rows:
             for pos in range(int(m.row_ptr[row]), int(m.row_ptr[row + 1])):
                 self._guard()
                 var = int(m.col_idx[pos])
-                if not all_vars and not ctx.contains(self._vars, var):
-                    continue
-                yield {
-                    n: row
-                    if n == "row"
-                    else var
-                    if n == "var"
-                    else m.num(int(m.coeff_id[pos]))
-                    for n in fields
-                }
+                if all_vars or ctx.contains(self._vars, var):
+                    yield row, var, pos
 
     def __iter__(self):
         self._guard()

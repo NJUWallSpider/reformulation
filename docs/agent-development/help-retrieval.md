@@ -14,8 +14,8 @@ not a claim that every query appeared verbatim in the trace.
 
 | Query | Previous first result | Required first result |
 | --- | --- | --- |
-| batch linear proof | api.Checker.linear_many | api.Checker.batch |
-| many linear certificates | api.Checker.linear_many | api.Checker.batch |
+| batch linear proof | api.Checker.linear_many | api.Checker.linear_batch |
+| many linear certificates | api.Checker.linear_many | api.Checker.linear_batch |
 | tighten big M | concept.conditions | concept.big-m |
 | claim construction | api.Model | api.Claim |
 | fractional point feasibility | limitation.optimization | limitation.fractional-point |
@@ -28,7 +28,7 @@ not a claim that every query appeared verbatim in the trace.
 
 The original retrieval-only change improved this 11-query set from 3/11 to 11/11.
 After adding the scalar-style batch builder, general batch intents route to
-`Checker.batch`; explicit `Frame native batch certificates` still routes to
+`Checker.linear_batch`; explicit `Frame native batch certificates` still routes to
 `Checker.linear_many`. Tests also
 require 11 longer paraphrases to succeed through search, without exact aliases.
 Existing Recall@3 and mathematical-boundary tests remain in place. This set is

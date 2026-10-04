@@ -70,25 +70,9 @@ def class_result(ctx, index, classes, name):
 def equal_groups(ctx, F, *, by, rows, groups=None):
     """
     MIPFRAME HELP BEGIN
-    ops.equal_groups [api.ops.equal_groups]
-
     Compare grouped payload multisets exactly.
 
-    ops.equal_groups(F, *, by, rows, groups=None, memory_mb=128, max_output_rows=1000000, disk_mb=None)
-
-    When to use: Compare grouped payload multisets exactly.
-
-    Inputs: Frame, scalar by column and payload rows columns; optional declared groups.
-
-    Returns: Frame(by,class) preserving empty declared groups.
-
-    Establishes: Order is ignored; duplicate multiplicity and None payloads matter.
-
-    Does not establish: No automatic coordinate recovery, proportional normalization or variable permutation.
-
-    Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. max_output_rows defaults to 1,000,000; exceeding it fails the whole call. None explicitly removes that limit.
-
-    See also: recipe.templates
+    Full contract: mf.help("api.ops.equal_groups")
     MIPFRAME HELP END
     """
     rows = (rows,) if isinstance(rows, str) else tuple(rows)

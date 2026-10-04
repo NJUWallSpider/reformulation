@@ -5,6 +5,7 @@ from inspect import signature, Parameter
 from mipframe.frame.base import Frame, merge_models
 from mipframe.frame.schema import SchemaError, encode, decode
 from mipframe.store.algorithm_store import AlgorithmStore
+from mipframe.frame.query import dependencies, expression_frames
 
 REGISTRY = {}
 
@@ -40,15 +41,11 @@ def operation(name, *, search=False):
             frames = []
             seen = set()
 
-            def dependencies(value):
-                if isinstance(value, Frame) and id(value) not in seen:
-                    seen.add(id(value))
-                    frames.append(value)
-                    for domain in value.domains.values():
-                        dependencies(domain)
-
-            for value in params.values():
-                dependencies(value)
+            for value in expression_frames(params):
+                for frame in dependencies(value, include_domains=True):
+                    if id(frame) not in seen:
+                        seen.add(id(frame))
+                        frames.append(frame)
             store = AlgorithmStore
             if search:
                 from mipframe.store.search_store import SearchStore
@@ -72,14 +69,17 @@ def operation(name, *, search=False):
                 ctx.disk_check()
                 provenance = list(getattr(result, "_search_provenance", ()))
                 for frame in frames:
-                    for run_info in frame._search_runs():
+                    # `frames` already contains the full dependency closure.
+                    # Do not traverse each ancestor's closure a second time.
+                    frame._guard()
+                    for run_info in getattr(frame, "_search_provenance", ()):
                         if run_info not in provenance:
                             provenance.append(run_info)
                 if provenance:
                     result._search_provenance = tuple(provenance)
                     for relation in result.relations.values():
                         relation._search_provenance = tuple(provenance)
-                result._source_spec = {
+                result._query.spec = {
                     "kind": "algorithm",
                     "algorithm": name,
                     "algorithm_version": 1,
@@ -129,7 +129,7 @@ def operation(name, *, search=False):
                 # Related tables carry a recipe back to the same complete search call.
                 if search:
                     for relation_name, relation in result.relations.items():
-                        relation._source_spec = {
+                        relation._query.spec = {
                             "kind": "algorithm_relation",
                             "source": result,
                             "name": relation_name,

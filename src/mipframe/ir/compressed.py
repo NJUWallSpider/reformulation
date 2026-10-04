@@ -175,30 +175,33 @@ def _signature_id(signature):
     return f"{'rf' if signature.kind == 'row' else 'vr'}:{signature.depth}:{digest}"
 
 
-def _varying_roles(family, primary):
+def _varying_roles(provider, entry, primary):
     """Observe variation without building per-member coefficient histograms."""
-    fs = family._store
-    store, m, config = fs.result._store, fs.owner.model, fs.result._config
+    result = provider.result
+    store, m, config = result._store, provider.owner.model, result._config
+    signature = provider.signature(entry)
+    members = provider.members(entry)
 
     def histogram():
-        params = family._parameters
-        return [params._key(r) for r in params.profile.roles if r.coefficients.varying]
+        return [r['role'] for r in provider.numeric(entry, 'parameters', bases=('canonical',), filters={'quantity':('coefficient',)})
+                if r['basis']=='canonical' and r['orientation']==canonical_pattern_index(signature)
+                and r['quantity']=='coefficient' and r['varying']]
 
-    if (family.signature.mode != 'template' or not fs.depth
+    if (signature.mode != 'template' or not provider.depth
             or len(primary) > min(32, store.memory // 1024)):
         return histogram()
-    pos, neg = (store.array(config, kind, fs.depth) for kind in ('pos', 'neg'))
+    pos, neg = (store.array(config, kind, provider.depth) for kind in ('pos', 'neg'))
     # Numerically tied dual orientations use the histogram's exact tie-break.
-    for row in family.rows.ids:
+    for row in members.ids:
         if neg[row] >= 0 and pos[row] == neg[row]:
             return histogram()
-    colors = store.array(config, 'var', fs.depth - 1)
+    colors = store.array(config, 'var', provider.depth - 1)
     edge = store.array(config, 'edge', -1)
-    orientation = canonical_pattern_index(family.signature)
+    orientation = canonical_pattern_index(signature)
     roles = {(1 if r['sign'] == '+' else -1, int(r['var_role'][1:])): None
              for r in primary}
     varying = set()
-    for row in family.rows.ids:
+    for row in members.ids:
         reverse = -1 if neg[row] >= 0 and pos[row] > neg[row] else 1
         if orientation:
             reverse = -reverse
@@ -229,19 +232,9 @@ class CompressedIR(Mapping):
             Fractions as rational strings. Only these detached exports outlive the model.
 
     MIPFRAME HELP BEGIN
-    CompressedIR [api.CompressedIR]
-
     Bounded factual model map prepared by read/load.
 
-    CompressedIR [type]
-
-    When to use: Bounded factual model map prepared by read/load.
-
-    Returns: A public domain type. Obtain live handles through their owning Model or query.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: home
+    Full contract: mf.help("api.CompressedIR")
     MIPFRAME HELP END
     """
 
@@ -249,12 +242,12 @@ class CompressedIR(Mapping):
         if type(depth) is not int or depth < 0:
             raise ValueError("depth must be a nonnegative integer")
         self._owner = owner
-        self._result = owner.structure.signatures(
+        from mipframe.ir.signatures import refinement
+        self._result = refinement(owner,
             depth=depth, mode="template", memory_mb=memory_mb
         )
         self._depth = depth
         self._family_frames = {}
-        self._family_tables = {}
         self._data = self._build()
 
     def _guard(self):
@@ -304,23 +297,9 @@ class CompressedIR(Mapping):
     def to_dict(self):
         """
         MIPFRAME HELP BEGIN
-        CompressedIR.to_dict [api.CompressedIR.to_dict]
-
         Export the complete factual IR summary with exact numbers.
 
-        CompressedIR.to_dict()
-
-        When to use: Export the complete factual IR summary with exact numbers.
-
-        Returns: Independent dict; rational values remain Fractions.
-
-        Establishes: The exported data outlives the model and is not truncated by display limits.
-
-        Does not establish: The summary does not embed the full numerical model, member lists or parameter histograms. Structural groups do not prove mathematical equivalence.
-
-        IR schema 0.3 retains IDs, depths, scopes and configurations. Access detailed objects through m.rows, m.vars, m.matrix and m.structure. For a family use m.structure.signatures().family(id, depth=depth); for indexed tensors and operators use m.structure.indexed().tensor(id) or .operator(id).
-
-        See also: api.Model.ir, api.StructuralSignatures.family, api.Structure.indexed
+        Full contract: mf.help("api.CompressedIR.to_dict")
         MIPFRAME HELP END
         """
         self._guard()
@@ -329,23 +308,9 @@ class CompressedIR(Mapping):
     def to_json(self, *, indent=2):
         """
         MIPFRAME HELP BEGIN
-        CompressedIR.to_json [api.CompressedIR.to_json]
-
         Export the complete factual IR summary as JSON.
 
-        CompressedIR.to_json(*, indent=2)
-
-        When to use: Export the complete factual IR summary as JSON.
-
-        Returns: JSON string; rational values are encoded as strings.
-
-        Establishes: The exported data outlives the model and is not truncated by display limits.
-
-        Does not establish: The summary does not embed the full numerical model, member lists or parameter histograms. Structural groups do not prove mathematical equivalence.
-
-        IR schema 0.3 retains IDs, depths, scopes and configurations. Access detailed objects through m.rows, m.vars, m.matrix and m.structure. For a family use m.structure.signatures().family(id, depth=depth); for indexed tensors and operators use m.structure.indexed().tensor(id) or .operator(id).
-
-        See also: api.Model.ir, api.StructuralSignatures.family, api.Structure.indexed
+        Full contract: mf.help("api.CompressedIR.to_json")
         MIPFRAME HELP END
         """
         self._guard()
@@ -540,108 +505,63 @@ class CompressedIR(Mapping):
 
     def _family_frame(self, kind, depth):
         self._guard()
+        from mipframe.analysis import _Families
         key = kind, depth
         if key not in self._family_frames:
-            method = (
-                self._result._row_families
-                if kind == "row"
-                else self._result._var_families
-            )
-            self._family_frames[key] = method(depth)
+            entities = self._owner.rows if kind == 'row' else self._owner.vars
+            self._family_frames[key] = _Families(entities,'template',depth,self._result).directory()
         return self._family_frames[key]
 
-    def _family_directory(self, kind, depth):
-        """Reuse the prepared family table for the Model's typed accessors."""
-        self._guard()
-        from mipframe.frame.adapters import family_directory
-
-        key = kind, depth
-        if key not in self._family_tables:
-            self._family_tables[key] = family_directory(self._family_frame(kind, depth))
-        return self._family_tables[key]
-
     def _families(self, kind, depth):
-        frame = self._family_frame(kind, depth)
+        from mipframe.frame.executor import Context
+        frame = self._family_frame(kind,depth)
+        provider = frame._query.navigation[0]
         m = self._owner.model
-        total = len(m.rows) if kind == "row" else len(m.variables)
+        total = self._owner.shape[0 if kind=='row' else 1]
         summaries = []
-        # Positions are disk-backed coverage order for both axes.
-        for position in range(len(frame)):
-            f = frame.loc[f"F{position}"]
-            sig = f.signature
-            members = f.rows if kind == "row" else f.vars
-            record = dict(
-                id=f.id,
-                signature_id=_signature_id(sig),
-                count=f.count,
-                fraction=_fraction(f.count, total),
-                depth=depth,
-                parent=f.parent,
-                parent_depth=f.parent_depth,
-            )
-            degree = _degree_profile(
-                m.row_ptr if kind == "row" else m.col_ptr, members.ids
-            )
-            if kind == "var":
-                typ, bounds, objective = sig.base
-                record.update(
-                    base=dict(type=typ, bounds=bounds, objective=objective),
-                    degree=degree,
-                )
-            else:
-                primary, orientations = _tokens(sig)
-                # Exact parameter histograms remain query objects, not IR payload.
-                varying = _varying_roles(f, primary)
-                f.attributes._close()
-                record.update(
-                    relation=sig.base[0],
-                    rhs_class=sig.base[1],
-                    nnz=degree,
-                    structure=primary,
-                    structure_available=bool(depth),
-                    orientations=orientations,
-                    sign_symmetric=f.sign_symmetric,
-                    parameters=dict(
-                        varying_coefficient_roles=varying,
-                    ),
-                )
-            summaries.append(record)
+        ctx = Context((self._owner,), None)
+        try:
+            for entry in provider.entries(ctx):
+                sig = provider.signature(entry)
+                values = provider.record(entry, ('parent','parent_depth'))
+                record = dict(id=entry['id'],signature_id=_signature_id(sig),count=entry['count'],
+                    fraction=_fraction(entry['count'],total),depth=depth,**values)
+                degree = _degree_profile(m.row_ptr if kind=='row' else m.col_ptr,entry['ids'])
+                if kind=='var':
+                    typ,bounds,objective=sig.base
+                    record.update(base=dict(type=typ,bounds=bounds,objective=objective),degree=degree)
+                else:
+                    primary,orientations=_tokens(sig)
+                    record.update(relation=sig.base[0],rhs_class=sig.base[1],nnz=degree,
+                        structure=primary,structure_available=bool(depth),orientations=orientations,
+                        sign_symmetric=sig.base==('=','zero'),
+                        parameters=dict(varying_coefficient_roles=_varying_roles(provider,entry,primary)))
+                summaries.append(record)
+        finally: ctx.close()
         return summaries
 
     def _refinement(self, kind, depth):
-        delta = self._result.splits(depth=depth, kind=kind)
-        splits = []
-        for split in delta:
-            children = []
-            for child in split["children"]:
-                entry = dict(
-                    id=child["id"],
-                    depth=depth,
-                    count=child["count"],
-                )
-                if kind == "row":
-                    entry["structure"] = _tokens(
-                        delta.after.loc[child["id"]].signature
-                    )[0]
-                children.append(entry)
-            splits.append(
-                dict(
-                    parent=split["parent"],
-                    parent_depth=depth - 1,
-                    count=split["count"],
-                    children=children,
-                )
-            )
-        return dict(
-            kind=kind,
-            from_depth=depth - 1,
-            to_depth=depth,
-            before_count=delta.before_count,
-            after_count=delta.after_count,
-            split_count=len(delta),
-            splits=splits,
-            unchanged=delta.unchanged,
-        )
+        from mipframe.analysis import _transitions
+        from mipframe.ir.signatures import _Signature
+        delta = _transitions(self._owner,depth-1,depth,kind=kind)
+        parents = {}
+        unchanged = dict(families=0,members=0)
+        for row in delta:
+            if row.unchanged:
+                unchanged['families']+=1;unchanged['members']+=row.count
+                continue
+            split = parents.setdefault(row.parent,dict(parent=row.parent,parent_depth=depth-1,count=0,children=[]))
+            split['count']+=row.count
+            entry=dict(id=row.child,depth=depth,count=row.count)
+            if kind=='row':
+                partition=self._result.partition(kind,depth)
+                first=partition.db.execute('SELECT first_row FROM families WHERE position=?',(int(row.child[1:]),)).fetchone()[0]
+                entry['structure']=_tokens(_Signature(self._result,kind,first,depth))[0]
+            split['children'].append(entry)
+        return dict(kind=kind,from_depth=depth-1,to_depth=depth,
+            before_count=self._result.partition(kind,depth-1).total,
+            after_count=self._result.partition(kind,depth).total,
+            split_count=len(parents),splits=list(parents.values()),unchanged=unchanged)
 
     def _topology(self):
         m = self._owner.model
@@ -691,23 +611,9 @@ class CompressedIR(Mapping):
     def show(self):
         """
         MIPFRAME HELP BEGIN
-        CompressedIR.show [api.CompressedIR.show]
-
         Render a bounded factual model overview.
 
-        CompressedIR.show()
-
-        When to use: Render a bounded factual model overview.
-
-        Returns: Notebook-friendly Formula text; does not print.
-
-        Establishes: Rendering uses completed summaries and does not run discovery.
-
-        Does not establish: The summary does not embed the full numerical model, member lists or parameter histograms. Structural groups do not prove mathematical equivalence.
-
-        IR schema 0.3 retains IDs, depths, scopes and configurations. Access detailed objects through m.rows, m.vars, m.matrix and m.structure. For a family use m.structure.signatures().family(id, depth=depth); for indexed tensors and operators use m.structure.indexed().tensor(id) or .operator(id).
-
-        See also: api.Model.ir, api.StructuralSignatures.family, api.Structure.indexed
+        Full contract: mf.help("api.CompressedIR.show")
         MIPFRAME HELP END
         """
         self._guard()
@@ -722,7 +628,7 @@ class CompressedIR(Mapping):
                 label = (
                     "Full model"
                     if scope["full_model"]
-                    else f"Selection: {scope['rows']:,} rows × {scope['variables']:,} variables"
+                    else f"Selection: {scope['row_count']:,} rows × {scope['var_count']:,} variables"
                 )
                 config = run["signatures"]
                 text += (
@@ -731,7 +637,7 @@ class CompressedIR(Mapping):
             nt, no = run["total_tensors"], run["total_operators"]
             text += f"\n  {nt} coordinate view{'s' if nt != 1 else ''} · {no} exact operator{'s' if no != 1 else ''}"
             for t in run["tensors"][:5]:
-                text += f"\n    {t['shape'][0]:,} × {t['shape'][1]:,} · {t['variables']:,} variables · missing {t['missing_cells']:,}"
+                text += f"\n    {t['shape'][0]:,} × {t['shape'][1]:,} · {t['var_count']:,} variables · missing {t['missing_cells']:,}"
             if run["total_tensors"] > 5:
                 text += "\n    ..."
         if indexed["total_runs"] > 5:
@@ -928,11 +834,11 @@ def _render(data):
         )
         if len(records) > limit:
             method = "var_families" if key == "variable_roles" else "row_families"
-            default_depth = 1 if key == "variable_roles" else 2
+            default_depth = 2
             target = (
                 f"m.{method}"
                 if depth == default_depth
-                else f"m.structure.signatures(depth={depth}).{method}()"
+                else f"m.families(kind={chr(39) + ('var' if key == 'variable_roles' else 'row') + chr(39)}, depth={depth})"
             )
             lines.append(f"  {len(records) - limit:,} families omitted → {target}")
     # Latest row delta; variable delta explains the actual displayed legend.
@@ -950,8 +856,8 @@ def _render(data):
             f"  {delta['before_count']} → {delta['after_count']} families · {delta['split_count']} splits",
         ]
         target = (
-            f"m.structure.splits(kind={delta['kind']!r}, "
-            f"from_depth={delta['from_depth']}, depth={delta['to_depth']})"
+            f"m.refinement(kind={delta['kind']!r}, "
+            f"start={delta['from_depth']}, stop={delta['to_depth']})"
         )
         for split in delta["splits"][: options.ir.max_splits]:
             lines.append(f"  {split['parent']} ({split['count']:,})")
@@ -980,6 +886,6 @@ def _render(data):
                 f"  ... {len(data['attention']) - options.ir.max_attention} items omitted → m.ir.attention"
             )
     lines.append(
-        "\nInspect details through m.rows, m.vars, m.matrix and m.structure. Signed groups are multisets, not formulas."
+        "\nInspect details through m.rows, m.vars, m.matrix and m.families(). Signed groups are multisets, not formulas."
     )
     return "\n".join(lines)

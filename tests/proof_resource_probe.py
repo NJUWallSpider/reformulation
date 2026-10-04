@@ -33,7 +33,7 @@ def run(mode, count):
             peak = baseline
             reports = []
             if mode == "batch":
-                with model.check.batch("linear", residual="bounds") as builder:
+                with model.check.linear_batch(residual="bounds") as builder:
                     for i in range(count):
                         builder.add(key=str(i), target=claim, using=[source], assume=[x.eq(i % 2)])
                         if i % 100 == 0:
@@ -55,7 +55,7 @@ def run(mode, count):
             peak = max(peak, fd_count())
             assert peak - baseline <= 8, (mode, baseline, peak)
             if mode == "retained":
-                assert len({id(r._store._shared) for r in reports}) == 1
+                assert len({id(r._store._runtime) for r in reports}) == 1
                 assert reports[0]._store.execute("SELECT count(*) FROM sqlite_master WHERE type='table'").fetchone()[0] < 20
                 assert mf.Report.replay(reports[-1].to_spec(), models=[model]).ok
             reports.clear()

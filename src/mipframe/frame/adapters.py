@@ -24,8 +24,8 @@ def sql_frame(store, query, schema, *, key=None, domains=None):
             yield row
 
     result = Frame(schema, key=key, models=(store.owner,), source=scan, domains=domains)
-    result._resource = store
-    result._source_spec = {
+    result._query.resource = store
+    result._query.spec = {
         "kind": "relation",
         "relation": f"analysis:{id(store)}:{query}",
     }
@@ -116,7 +116,7 @@ def sparse_counts(owner, rows=None, vars=None, axis="row"):
     result = Frame(
         schema, key=(axis,), models=(owner,), source=scan, domains={axis: sources}
     )
-    result._source_spec = {
+    result._query.spec = {
         "kind": "sparse_counts",
         "uid": owner.uid,
         "version": owner.version,
@@ -128,11 +128,10 @@ def sparse_counts(owner, rows=None, vars=None, axis="row"):
 
 
 def pattern_counts(source, *, depth=None, memory_mb=128):
-    from mipframe.store.incidence import IncidenceCollection
-    from mipframe.check.report import family_counts
+    from mipframe.ir.patterns import build_patterns
     from types import MappingProxyType
 
-    old = family_counts(IncidenceCollection(source), depth, memory_mb, patterns=True)
+    old = build_patterns(source, depth, memory_mb)
     store = old._store
     directory = sql_frame(
         store,
@@ -164,204 +163,23 @@ def pattern_counts(source, *, depth=None, memory_mb=128):
 
 
 def membership(source, depth=None, signatures=None):
-    from mipframe.store.incidence import default_depth
-
-    owner = source._owner
-    axis = source._entity_axis
-    result = owner.ir._result if signatures is None else signatures
-    if result._store.owner is not owner:
-        raise ValueError("Signatures belong to another live model")
-    depth = default_depth(owner, axis) if depth is None else depth
-    result._check_depth(depth)
-    colors = result._store.array(result._config, axis, depth)
-    families = (
-        result._row_families(depth) if axis == "row" else result._var_families(depth)
-    )
-    schema = {axis: ref_type(owner, axis), "family": DType("str")}
-
+    from mipframe.ir.signatures import refinement
+    from mipframe.analysis import _Families
+    owner, axis = source._owner, source._entity_axis
+    depth = 2 if depth is None else depth
+    result = refinement(owner,depth=depth) if signatures is None else signatures
+    if result._store.owner is not owner: raise ValueError('Refinement belongs to another model')
+    method = 'template' if result.mode == 'template' else 'exact_structural'
+    provider = _Families(source,method,depth,result)
+    directory = provider.directory()
+    members = directory.related('members')
     def scan(fields, ctx):
-        from functools import lru_cache
-
-        @lru_cache(maxsize=512)
-        def label(color):
-            ordinal = (
-                families._store.db.execute(
-                    "SELECT position FROM families WHERE color=?", (color,)
-                ).fetchone()[0]
-                if axis == "row"
-                else color
-            )
-            return f"{'F' if axis == 'row' else 'V'}{ordinal}@{depth}"
-
-        for ident in source.ids:
-            yield {n: ident if n == axis else label(int(colors[ident])) for n in fields}
-
-    frame = Frame(schema, key=(axis,), models=(owner,), source=scan)
-    frame._source_spec = {
-        "kind": "membership",
-        "uid": owner.uid,
-        "version": owner.version,
-        "source": source,
-        "config": result.config,
-        "depth": depth,
-    }
-    return frame
-
-
-def family_directory(catalog):
-    """Scalar family directory; membership is a separate normalized relation."""
-    from types import MappingProxyType
-
-    owner = catalog._owner
-    axis = getattr(catalog._store, "kind", "row")
-    schema = dict(
-        id=DType("str"),
-        count=DType("int"),
-        depth=DType("int", True),
-        mode=DType("str", True),
-        nnz_min=DType("int"),
-        nnz_max=DType("int"),
-    )
-
-    def family(position):
-        return catalog.loc[f"F{position}"]
-
-    def scan(fields, ctx):
-        for position in catalog.ids:
-            f = family(position)
-            sig = f.signature
-            nnz = f.nnz if hasattr(f, "nnz") else sig.nnz
-            lo, hi = nnz if isinstance(nnz, tuple) else (nnz, nnz)
-            raw = dict(
-                id=f.id,
-                count=f.count,
-                depth=getattr(sig, "depth", None),
-                mode=getattr(sig, "mode", None),
-                nnz_min=lo,
-                nnz_max=hi,
-            )
-            yield {n: raw[n] for n in fields}
-
-    directory = Frame(
-        schema, key=("id",), models=(owner,), source=scan, known_count=len(catalog)
-    )
-
-    def members(fields, ctx):
-        for position in catalog.ids:
-            f = family(position)
-            for ident in (f.rows if axis == "row" else f.vars).ids:
-                yield {n: ident if n == axis else f.id for n in fields}
-
-    member_frame = Frame(
-        {axis: ref_type(owner, axis), "family": DType("str")},
-        key=(axis,),
-        models=(owner,),
-        source=members,
-    )
-    directory._relations = MappingProxyType({"members": member_frame})
-    directory._source_spec = {
-        "kind": "relation",
-        "relation": f"family:{id(catalog._store)}",
-    }
-    member_frame._source_spec = {
-        "kind": "relation",
-        "relation": f"family-members:{id(catalog._store)}",
-    }
-    return directory
-
-
-def color_frame(result, axis):
-    owner = result._store.owner
-    schema = {
-        axis: ref_type(owner, axis),
-        "name": DType("str"),
-        **{
-            f"{'R' if axis == 'row' else 'V'}{d}": DType("int")
-            for d in range(result.depth + 1)
-        },
-    }
-
-    def scan(fields, ctx):
-        from mipframe.frame.sources import entity_scan
-
-        source = owner.rows if axis == "row" else owner.vars
-        basics = tuple(n for n in fields if n in (axis, "name"))
-        color_fields = {
-            n: result._store.array(result._config, axis, int(n[1:]))
-            for n in fields
-            if n not in (axis, "name")
-        }
-        for ident, raw in enumerate(entity_scan(source, basics, ctx)):
-            yield {
-                n: raw[n] if n in basics else int(color_fields[n][ident])
-                for n in fields
-            }
-
-    frame = Frame(schema, key=(axis,), models=(owner,), source=scan)
-    frame._source_spec = {
-        "kind": "relation",
-        "relation": f"colors:{owner.uid}:{result._key}:{axis}:{result.depth}",
-    }
-    return frame
-
-
-def family_parameters(family):
-    """Canonical signed-role observations, with normalized exact histograms."""
-    from types import MappingProxyType
-
-    owner = family._store.owner
-    parameters = family._parameters
-    schema = dict(
-        role=DType("str"),
-        basis=DType("str"),
-        minimum=DType("number", True),
-        maximum=DType("number", True),
-        distinct=DType("int"),
-        varying=DType("bool"),
-        multiplicity_min=DType("number", True),
-        multiplicity_max=DType("number", True),
-    )
-
-    def distributions():
-        for role in parameters.profile.roles:
-            yield parameters._key(role), role.coefficients, role.multiplicity
-        yield "lb", parameters.profile.lhs, None
-        yield "ub", parameters.profile.rhs, None
-
-    def scan(fields, ctx):
-        for label, dist, mult in distributions():
-            values = {"role": label, "basis": "canonical"}
-            for n in fields:
-                if n == "minimum":
-                    values[n] = dist.min
-                elif n == "maximum":
-                    values[n] = dist.max
-                elif n == "distinct":
-                    values[n] = dist.distinct
-                elif n == "varying":
-                    values[n] = dist.varying
-                elif n == "multiplicity_min":
-                    values[n] = None if mult is None else mult.min
-                elif n == "multiplicity_max":
-                    values[n] = None if mult is None else mult.max
-            yield {n: values[n] for n in fields}
-
-    frame = Frame(schema, key=("role",), models=(owner,), source=scan)
-    hs = dict(role=DType("str"), value=DType("number"), count=DType("int"))
-
-    def histogram(fields, ctx):
-        for label, dist, _ in distributions():
-            for value, n in dist.items():
-                raw = dict(role=label, value=value, count=n)
-                yield {k: raw[k] for k in fields}
-
-    h = Frame(hs, key=("role", "value"), models=(owner,), source=histogram)
-    frame._relations = MappingProxyType({"histogram": h})
-    for f, name in ((frame, "parameters"), (h, "histogram")):
-        f._source_spec = {
-            "kind": "relation",
-            "relation": f"{name}:{owner.uid}:{family._store.result._key}:{family.depth}:{family.id}",
-        }
+        for row in members._raw((axis,'family'),ctx):
+            raw = {axis:row[axis],'family':f'{row["family"]}@{depth}'}
+            yield {n:raw[n] for n in fields}
+    frame = Frame({axis:ref_type(owner,axis),'family':DType('str')},key=(axis,),models=(owner,),source=scan)
+    frame._query.spec = dict(kind='membership',uid=owner.uid,version=owner.version,
+        source=source,config=result.config,depth=depth)
     return frame
 
 
@@ -379,6 +197,8 @@ def signature_frame(rows, signature):
         lb=DType("number"),
         ub=DType("number"),
         scale=DType("number"),
+        signature_id=DType("str"),
+        method=DType("str"),
     )
 
     def scan(fields, ctx):
@@ -394,6 +214,8 @@ def signature_frame(rows, signature):
                     lb=-float("inf") if sig.lhs is None else sig.lhs,
                     ub=float("inf") if sig.rhs is None else sig.rhs,
                     scale=sig.scale,
+                    signature_id=__import__("hashlib").sha256(sig.key().encode()).hexdigest(),
+                    method="algebraic" if signature=="algebratic" else signature,
                 )
             yield {n: raw[n] for n in fields}
 
@@ -421,7 +243,7 @@ def signature_frame(rows, signature):
     )
     frame._relations = MappingProxyType({"pattern": detail})
     for f, part in ((frame, "summary"), (detail, "pattern")):
-        f._source_spec = {
+        f._query.spec = {
             "kind": "relation",
             "relation": f"signature:{owner.uid}:{signature}:{id(rows)}:{part}",
         }

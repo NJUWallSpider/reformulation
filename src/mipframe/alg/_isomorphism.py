@@ -151,27 +151,9 @@ def isomorphism_classes(
 ):
     """
     MIPFRAME HELP BEGIN
-    alg.graph.isomorphism_classes [api.alg.graph.isomorphism_classes]
-
     Classify complete explicitly labeled graph instances by exact isomorphism.
 
-    alg.graph.isomorphism_classes(E, *, vertices, graph='graph', u='u', v='v', graphs=None, directed=False, vertex_labels=(), edge_labels=(), max_states=None, time_limit=None, memory_mb=128, max_output_rows=1000000, disk_mb=None)
-
-    When to use: Classify complete explicitly labeled graph instances by exact isomorphism.
-
-    Inputs: E(graph,u,v,*edge_labels); vertices(graph,vertex,*vertex_labels) declares each graph separately. Optional single-column graphs includes empty graphs; explicit directed and label names.
-
-    Returns: Frame(graph,class); relations["mapping"] has graph,vertex,representative_vertex; search metadata describes the exhaustive scope.
-
-    Establishes: Representative is the smallest graph key. A complete label/adjacency-preserving bijection is verified, not inferred from stable colors. State/time exhaustion raises SearchBudgetExceeded without a partial successful Frame.
-
-    Does not establish: No MIP proof, automatic symmetry claim or approved cut is produced.
-
-    Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. max_output_rows defaults to 1,000,000; exceeding it fails the whole call. None explicitly removes that limit. Output counts membership plus summary/mapping rows. State/time limits are separate; resource failures never silently truncate an object.
-
-    Loops and isolates participate. Duplicate endpoint labels must agree. None is an exact label; vertex IDs are identities, not labels. Not subgraph matching, automorphism enumeration, or a MIP symmetry certificate.
-
-    See also: concept.search, recipe.conflicts
+    Full contract: mf.help("api.alg.graph.isomorphism_classes")
     MIPFRAME HELP END
     """
     if (

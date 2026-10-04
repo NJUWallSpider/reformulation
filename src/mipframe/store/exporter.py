@@ -5,7 +5,7 @@ from mipframe._help.diagnostics import hint as _help_hint
 import re
 from mipframe.store.numbers import decimal
 from mipframe.store.numbers import MIPFrameError
-from mipframe.check.model import verify
+from mipframe.store.integrity import require_integrity as verify
 
 
 def _export(

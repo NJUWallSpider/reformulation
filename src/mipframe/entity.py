@@ -46,21 +46,9 @@ class Entity(Mapping):
     def to_record(self):
         """
         MIPFRAME HELP BEGIN
-        Row.to_record [api.Row.to_record]
-
         Export an independent exact record; subsequent mutation cannot change the model.
 
-        Row.to_record()
-
-        When to use: Export an independent exact record; subsequent mutation cannot change the model.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Row.to_record")
         MIPFRAME HELP END
         """
         from mipframe.frame.schema import Ref

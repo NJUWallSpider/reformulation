@@ -27,29 +27,12 @@ def semantic(p):
         "id INTEGER PRIMARY KEY,direction TEXT,claim INTEGER,op INTEGER,axis TEXT,entity INTEGER"
     )
     s.execute(f"CREATE INDEX {claims}_digest ON {claims}(digest)")
+    for table, columns in ((outputs, 'claim,proof'), (deps, 'proof'),
+                           (factclaims, 'fact,claim'), (roots, 'proof,binding')):
+        s.execute(f'CREATE INDEX {table}_lookup ON {table}({columns})')
 
-    def normalized(items, rhs, sign=1):
-        it = iter(items)
-        first = next(it, None)
-        scale = abs(first[1]) if first else Fraction(1)
-        ident = s.execute(
-            f"INSERT INTO {claims}(digest,rhs) VALUES(NULL,?)",
-            (str(rhs * sign / scale),),
-        ).lastrowid
-        h = hashlib.sha256()
-        from itertools import chain
-
-        for v, c in chain(() if first is None else (first,), it):
-            if isinstance(v, tuple):
-                if v[0]:
-                    v = m.shape[1] + v[1]
-                else:
-                    v = v[1]
-            c = c * sign / scale
-            h.update(f"{v}:{c};".encode())
-            s.execute(f"INSERT INTO {terms} VALUES(?,?,?)", (ident, v, str(c)))
-        s.execute(f"UPDATE {claims} SET digest=? WHERE id=?", (h.hexdigest(), ident))
-        return ident
+    from functools import partial
+    normalized = partial(_normalized_claim, s, claims, terms, m.shape[1])
 
     def claim_ids(claim):
         signs = (
@@ -143,73 +126,8 @@ def semantic(p):
         else:
             s.execute(f"INSERT INTO {roots} VALUES(?,?)", (binding, add_report(report)))
 
-    def final_fact(kind, entity, side):
-        t = p.rows if kind == "row" else p.vars
-        r = s.execute(
-            f"SELECT lb,ub"
-            + (",kind" if kind != "row" else "")
-            + f" FROM {t} WHERE ns=0 AND old=?",
-            (entity,),
-        ).fetchone()
-        if r is None:
-            return False
-        if kind == "integer":
-            return r[2] == "I"
-        obj = m.rows.by_id(entity) if kind == "row" else m.vars.by_id(entity)
-        return (
-            side in ("lb", "eq")
-            and num(r[0]) >= obj.lb
-            and (side != "eq" or num(r[1]) <= obj.ub)
-        ) or (side == "ub" and num(r[1]) <= obj.ub)
-
-    for fid, kind, entity, side in s.execute(
-        f"SELECT id,kind,entity,side FROM {facts}"
-    ):
-        valid = final_fact(kind, entity, side)
-        s.execute(
-            f"UPDATE {facts} SET lp=?,mip=? WHERE id=?",
-            (int(valid and kind != "integer"), int(valid), fid),
-        )
-        if kind != "integer":
-            obj = m.rows.by_id(entity) if kind == "row" else m.vars.by_id(entity)
-            for cl in claim_ids(source_claim(obj, side)):
-                s.execute(f"INSERT INTO {factclaims} VALUES(?,?)", (fid, cl))
-    for domain in ("lp", "mip"):
-        while True:
-            changed = False
-            for (node,) in s.execute(
-                f"SELECT id FROM {nodes} WHERE {domain}=0"
-                + (" AND domain='relaxation'" if domain == "lp" else "")
-            ):
-                blocked = s.execute(
-                    f"SELECT 1 FROM {deps} d LEFT JOIN {facts} f ON f.id=d.fact LEFT JOIN {nodes} n ON n.id=d.parent WHERE d.proof=? AND (coalesce(f.{domain},n.{domain},0)=0) LIMIT 1",
-                    (node,),
-                ).fetchone()
-                if not blocked:
-                    s.execute(f"UPDATE {nodes} SET {domain}=1 WHERE id=?", (node,))
-                    changed = True
-            for (fid,) in s.execute(
-                f"SELECT id FROM {facts} WHERE {domain}=0 AND kind!='integer'"
-            ):
-                cls = (
-                    cl
-                    for cl, in s.execute(
-                        f"SELECT claim FROM {factclaims} WHERE fact=?", (fid,)
-                    )
-                )
-                if all(
-                    any(
-                        s.execute(
-                            f"SELECT {domain} FROM {nodes} WHERE id=?", (node,)
-                        ).fetchone()[0]
-                        for node in providers(cl)
-                    )
-                    for cl in cls
-                ):
-                    s.execute(f"UPDATE {facts} SET {domain}=1 WHERE id=?", (fid,))
-                    changed = True
-            if not changed:
-                break
+    _ground_facts(p, facts, factclaims, claim_ids)
+    _close_dependencies(s, nodes, deps, facts, factclaims, providers)
 
     def emit(direction, axis, entity, side, value, op):
         if axis == "new":
@@ -220,7 +138,7 @@ def semantic(p):
                 )
             )
         elif axis == "row":
-            items = m.rows.by_id(entity).expr._items(s)
+            items = m.rows.loc[entity].expr._items(s)
         else:
             items = iter(((entity, Fraction(1)),))
         cl = normalized(items, value, -1 if side == "lb" else 1)
@@ -240,7 +158,7 @@ def semantic(p):
                         emit("forward", "new", i, side, val, op)
         elif kind in ("drop_rows", "set_row", "set_var"):
             for axis, i in s.execute("SELECT axis,id FROM subjects WHERE op=?", (op,)):
-                obj = m.rows.by_id(i) if axis == "row" else m.vars.by_id(i)
+                obj = m.rows.loc[i] if axis == "row" else m.vars.loc[i]
                 for side in ("lb", "ub"):
                     if (
                         kind != "drop_rows"
@@ -320,7 +238,7 @@ def semantic(p):
     for i, kind in s.execute(
         "SELECT id,value FROM changes WHERE axis='var' AND field='kind'"
     ):
-        old = m.vars.by_id(i).kind
+        old = m.vars.loc[i].kind
         if old != kind:
             direction_ok["mip"]["forward" if kind == "I" else "reverse"] = False
     added = s.execute("SELECT count(*) FROM new_vars").fetchone()[0]
@@ -337,12 +255,129 @@ def semantic(p):
         a, b = direction_ok[d]["forward"], direction_ok[d]["reverse"]
         return "SAME" if a and b else "SUPERSET" if a else "SUBSET" if b else "UNKNOWN"
 
+    objective = _objective_relation(p, coordinate)
+    result = dict(
+        coordinates=coordinate,
+        lp=relation("lp"),
+        mip=relation("mip"),
+        objective=objective,
+        optimal_value="UNKNOWN",
+    )
+    if result["mip"] == "SAME" and objective["kind"] != "CHANGED":
+        result["optimal_value"] = (
+            "PRESERVED" if objective["kind"] == "SAME" else "TRANSFORMED"
+        )
+    return result
+
+
+def _normalized_claim(s, claims, terms, variable_count, items, rhs, sign=1):
+    it = iter(items)
+    first = next(it, None)
+    scale = abs(first[1]) if first else Fraction(1)
+    ident = s.execute(
+        f"INSERT INTO {claims}(digest,rhs) VALUES(NULL,?)",
+        (str(rhs * sign / scale),),
+    ).lastrowid
+    h = hashlib.sha256()
+    from itertools import chain
+
+    for v, c in chain(() if first is None else (first,), it):
+        if isinstance(v, tuple):
+            if v[0]:
+                v = variable_count + v[1]
+            else:
+                v = v[1]
+        c = c * sign / scale
+        h.update(f"{v}:{c};".encode())
+        s.execute(f"INSERT INTO {terms} VALUES(?,?,?)", (ident, v, str(c)))
+    s.execute(f"UPDATE {claims} SET digest=? WHERE id=?", (h.hexdigest(), ident))
+    return ident
+
+
+
+def _ground_facts(p, facts, factclaims, claim_ids):
+    s, m = p.s, p.edit._owner
+    def final_fact(kind, entity, side):
+        t = p.rows if kind == "row" else p.vars
+        r = s.execute(
+            f"SELECT lb,ub"
+            + (",kind" if kind != "row" else "")
+            + f" FROM {t} WHERE ns=0 AND old=?",
+            (entity,),
+        ).fetchone()
+        if r is None:
+            return False
+        if kind == "integer":
+            return r[2] == "I"
+        obj = m.rows.loc[entity] if kind == "row" else m.vars.loc[entity]
+        return (
+            side in ("lb", "eq")
+            and num(r[0]) >= obj.lb
+            and (side != "eq" or num(r[1]) <= obj.ub)
+        ) or (side == "ub" and num(r[1]) <= obj.ub)
+
+    for fid, kind, entity, side in s.execute(
+        f"SELECT id,kind,entity,side FROM {facts}"
+    ):
+        valid = final_fact(kind, entity, side)
+        s.execute(
+            f"UPDATE {facts} SET lp=?,mip=? WHERE id=?",
+            (int(valid and kind != "integer"), int(valid), fid),
+        )
+        if kind != "integer":
+            obj = m.rows.loc[entity] if kind == "row" else m.vars.loc[entity]
+            for cl in claim_ids(source_claim(obj, side)):
+                s.execute(f"INSERT INTO {factclaims} VALUES(?,?)", (fid, cl))
+
+
+def _close_dependencies(s, nodes, deps, facts, factclaims, providers):
+    for domain in ("lp", "mip"):
+        while True:
+            changed = False
+            for (node,) in s.execute(
+                f"SELECT id FROM {nodes} WHERE {domain}=0"
+                + (" AND domain='relaxation'" if domain == "lp" else "")
+            ):
+                blocked = s.execute(
+                    f"SELECT 1 FROM {deps} d LEFT JOIN {facts} f ON f.id=d.fact LEFT JOIN {nodes} n ON n.id=d.parent WHERE d.proof=? AND (coalesce(f.{domain},n.{domain},0)=0) LIMIT 1",
+                    (node,),
+                ).fetchone()
+                if not blocked:
+                    s.execute(f"UPDATE {nodes} SET {domain}=1 WHERE id=?", (node,))
+                    changed = True
+            for (fid,) in s.execute(
+                f"SELECT id FROM {facts} WHERE {domain}=0 AND kind!='integer'"
+            ):
+                cls = (
+                    cl
+                    for cl, in s.execute(
+                        f"SELECT claim FROM {factclaims} WHERE fact=?", (fid,)
+                    )
+                )
+                if all(
+                    any(
+                        s.execute(
+                            f"SELECT {domain} FROM {nodes} WHERE id=?", (node,)
+                        ).fetchone()[0]
+                        for node in providers(cl)
+                    )
+                    for cl in cls
+                ):
+                    s.execute(f"UPDATE {facts} SET {domain}=1 WHERE id=?", (fid,))
+                    changed = True
+            if not changed:
+                break
+
+
+
+def _objective_relation(p, coordinate):
+    s, m = p.s, p.edit._owner
     objective = {"kind": "CHANGED"}
     if coordinate == "SAME" and p.sense == m.objective.sense:
         factor = None
         affine = True
         for old, c in s.execute(f"SELECT old,obj FROM {p.vars} ORDER BY id"):
-            before = m.vars.by_id(old).obj
+            before = m.vars.loc[old].obj
             after = num(c)
             if before:
                 a = after / before
@@ -364,15 +399,4 @@ def semantic(p):
                 scale=factor,
                 offset=shift,
             )
-    result = dict(
-        coordinates=coordinate,
-        lp=relation("lp"),
-        mip=relation("mip"),
-        objective=objective,
-        optimal_value="UNKNOWN",
-    )
-    if result["mip"] == "SAME" and objective["kind"] != "CHANGED":
-        result["optimal_value"] = (
-            "PRESERVED" if objective["kind"] == "SAME" else "TRANSFORMED"
-        )
-    return result
+    return objective

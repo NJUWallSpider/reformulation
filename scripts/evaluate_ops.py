@@ -38,10 +38,10 @@ def test9(m):
 
 
 def test10(m):
-    f0 = m.rows.family("F0@2")
-    f1 = m.rows.family("F1@2")
-    f2 = m.rows.family("F2@2")
-    v = m.vars.family("V2@1")
+    f0 = m.family("F0@2").rows
+    f1 = m.family("F1@2").rows
+    f2 = m.family("F2@2").rows
+    v = m.family("V2@1").vars
     support = m.terms(rows=f0 | f1, vars=v)
     pairs = mf.ops.sets.pairs(
         support, set="row", member="var", left=f0, right=f1, relation="equal"
@@ -55,22 +55,22 @@ def test10(m):
     projection = v.project(i=f0, j=f2)
     projection.check("product", ("i", "j")).require()
     assert len(projection) == projection.nunique(("i", "j")) == 190000
-    indexed = m.structure.indexed()
+    indexed = m.indexed()
     tensor = next(
         indexed.tensor(r.id)
         for r in indexed.tensors
-        if indexed.tensor(r.id).shape == [950, 200]
+        if list(indexed.tensor(r.id).related("dimensions").where(component="shape").column("size")) == [950, 200]
         and len(indexed.tensor(r.id).vars - v) == 0
     )
-    tensor.coordinates.check("product", ("i", "j")).require()
+    tensor.related("coordinates").check("product", ("i", "j")).require()
     operators = [
         indexed.operator(r.id)
         for r in indexed.operators
-        if indexed.operator(r.id).tensor == tensor.id
+        if indexed.operator(r.id).one().tensor == tensor.one().id
     ]
     assert operators
     for operator in operators:
-        operator.verify().require()
+        indexed.verify(operator).require()
     print(
         "test10: coefficients differ exactly; 190000 unique coordinates; indexed operators PASS",
         flush=True,

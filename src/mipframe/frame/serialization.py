@@ -23,21 +23,9 @@ from mipframe.frame.materialized import stored_frame
 def from_records(records, *, schema, key=None, models=(), memory_mb=None):
     """
     MIPFRAME HELP BEGIN
-    Frame.from_records [api.Frame.from_records]
-
     Create a typed relation from explicit records.
 
-    Frame.from_records(records, *, schema, key=None, models=(), memory_mb=None)
-
-    When to use: Create a typed relation from explicit records.
-
-    Inputs: Records plus declared schema; optional key/models and memory_mb.
-
-    Returns: Ordinary Frame. Ref identity must be valid; this does not create a Model.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: api.Frame.schema, concept.frame
+    Full contract: mf.help("api.Frame.from_records")
     MIPFRAME HELP END
     """
     if isinstance(models, dict):
@@ -84,81 +72,75 @@ def from_records(records, *, schema, key=None, models=(), memory_mb=None):
                 raise SchemaError("Declared key is not unique")
         result = stored_frame(ctx, table, schema, key=key)
         result._known_count = ctx.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
-        result._source_spec = {"kind": "relation", "relation": str(uuid.uuid4())}
+        result._query.spec = {"kind": "relation", "relation": str(uuid.uuid4())}
         return result
     except BaseException:
         ctx.close()
         raise
 
 
+def expression_spec(expr, frame_spec):
+    """Encode expression leaves using the containing plan's Frame namespace."""
+    op, args = expr.op, expr.args
+    if op == "literal":
+        return {"op": op, "value": encode(args[0])}
+    if op == "col":
+        return {"op": op, "name": args[0]}
+    if op == "isin_frame":
+        return {"op": op, "input": expression_spec(args[0], frame_spec),
+                "frame": frame_spec(args[1])}
+    if op == "isin":
+        return {"op": op, "input": expression_spec(args[0], frame_spec),
+                "values": [expression_spec(v, frame_spec) for v in args[1]]}
+    return {"op": op, "args": [expression_spec(a, frame_spec) for a in args]}
+
+
 def to_spec(frame):
     frame._guard()
+    from mipframe.frame.base import PlanIDs
+    seen = {}
+    active = set()
+
+    def expression(expr):
+        return expression_spec(expr, lambda f: {"version": 1, "plan": node(f)})
 
     def node(f):
+        # Entity selection wrappers serialize as their underlying relational plan.
+        index = getattr(f, "_index", None)
+        if f._op == "source" and f._query.spec.get("kind") in ("row", "var") and isinstance(index, PlanIDs):
+            return node(index.frame)
+        ident = id(f)
+        if ident in active:
+            raise SchemaError("Cyclic Frame query plan")
+        if ident in seen:
+            number, result = seen[ident]
+            result["$id"] = number
+            return {"op": "ref", "id": number}
+        active.add(ident)
+        number = len(seen)
+        result = {}
+        seen[ident] = (number, result)
         if f._op == "source":
-            source = dict(getattr(f, "_source_spec", {}))
-            if not source:
-                raise SchemaError(
-                    "This analysis relation must be supplied as an explicit relation binding"
-                )
-            kind = source["kind"]
-            if kind == "algorithm_relation":
-                source["source"] = node(source["source"])
-            if kind == "algorithm":
-                from mipframe.ops._runtime import recipe_arguments
-
-                source["arguments"] = recipe_arguments(source["arguments"], node)
-            if kind in ("row", "var"):
-                ids = f._index
-                from mipframe.frame.base import PlanIDs
-
-                if isinstance(ids, PlanIDs):
-                    return node(ids.frame)
-                source["ids"] = (
-                    {"range": [ids.start, ids.stop, ids.step]}
-                    if isinstance(ids, range)
-                    else list(map(int, ids))
-                )
-            if kind == "terms":
-                source["rows"] = None if f._rows is None else node(f._rows)
-                source["vars"] = None if f._vars is None else node(f._vars)
-            if kind == "relation":
-                source["schema"] = {n: t.to_spec() for n, t in f.schema.items()}
-            if kind == "entity_set":
-                source["left"] = node(source["left"])
-                source["right"] = node(source["right"])
-            if kind == "sparse_counts":
-                source["rows"] = node(source["rows"])
-                source["vars"] = node(source["vars"])
-            if kind in ("membership", "entity_refs"):
-                source["source"] = node(source["source"])
-            if kind == "project":
-                source["source"] = node(source["source"])
-                source["bindings"] = {n: node(v) for n, v in source["bindings"].items()}
-            return {"op": "scan", **source}
-        result = {"op": f._op, "inputs": [node(p) for p in f._parents]}
-        p = f._params
-        if f._op == "filter":
-            result["predicates"] = [e.to_spec() for e in p["predicates"]]
-        elif f._op == "select":
-            result["expressions"] = {
-                n: e.to_spec() for n, e in p["expressions"].items()
-            }
-        elif f._op == "group":
-            result.update(
-                keys=p["keys"],
-                aggregates={
-                    n: {
-                        "op": a.op,
-                        "expr": None if a.expr is None else a.expr.to_spec(),
-                    }
-                    for n, a in p["aggregates"].items()
-                },
-            )
-        elif f._op == "slice":
-            result["slice"] = [p["slice"].start, p["slice"].stop, p["slice"].step]
+            from mipframe.frame.source_codec import encode_source
+            result.update(encode_source(f, node))
         else:
-            result.update(p)
+            result.update(op=f._op, inputs=[node(p) for p in f._parents])
+            p = f._params
+            if f._op == "filter":
+                result["predicates"] = [expression(e) for e in p["predicates"]]
+            elif f._op == "select":
+                result["expressions"] = {n: expression(e) for n, e in p["expressions"].items()}
+            elif f._op == "group":
+                result.update(
+                    keys=p["keys"],
+                    aggregates={n: {"op": a.op, "expr": None if a.expr is None else expression(a.expr)}
+                                for n, a in p["aggregates"].items()},
+                )
+            elif f._op == "slice":
+                result["slice"] = [p["slice"].start, p["slice"].stop, p["slice"].step]
+            else:
+                result.update(p)
+        active.remove(ident)
         return result
 
     return {"version": 1, "plan": node(frame)}
@@ -167,19 +149,9 @@ def to_spec(frame):
 def frame_from_spec(spec, *, models, relations=None):
     """
     MIPFRAME HELP BEGIN
-    frame_from_spec [api.frame_from_spec]
-
     Restore an exact relation with explicit snapshot/dependency bindings.
 
-    frame_from_spec(spec, *, models, relations=None)
-
-    When to use: Restore an exact relation with explicit snapshot/dependency bindings.
-
-    Returns: Frame; externally claimed uniqueness is not trusted.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.identity, api.Frame.write
+    Full contract: mf.help("api.frame_from_spec")
     MIPFRAME HELP END
     """
     if (
@@ -200,9 +172,10 @@ def frame_from_spec(spec, *, models, relations=None):
         if op == "literal":
             return literal(decode(e["value"]))
         if op == "isin_frame":
-            return expression(e["input"], depth + 1).isin(
-                frame_from_spec(e["frame"], models=models, relations=relations)
-            )
+            member = e["frame"]
+            if set(member) != {"version", "plan"} or member["version"] != 1:
+                raise SchemaError("Unsupported Frame query specification")
+            return expression(e["input"], depth + 1).isin(build(member["plan"], depth + 1))
         if op == "isin":
             return QueryExpr(
                 op,
@@ -232,85 +205,34 @@ def frame_from_spec(spec, *, models, relations=None):
             raise SchemaError("Unknown query expression")
         return QueryExpr(op, tuple(expression(a, depth + 1) for a in e["args"]))
 
+    references = {}
+    declared = set()
+
     def build(n, depth=0):
         if depth > 64:
             raise SchemaError("Query specification is too deep")
+        if not isinstance(n, dict):
+            raise SchemaError("Invalid query node")
+        if n.get("op") == "ref":
+            ident = n.get("id")
+            if set(n) != {"op", "id"} or type(ident) is not int or ident not in references:
+                raise SchemaError("Unknown or cyclic query reference")
+            return references[ident]
+        ident = n.get("$id")
+        if "$id" in n:
+            if type(ident) is not int or ident < 0 or ident in declared:
+                raise SchemaError("Invalid or duplicate query node ID")
+            declared.add(ident)
+        result = operation(n, depth)
+        if "$id" in n:
+            references[ident] = result
+        return result
+
+    def operation(n, depth):
         op = n["op"]
         if op == "scan":
-            kind = n["kind"]
-            if kind == "algorithm_relation":
-                return build(n["source"], depth + 1).relations[n["name"]]
-            if kind == "algorithm":
-                from mipframe.ops._runtime import restore
-
-                return restore(n, lambda child: build(child, depth + 1))
-            if kind == "relation":
-                if n["relation"] not in relations:
-                    raise SchemaError("Missing explicit relation binding")
-                relation = relations[n["relation"]]
-                if dict(relation.schema) != {
-                    k: DType(**v) for k, v in n["schema"].items()
-                }:
-                    raise SchemaError("Relation schema or snapshot binding mismatch")
-                return relation
-            if kind == "entity_refs":
-                return build(n["source"], depth + 1).refs(n["column"])
-            if kind == "entity_set":
-                from mipframe.ops.support import set_operation
-
-                return set_operation(
-                    build(n["left"], depth + 1),
-                    build(n["right"], depth + 1),
-                    n["operation"],
-                )
-            if kind == "sparse_counts":
-                from mipframe.frame.adapters import sparse_counts
-
-                m = models[n["uid"]]
-                if m.version != n["version"]:
-                    raise SchemaError("Model version mismatch")
-                return sparse_counts(
-                    m,
-                    build(n["rows"], depth + 1),
-                    build(n["vars"], depth + 1),
-                    n["axis"],
-                )
-            if kind == "project":
-                return build(n["source"], depth + 1).project(
-                    **{k: build(v, depth + 1) for k, v in n["bindings"].items()}
-                )
-            if n.get("uid") not in models:
-                raise SchemaError("Missing model binding")
-            m = models[n["uid"]]
-            if (m.uid, m.version) != (n["uid"], n["version"]):
-                raise SchemaError("Model binding identity/version mismatch")
-            if kind in ("row", "var"):
-                ids = n["ids"]
-                ids = range(*ids["range"]) if isinstance(ids, dict) else ids
-                total = m.shape[0 if kind == "row" else 1]
-                if any(type(i) is not int or i < 0 or i >= total for i in ids):
-                    raise SchemaError("Invalid model IDs")
-                return (m.rows if kind == "row" else m.vars)._select(ids)
-            if kind == "membership":
-                from mipframe.frame.adapters import membership
-                from fractions import Fraction
-
-                config = n["config"]
-                args = {
-                    k: config[k] for k in ("mode", "coefficient", "rhs", "objective")
-                }
-                if config.get("multiplicity_ratio") is not None:
-                    args["multiplicity_ratio"] = Fraction(config["multiplicity_ratio"])
-                sig = m.structure.signatures(depth=n["depth"], **args)
-                if sig.config != config:
-                    raise SchemaError("Incompatible signature configuration")
-                return membership(build(n["source"], depth + 1), n["depth"], sig)
-            if kind == "terms":
-                return m.terms(
-                    rows=None if n["rows"] is None else build(n["rows"], depth + 1),
-                    vars=None if n["vars"] is None else build(n["vars"], depth + 1),
-                )
-            raise SchemaError("Unknown scan source")
+            from mipframe.frame.source_codec import decode_source
+            return decode_source(n, lambda child: build(child, depth+1), models, relations)
         inputs = [build(p, depth + 1) for p in n["inputs"]]
         f = inputs[0]
         if op == "filter":
@@ -448,19 +370,9 @@ def write(frame, path, *, format=None):
 def read_frame(path, *, models=()):
     """
     MIPFRAME HELP BEGIN
-    read_frame [api.read_frame]
-
     Restore an exact relation with explicit snapshot/dependency bindings.
 
-    read_frame(path, *, models=())
-
-    When to use: Restore an exact relation with explicit snapshot/dependency bindings.
-
-    Returns: Frame; externally claimed uniqueness is not trusted.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.identity, api.Frame.write
+    Full contract: mf.help("api.read_frame")
     MIPFRAME HELP END
     """
     path = Path(path)

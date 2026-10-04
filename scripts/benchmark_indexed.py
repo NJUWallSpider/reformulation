@@ -28,7 +28,7 @@ start = time.perf_counter()
 with load(target) as m:
     load_seconds = time.perf_counter() - start
     start = time.perf_counter()
-    result = m.structure.indexed()
+    result = m.indexed()
     elapsed = time.perf_counter() - start
     result.verify().require()
     (a.out / "summary.json").write_text(m.ir.to_json())

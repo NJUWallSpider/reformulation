@@ -11,22 +11,25 @@ from mipframe.entity import Entity
 class Var(Entity):
     """
     MIPFRAME HELP BEGIN
-    Var [api.Var]
-
     Original variable domain, bounds and objective coefficient.
 
-    Var [type]
-
-    When to use: Original variable domain, bounds and objective coefficient.
-
-    Returns: A public domain type. Obtain live handles through their owning Model or query.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.frame, api.Var.expr
+    Full contract: mf.help("api.Var")
     MIPFRAME HELP END
     """
-    columns = ("var", "name", "kind", "lb", "ub", "obj", "type", "nnz")
+    columns = ("source_line", "var", "name", "kind", "lb", "ub", "obj", "type", "nnz")
+
+    @property
+    def source_line(self):
+        """
+        One-based source line, or None for constructed entities.
+
+        MIPFRAME HELP BEGIN
+        Read the original source_line field or entity relation.
+
+        Full contract: mf.help("api.Var.source_line")
+        MIPFRAME HELP END
+        """
+        return self._owner.model.variables[self.id][6] or None
 
     def __init__(self, owner, ident: int):
         self._owner, self._id = owner, ident
@@ -36,21 +39,9 @@ class Var(Entity):
     def id(self) -> int:
         """
         MIPFRAME HELP BEGIN
-        Var.id [api.Var.id]
-
         Read the original id field or entity relation.
 
-        Var.id [property]
-
-        When to use: Read the original id field or entity relation.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Var.id")
         MIPFRAME HELP END
         """
         self._owner.model
@@ -60,21 +51,9 @@ class Var(Entity):
     def name(self) -> str:
         """
         MIPFRAME HELP BEGIN
-        Var.name [api.Var.name]
-
         Read the original name field or entity relation.
 
-        Var.name [property]
-
-        When to use: Read the original name field or entity relation.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Var.name")
         MIPFRAME HELP END
         """
         return self._owner.model.variables[self.id][1]
@@ -88,21 +67,9 @@ class Var(Entity):
     def kind(self):
         """
         MIPFRAME HELP BEGIN
-        Var.kind [api.Var.kind]
-
         Canonical C/I domain; binary is derived from effective integer bounds.
 
-        Var.kind [property]
-
-        When to use: Canonical C/I domain; binary is derived from effective integer bounds.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Var.kind")
         MIPFRAME HELP END
         """
         return self._owner.model.variables[self.id][2]
@@ -111,21 +78,9 @@ class Var(Entity):
     def is_binary(self):
         """
         MIPFRAME HELP BEGIN
-        Var.is_binary [api.Var.is_binary]
-
         Whether the nonempty integer domain is contained in {0,1}, including fixed 0/1.
 
-        Var.is_binary [property]
-
-        When to use: Whether the nonempty integer domain is contained in {0,1}, including fixed 0/1.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Var.is_binary")
         MIPFRAME HELP END
         """
         from mipframe.frame.sources import binary
@@ -136,21 +91,9 @@ class Var(Entity):
     def type(self):
         """
         MIPFRAME HELP BEGIN
-        Var.type [api.Var.type]
-
         Read the original type field or entity relation.
 
-        Var.type [property]
-
-        When to use: Read the original type field or entity relation.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Var.type")
         MIPFRAME HELP END
         """
         return "B" if self.is_binary else self.kind
@@ -159,21 +102,9 @@ class Var(Entity):
     def terms(self):
         """
         MIPFRAME HELP BEGIN
-        Var.terms [api.Var.terms]
-
         Original nonzero terms, not a dense row or column.
 
-        Var.terms [property]
-
-        When to use: Original nonzero terms, not a dense row or column.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Var.terms")
         MIPFRAME HELP END
         """
         from mipframe.frame.terms import TermFrame
@@ -184,21 +115,9 @@ class Var(Entity):
     def lb(self):
         """
         MIPFRAME HELP BEGIN
-        Var.lb [api.Var.lb]
-
         Read the original lb field or entity relation.
 
-        Var.lb [property]
-
-        When to use: Read the original lb field or entity relation.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Var.lb")
         MIPFRAME HELP END
         """
         from math import inf
@@ -211,21 +130,9 @@ class Var(Entity):
     def ub(self):
         """
         MIPFRAME HELP BEGIN
-        Var.ub [api.Var.ub]
-
         Read the original ub field or entity relation.
 
-        Var.ub [property]
-
-        When to use: Read the original ub field or entity relation.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Var.ub")
         MIPFRAME HELP END
         """
         from math import inf
@@ -238,21 +145,9 @@ class Var(Entity):
     def obj(self):
         """
         MIPFRAME HELP BEGIN
-        Var.obj [api.Var.obj]
-
         Read the original obj field or entity relation.
 
-        Var.obj [property]
-
-        When to use: Read the original obj field or entity relation.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Var.obj")
         MIPFRAME HELP END
         """
         m = self._owner.model
@@ -262,21 +157,9 @@ class Var(Entity):
     def nnz(self) -> int:
         """
         MIPFRAME HELP BEGIN
-        Var.nnz [api.Var.nnz]
-
         Read the original nnz field or entity relation.
 
-        Var.nnz [property]
-
-        When to use: Read the original nnz field or entity relation.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Var.nnz")
         MIPFRAME HELP END
         """
         m = self._owner.model
@@ -286,24 +169,12 @@ class Var(Entity):
     def rows(self):
         """
         MIPFRAME HELP BEGIN
-        Var.rows [api.Var.rows]
-
         Read the original rows field or entity relation.
 
-        Var.rows [property]
-
-        When to use: Read the original rows field or entity relation.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Var.rows")
         MIPFRAME HELP END
         """
-        return self._owner.vars._select((self.id,)).neighbors()
+        return self._owner.vars._select((self.id,)).rows
 
     def __repr__(self):
         import json
@@ -325,21 +196,9 @@ class Var(Entity):
     def expr(self):
         """
         MIPFRAME HELP BEGIN
-        Var.expr [api.Var.expr]
-
         Original affine expression; row expressions contain no bound and constant zero.
 
-        Var.expr [property]
-
-        When to use: Original affine expression; row expressions contain no bound and constant zero.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Var.expr")
         MIPFRAME HELP END
         """
         from mipframe.linear.expr import variable
@@ -376,21 +235,9 @@ class Var(Entity):
     def eq(self, other):
         """
         MIPFRAME HELP BEGIN
-        Var.eq [api.Var.eq]
-
         Construct a mathematical equality Claim; entity == retains identity semantics.
 
-        Var.eq(other)
-
-        When to use: Construct a mathematical equality Claim; entity == retains identity semantics.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Var.eq")
         MIPFRAME HELP END
         """
         return self.expr.eq(other)
@@ -399,21 +246,9 @@ class Var(Entity):
     def lb_claim(self):
         """
         MIPFRAME HELP BEGIN
-        Var.lb_claim [api.Var.lb_claim]
-
         Original finite lower side with snapshot/entity provenance.
 
-        Var.lb_claim [property]
-
-        When to use: Original finite lower side with snapshot/entity provenance.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Var.lb_claim")
         MIPFRAME HELP END
         """
         from mipframe.linear.claim import source_claim
@@ -423,21 +258,9 @@ class Var(Entity):
     def ub_claim(self):
         """
         MIPFRAME HELP BEGIN
-        Var.ub_claim [api.Var.ub_claim]
-
         Original finite upper side with snapshot/entity provenance.
 
-        Var.ub_claim [property]
-
-        When to use: Original finite upper side with snapshot/entity provenance.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Var.ub_claim")
         MIPFRAME HELP END
         """
         from mipframe.linear.claim import source_claim

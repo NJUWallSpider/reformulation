@@ -87,7 +87,7 @@ def set_operation(left, right, operation):
         models=merge_models(left, right),
         source=scan,
     )
-    result._source_spec = {
+    result._query.spec = {
         "kind": "entity_set",
         "left": left,
         "right": right,

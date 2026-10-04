@@ -34,7 +34,7 @@ End
     assert m.variables[y][2]=='I' and m.variables[y][3] is None
     assert m.num(m.variables[z][3])==0 and m.num(m.variables[z][4])==1
     assert m.row(m.row_names['two_sided'])=={x:F(1),y:F(2)}
-    assert len(m.rows)==5 and ir.verify()['status']=='PASS'
+    assert len(m.rows)==5 and ir.verify().status=='PROVED'
     out=tmp_path/'round.lp';ir.write_lp(out)
     with read(out) as new:
         assert new.objective.constant == F('3.125')
@@ -69,7 +69,7 @@ End
     assert m.num(m.variables[m.var_names['a']][3])==0
     assert m.variables[m.var_names['b']][4] is None
     assert m.row(0)=={}
-    assert ir.verify()['rows_verified']==2
+    assert ir.verify().summary['rows_verified']==2
 
 def test_empty_constraint_set_and_bound_only_variable(make_model):
     ir=make_model('''Minimize
@@ -81,7 +81,7 @@ End
 ''')
     assert ir.shape[0]==0
     assert ir.model.num(ir.model.variables[0][3])==4
-    assert ir.verify()['status']=='PASS'
+    assert ir.verify().status=='PROVED'
 
 def test_multiline_rhs_and_reverse_range(make_model):
     ir=make_model('''Minimize
@@ -148,7 +148,7 @@ end
     out = tmp_path / 'highs_roundtrip.lp'
     ir.write_lp(out)
     with read(out) as rebuilt:
-        assert rebuilt.verify()['status'] == 'PASS'
+        assert rebuilt.verify().status == 'PROVED'
         for name in ('x', 'y', 'z'):
             assert rebuilt.model.num(rebuilt.model.variables[rebuilt.model.var_names[name]][5]) == m.num(m.variables[m.var_names[name]][5])
         assert rebuilt.model.num(rebuilt.model.manifest['objective_constant']) == 7
@@ -164,7 +164,7 @@ def test_highs_empty_semi_section(make_model):
     ir = make_model('min\n obj: x\nst\n r: x <= 1\nbin\n x\ngen\nsemi\n\\ empty HiGHS domain\nend\n')
     assert ir.model.variables[0][2] == 'I'
     assert ir.vars.iloc[0].is_binary
-    assert ir.verify()['status'] == 'PASS'
+    assert ir.verify().status == 'PROVED'
 
 
 def test_highs_nonempty_semi_rejected(make_model):
@@ -176,4 +176,4 @@ def test_wide_highs_row_verifies(make_model):
     terms = ' + '.join(f'{i + 1}\n x{i}' for i in range(1001))
     ir = make_model(f'min\n obj: x0\nst\n r: {terms} <= 2000\nend\n')
     assert len(ir.model.row(0)) == 1001
-    assert ir.verify()['status'] == 'PASS'
+    assert ir.verify().status == 'PROVED'

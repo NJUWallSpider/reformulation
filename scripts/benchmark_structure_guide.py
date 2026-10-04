@@ -58,7 +58,7 @@ def main():
             print(f'cell {index:2}: {elapsed:.3f}s', flush=True)
             if model_info is None and 'm' in namespace:
                 model = namespace['m']
-                indexed = model.structure.indexed()
+                indexed = model.indexed()
                 model_info = {
                     'model_version': model.version,
                     'rows': model.shape[0], 'variables': model.shape[1], 'nonzeros': model.nnz,

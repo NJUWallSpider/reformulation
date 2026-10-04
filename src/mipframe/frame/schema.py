@@ -12,19 +12,9 @@ from mipframe.store.numbers import MIPFrameError
 class SchemaError(MIPFrameError):
     """
     MIPFRAME HELP BEGIN
-    SchemaError [api.SchemaError]
-
     Diagnostic exception; inspect original message and any attached complete Report.
 
-    SchemaError [type]
-
-    When to use: Diagnostic exception; inspect original message and any attached complete Report.
-
-    Returns: Exception type, not a mathematical result.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.frame
+    Full contract: mf.help("api.SchemaError")
     MIPFRAME HELP END
     """
     pass
@@ -34,19 +24,9 @@ class SchemaError(MIPFrameError):
 class Ref:
     """
     MIPFRAME HELP BEGIN
-    Ref [api.Ref]
-
     Detached snapshot-qualified entity identity; navigate with ref.bind(model) or matching rows.loc[ref]/vars.loc[ref].
 
-    Ref [type]
-
-    When to use: Detached snapshot-qualified entity identity; navigate with ref.bind(model) or matching rows.loc[ref]/vars.loc[ref].
-
-    Returns: A public domain type. Obtain live handles through their owning Model or query.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.identity
+    Full contract: mf.help("api.Ref")
     MIPFRAME HELP END
     """
     uid: str
@@ -70,45 +50,23 @@ class Ref:
     def bind(self, model):
         """
         MIPFRAME HELP BEGIN
-        Ref.bind [api.Ref.bind]
-
         Bind a detached identity to the corresponding live snapshot.
 
-        Ref.bind(model)
-
-        When to use: Bind a detached identity to the corresponding live snapshot.
-
-        Inputs: Model with matching uid/version and correct axis/ID.
-
-        Returns: Live Row or Var.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.identity
+        Full contract: mf.help("api.Ref.bind")
         MIPFRAME HELP END
         """
         if (model.uid, model.version) != (self.uid, self.version):
             raise SchemaError("Reference and model snapshot differ")
-        return (model.rows if self.kind == "row" else model.vars).by_id(self.id)
+        return (model.rows if self.kind == "row" else model.vars).loc[self.id]
 
 
 @dataclass(frozen=True)
 class DType:
     """
     MIPFRAME HELP BEGIN
-    DType [api.DType]
-
     Scalar column type, including nullable and snapshot-qualified references.
 
-    DType [type]
-
-    When to use: Scalar column type, including nullable and snapshot-qualified references.
-
-    Returns: A public domain type. Obtain live handles through their owning Model or query.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.frame
+    Full contract: mf.help("api.DType")
     MIPFRAME HELP END
     """
     kind: str
@@ -270,3 +228,16 @@ def decode(value):
     if set(value) == {"ref"}:
         return Ref(**value["ref"])
     raise SchemaError("Unknown scalar encoding")
+
+
+def decode_tree(value, *, frame_decoder=None):
+    """Recursively decode exact scalar tags; domain recipes may bind Frame tags."""
+    if isinstance(value,dict):
+        if set(value) in ({'rational'},{'infinity'},{'ref'},{'draft_ref'}):
+            return decode(value)
+        if set(value)=={'$frame'} and frame_decoder is not None:
+            return frame_decoder(value['$frame'])
+        return {k:decode_tree(v,frame_decoder=frame_decoder) for k,v in value.items()}
+    if isinstance(value,list):
+        return [decode_tree(v,frame_decoder=frame_decoder) for v in value]
+    return value

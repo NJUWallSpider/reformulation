@@ -114,7 +114,7 @@ def test_exact_query_and_column_pruning(m, monkeypatch):
     assert len(m.rows.select("row", "name")) == 6
     monkeypatch.setattr(m.model, "num", original)
     t = m.terms().select("var", a=col("coef") / 3)
-    assert all(isinstance(r["a"], Q) for r in t.collect())
+    assert all(isinstance(r["a"], Q) for r in t.to_records())
     assert t.column("a").sum() == Q(25, 3)
     with pytest.raises(mf.SchemaError):
         t.where(col("a") < 0.1)
@@ -139,11 +139,11 @@ def test_projection_join_and_domain_checks(m):
     g = q.group_by("i").agg(
         n=col("a").nunique(), amin=col("a").min(), amax=col("a").max()
     )
-    assert [r["amin"] for r in g.collect()] == [2, 5]
-    assert [r["amax"] for r in g.collect()] == [3, 7]
+    assert [r["amin"] for r in g.to_records()] == [2, 5]
+    assert [r["amax"] for r in g.to_records()] == [3, 7]
     assert p.check("function", key="var", value=("i", "j")).ok
     with pytest.raises(mf.CardinalityError) as exc:
-        m.vars.project(i=i, j=j).head(1).collect()
+        m.vars.project(i=i, j=j).head(1).to_records()
     assert len(exc.value.report.violations) == 2
     counts = m.matrix.nnz(rows=m.rows, vars=v, axis="row")
     assert list(counts.column("nnz")) == [2, 2, 2, 2, 4, 0]
@@ -166,16 +166,16 @@ def test_spill_exact_group_sort_join(budget):
         assert list(f.sort_by("v").column("v")) == [Q(1), Q(1) + eps, Q(1) + eps, None]
         assert f.column("v").nunique() == 2
         assert [
-            r["n"] for r in f.group_by("k").agg(n=col("v").nunique()).collect()
+            r["n"] for r in f.group_by("k").agg(n=col("v").nunique()).to_records()
         ] == [2, 1, 0]
         g = f.group_by("k").agg(total=col("v").sum())
         assert len(f.join(g, on="k", how="left")) == 4
         assert f.column("v").argmax().count() == 2
         assert (
-            f.sample(2, random_state=7).collect()
-            == f.sample(2, random_state=7).collect()
+            f.sample(2, random_state=7).to_records()
+            == f.sample(2, random_state=7).to_records()
         )
-        assert f.sample(0).collect() == []
+        assert f.sample(0).to_records() == []
     finally:
         mf.options.query.memory_mb = old
 
@@ -188,7 +188,7 @@ def test_join_barrier_full_violations():
         [dict(k=1), dict(k=2)], schema={"k": DType("int", True)}, key=("k",)
     )
     with pytest.raises(mf.CardinalityError) as exc:
-        f.join(right, on="k", cardinality="1:1", require="left").head(1).collect()
+        f.join(right, on="k", cardinality="1:1", require="left").head(1).to_records()
     assert len(exc.value.report.violations) == 4
     with pytest.raises(mf.SchemaError):
         f.join(f.select("k", other=col("v")), on="k")
@@ -207,25 +207,25 @@ def test_spec_and_exact_exports(m, tmp_path):
     restored = mf.frame_from_spec(
         json.loads(json.dumps(q.to_spec())), models={m.uid: m}
     )
-    assert restored.collect() == q.collect()
+    assert restored.to_records() == q.to_records()
     path = q.write(tmp_path / "out.jsonl")
     detached = mf.read_frame(path, models=(m,))
-    assert detached.collect() == q.collect()
+    assert detached.to_records() == q.to_records()
     with pytest.raises(FileExistsError):
         q.write(path)
     with pytest.raises(mf.SchemaError):
         mf.frame_from_spec(q.to_spec(), models={})
     with pytest.raises(mf.MaterializationLimitError):
-        m.terms().collect(memory_mb=0.015625) if m.nnz > 100 else Frame.from_records(
+        m.terms().to_records(memory_mb=0.015625) if m.nnz > 100 else Frame.from_records(
             (dict(k=n, v=Q(n, 3)) for n in range(1000)),
             schema={"k": "int", "v": "number"},
-        ).collect(memory_mb=0.015625)
+        ).to_records(memory_mb=0.015625)
 
 
 def test_detached_and_live_lifecycle(m):
     q = m.terms().head(1)
     row = q.one()
-    snapshot = q.collect()
+    snapshot = q.to_records()
     batches = list(q.iter_batches(1))
     live = iter(q)
     m.close()

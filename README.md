@@ -15,9 +15,9 @@ From this repository (Python 3.11 or later):
 python -m pip install .
 ```
 
-Version 0.8.0 is an internal preview, not a public PyPI release. NumPy is the
+Version 1.0.0 is an internal release, not a public PyPI release. NumPy is the
 only runtime dependency. For a distributed wheel, install with
-`python -m pip install /path/to/mipframe-0.8.0-py3-none-any.whl`.
+`python -m pip install /path/to/mipframe-1.0.0-py3-none-any.whl`.
 Install `.[scipy]` from this repository for sparse CSR exports, or `.[parquet]`
 for Parquet exports. Offline help is available through
 `python -m mipframe help "support containment"`.
@@ -37,9 +37,9 @@ with mf.read("model.mps") as m:
     m.ir.size, m.ir.matrix, m.ir.domains
     m.ir.numerics, m.ir.objective, m.ir.topology
     record = m.ir.structure["row_families"][0]
-    family = m.structure.signatures().family(record["id"], depth=record["depth"])
+    family = m.family(record["id"], depth=record["depth"])
     R = family.rows
-    params = family.params
+    params = family.related("parameters").where(basis="canonical")
     S = m.matrix.view(rows=R, vars=R.vars)
 ```
 
@@ -84,22 +84,22 @@ with mf.read("model.mps") as model:
     print(model)                   # MIPModel("model") followed by numerical statistics
     print(model.shape, model.nnz)
 
-    variable = model.variables[0]
-    print(variable.name, variable.kind, variable.lower, variable.upper)
+    variable = model.vars.iloc[0]
+    print(variable.name, variable.kind, variable.lb, variable.ub)
 
-    constraint = model.constraints[0]
-    print(constraint.name, constraint.lower, constraint.upper)
-    print(constraint.coefficients)  # {variable_id: Fraction(...), ...}
+    constraint = model.rows.iloc[0]
+    print(constraint.name, constraint.lb, constraint.ub)
+    print(constraint.terms)         # original exact (row, var, coef) terms
 
     print(model.objective.sense)
     print(model.objective.constant)
     print(model.objective.coefficients)
 ```
 
-Finite values are `fractions.Fraction`; an absent lower or upper bound is `None`.
-Sequence indexing is zero-based. Use `model.constraints.by_name("demand")` or
-`model.variables.by_name("x")` for name lookup. Coefficient dictionaries are
-independent copies, materialized only when requested.
+Finite values are `fractions.Fraction`; unbounded sides are `-inf` and `inf`.
+Position indexing with `.iloc` is zero-based; `.loc` uses original IDs or typed Refs. Use `model.rows.by_name("demand")` or
+`model.vars.by_name("x")` for name lookup. Rows and variables include `source_line` (one-based, or `None` for constructed entities).
+Use `to_records()` for explicit detached exports.
 
 In notebooks, putting `model` on the last line displays its name, objective sense,
 variable/constraint/nonzero counts, matrix density, variable types and objective
@@ -125,10 +125,10 @@ m.rows.loc[r.id]                   # Declared key -> Row
 m.rows.where(col("ub") <= 1)
 m.rows.column("ub").argmax()       # Every tied maximizer
 
-F0 = m.rows.family("F0@2")
-F1 = m.rows.family("F1@2")
-F2 = m.rows.family("F2@2")
-V2 = m.vars.family("V2@1")
+F0 = m.family("F0@2").rows
+F1 = m.family("F1@2").rows
+F2 = m.family("F2@2").rows
+V2 = m.family("V2@1").vars
 P = V2.project(i=F0, k=F1, j=F2)
 P.check("product", ("i", "j")).require()
 P.check("function", key="i", value="k").require()
@@ -154,14 +154,14 @@ sample cannot turn partial Cartesian coverage into a full proof.
 ```python
 C = m.matrix.nnz(rows=F0, vars=V2, axis="var")
 rare = C.where(col("nnz") <= 2).refs("var")  # Includes zero-degree variables
-patterns = V2.pattern_counts("family")
+patterns = V2.pattern_counts()
 patterns.relations["members"]               # var Ref, pattern ID
 patterns.relations["items"]                 # pattern ID, family, count
 ```
 
 Frame numeric comparisons, grouping and aggregation remain exact. Use `Fraction`
 or `Decimal` for noninteger constants; implicit finite floats are rejected.
-`collect()` / `to_records()` explicitly produce detached records, with a default
+`to_records()` explicitly produce detached records, with a default
 128 MiB materialization limit. `iter_batches()` and atomic exact JSONL `write()`
 stream larger exports. Records contain snapshot-qualified Ref values; bind them
 explicitly to an open matching model to resume navigation. Live Frames, records
@@ -210,8 +210,8 @@ row by default. Only displayed rows are scanned. The existing
 ## Local sparse matrices
 
 ```python
-R = m.rows.family("F0@2")
-V = R.neighbors()
+R = m.family("F0@2").rows
+V = R.vars
 S = m.matrix.view(rows=R, vars=V)
 S                                 # Shape, nnz, density; never a dense preview
 S.preview()                       # At most 8 rows × 12 vars, most active vars first
@@ -257,7 +257,7 @@ after it closes. For other sparse formats use `A.tocoo()` or `A.tocsc()` explici
 
 ## Custom structural queries in Python
 
-Raw sparse access is public. `m.A` and `S.to_scipy()` return independent SciPy CSR
+Raw sparse access is public. `S.to_scipy()` return independent SciPy CSR
 matrices with explicit float64 conversion. Inspect exact coefficients through
 Terms; use these exports for NumPy, SciPy, sklearn or graph experimentation.
 
@@ -323,18 +323,24 @@ contracts. See [ALG.md](docs/ALG.md) and the executable
 ## Structural roles and numerical observations
 
 ```python
-sig = m.structure.signatures(depth=3, mode="template")
-sig.row_families(2)                 # Frame: scalar family summaries
-sig.var_families(1)
-sig.rows                            # Frame: row Ref and colors at each depth
-members = sig.row_families(2).relations["members"]
-F = sig.family("F0", depth=2)       # Domain facade for explicit drill-down
-F.inspect()
-F.rows                              # RowFrame
-F.params                            # Frame: signed role, exact range, distinct count
-F.params.relations["histogram"]     # Frame: role, exact value, frequency
-m.rows.signature("algebraic")       # Frame with separate .relations["pattern"]
+m.row_families                         # Frame; template row depth 2
+m.var_families                         # Frame; template variable depth 2
+F = m.family("F0", depth=2)            # One-row Frame
+F.rows                                # Original row members
+F.rows.vars                           # Neighboring variables
+F.inspect()                           # Bounded detail text
+F.related("pattern")                  # Complete structural tokens and orientations
+F.related("parameters").where(basis="canonical")
+F.related("histogram").where(basis="raw")
+m.rows.head(100).families()            # Global IDs, selected-member statistics
+mf.analysis.signatures(m.rows, method="algebraic")
+m.refinement(1, 2)                     # Parent/child transition Frame
 ```
+
+A family directory and a single-family selection are ordinary Frames. Filters
+also restrict related members and statistics; retain `family_key` when projecting
+if you need later navigation. `count` is selected coverage, `total_count` is the
+full-model population. A row at depth d references variable roles at d-1.
 
 Families are model/configuration/depth-dependent observations. Template roles
 use coefficient signs and multiplicity classes; exact mode uses normalized
@@ -403,7 +409,7 @@ entry points. Numeric storage formats are versioned independently from the packa
 ### Signature-assisted indexed discovery
 
 ```python
-I = m.structure.indexed()  # already prepared by read/load; saved with the model
+I = m.indexed()  # already prepared by read/load; saved with the model
 I.tensors                 # verified 2D coordinate views, including sparse grids
 I.operators               # exact reduction / broadcast operators
 I.verify().require()

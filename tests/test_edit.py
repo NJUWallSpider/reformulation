@@ -351,7 +351,7 @@ def test_draft_frame_queries_and_foreign_scopes(m):
     Y = e.add_vars(recs(m, [dict(label="u"), dict(label="v")], {"label": "str"}))
     v = Y.loc["u"].var
     assert len(Y.where(mf.col("var") == v)) == 1
-    assert isinstance(Y.collect()[0]["var"], mf.DraftRef)
+    assert isinstance(Y.to_records()[0]["var"], mf.DraftRef)
     assert isinstance(next(Y.iter_batches(1)).to_records()[0]["var"], mf.DraftRef)
     x = variables(m)[0]
     e.add_row(x <= v)
@@ -446,7 +446,7 @@ def test_failed_ir_and_disk_cleanup(m, monkeypatch, tmp_path):
 
     monkeypatch.setattr(Model, "_build_ir", failed)
     with pytest.raises(RuntimeError, match="interrupted IR"):
-        e.build()
+        e.build(prepare="indexed")
     assert m.version == before and not e._sealed
     monkeypatch.setattr(Model, "_build_ir", real)
     n = e.build()
@@ -660,7 +660,7 @@ def test_unrelated_snapshot_and_persisted_map_identity(m, tmp_path):
             m.edit().drop_rows(other.rows)
     e = m.edit()
     n = e.build()
-    identities = n.lineage.mapping("var").collect()
+    identities = n.lineage.mapping("var").to_records()
     assert (
         identities[0]["source_uid"] == m.uid
         and identities[0]["source_version"] == m.version

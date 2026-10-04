@@ -1,6 +1,7 @@
 include README.md pyproject.toml setup.py
 recursive-include src/mipframe *.py py.typed *.json *.md
 recursive-include tests *.py
+recursive-include tests/fixtures *.zip *.md
 recursive-include scripts *.py
 recursive-include docs *.md
 recursive-include examples *.py *.ipynb

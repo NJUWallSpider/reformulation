@@ -43,19 +43,9 @@ def merge_models(*frames):
 class Record(Mapping):
     """
     MIPFRAME HELP BEGIN
-    Record [api.Record]
-
     Live read-only record; to_record exports detached values.
 
-    Record [type]
-
-    When to use: Live read-only record; to_record exports detached values.
-
-    Returns: A public domain type. Obtain live handles through their owning Model or query.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.identity
+    Full contract: mf.help("api.Record")
     MIPFRAME HELP END
     """
     def __init__(self, frame, values):
@@ -74,9 +64,9 @@ class Record(Mapping):
             return DraftRef(typ.uid, typ.axis, value).bind()
         if typ.kind == "ref" and value is not None:
             return (
-                self._frame._owner_for(typ).rows.by_id(value)
+                self._frame._owner_for(typ).rows.loc[value]
                 if typ.axis == "row"
-                else self._frame._owner_for(typ).vars.by_id(value)
+                else self._frame._owner_for(typ).vars.loc[value]
             )
         return value
 
@@ -204,19 +194,9 @@ from mipframe.frame.column import ColumnView
 class Frame:
     """
     MIPFRAME HELP BEGIN
-    Frame [api.Frame]
-
     Typed exact relation with declared key, domains and composable query plans.
 
-    Frame [type]
-
-    When to use: Typed exact relation with declared key, domains and composable query plans.
-
-    Returns: A public domain type. Obtain live handles through their owning Model or query.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.frame, api.Frame.from_records
+    Full contract: mf.help("api.Frame")
     MIPFRAME HELP END
     """
     @property
@@ -251,11 +231,12 @@ class Frame:
         if self._key is not None and not set(self._key) <= set(schema):
             raise SchemaError("Key columns absent from schema")
         self._models = tuple(models)
-        self._op, self._parents, self._params, self._source = (
+        from mipframe.frame.query import QuerySource
+        self._query = QuerySource(scan=source, display_columns=getattr(type(self), "_display_columns", None))
+        self._op, self._parents, self._params = (
             op,
             tuple(parents),
             params or {},
-            source,
         )
         self._domains = MappingProxyType(dict(domains or {}))
         self._relations = MappingProxyType(dict(relations or {}))
@@ -274,7 +255,7 @@ class Frame:
                 edit._guard()
         for m in self._models:
             m.model
-        resource = getattr(self, "_resource", None)
+        resource = self._query.resource
         if resource is not None:
             resource.guard()
 
@@ -282,27 +263,9 @@ class Frame:
     def schema(self):
         """
         MIPFRAME HELP BEGIN
-        Frame.schema [api.Frame.schema]
-
         Read the mapping from column names to DType metadata.
 
-        Frame.schema [property]
-
-        When to use: Read the mapping from column names to DType metadata.
-
-        Returns: Column DTypes, including snapshot-qualified row and variable references.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Illustrative example (requires caller-provided inputs):
-        schema = {"target": "str", "var": m.vars.schema["var"], "coef": "number"}
-
-        For Frame.from_records, provide a schema mapping such as str, int or number for scalar fields.
-        Copy reference types from m.vars.schema["var"] or m.rows.schema["row"] and pass models=(m,) when building model-bound records.
-        Use key=("target",) only for genuinely unique target records. A terms table can contain several variables per target.
-        Schema describes column types; it does not establish uniqueness, coverage or a mathematical claim.
-
-        See also: api.Frame.from_records, api.DType, api.Frame.key, concept.frame
+        Full contract: mf.help("api.Frame.schema")
         MIPFRAME HELP END
         """
         self._guard()
@@ -312,19 +275,9 @@ class Frame:
     def columns(self):
         """
         MIPFRAME HELP BEGIN
-        Frame.columns [api.Frame.columns]
-
         Read the Frame columns metadata.
 
-        Frame.columns [property]
-
-        When to use: Read the Frame columns metadata.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.columns")
         MIPFRAME HELP END
         """
         return tuple(self.schema)
@@ -333,19 +286,9 @@ class Frame:
     def key(self):
         """
         MIPFRAME HELP BEGIN
-        Frame.key [api.Frame.key]
-
         Read the Frame key metadata.
 
-        Frame.key [property]
-
-        When to use: Read the Frame key metadata.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.key")
         MIPFRAME HELP END
         """
         self._guard()
@@ -355,19 +298,9 @@ class Frame:
     def unique(self):
         """
         MIPFRAME HELP BEGIN
-        Frame.unique [api.Frame.unique]
-
         Read the Frame unique metadata.
 
-        Frame.unique [property]
-
-        When to use: Read the Frame unique metadata.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.unique")
         MIPFRAME HELP END
         """
         self._guard()
@@ -377,19 +310,9 @@ class Frame:
     def models(self):
         """
         MIPFRAME HELP BEGIN
-        Frame.models [api.Frame.models]
-
         Read the Frame models metadata.
 
-        Frame.models [property]
-
-        When to use: Read the Frame models metadata.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.models")
         MIPFRAME HELP END
         """
         self._guard()
@@ -399,19 +322,9 @@ class Frame:
     def domains(self):
         """
         MIPFRAME HELP BEGIN
-        Frame.domains [api.Frame.domains]
-
         Declared domains retained through filtering; not reduced to observed values.
 
-        Frame.domains [property]
-
-        When to use: Declared domains retained through filtering; not reduced to observed values.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.domains")
         MIPFRAME HELP END
         """
         self._guard()
@@ -421,41 +334,100 @@ class Frame:
     def relations(self):
         """
         MIPFRAME HELP BEGIN
-        Frame.relations [api.Frame.relations]
-
         Read-only mapping of attached normalized Frames, such as members and search metadata.
 
-        Frame.relations [property]
-
-        When to use: Read-only mapping of attached normalized Frames, such as members and search metadata.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.relations")
         MIPFRAME HELP END
         """
         self._guard()
         return self._relations
 
+    def related(self, name):
+        """
+        Navigate a declared relation, restricted to this Frame's current keys.
+
+        MIPFRAME HELP BEGIN
+        Navigate a declared relation using the current selected keys.
+
+        Full contract: mf.help("api.Frame.related")
+        MIPFRAME HELP END
+        """
+        self._guard()
+        navigation = self._query.navigation
+        if navigation is None:
+            if name in self.relations:
+                return self.relations[name]
+            raise KeyError(f'No declared relation {name!r}; retain its linking columns')
+        provider, keys = navigation
+        return provider.related(self, name, keys)
+
+    @property
+    def rows(self):
+        """
+        Original row members of a declared row-family relation.
+
+        MIPFRAME HELP BEGIN
+        Read declared row members of the current family or indexed selection.
+
+        Full contract: mf.help("api.Frame.rows")
+        MIPFRAME HELP END
+        """
+        return self.related('rows')
+
+    @property
+    def vars(self):
+        """
+        Original variable members of a declared variable-family relation.
+
+        MIPFRAME HELP BEGIN
+        Read declared variable members of the current family or indexed selection.
+
+        Full contract: mf.help("api.Frame.vars")
+        MIPFRAME HELP END
+        """
+        return self.related('vars')
+
+    def inspect(self, *, verbose=False, samples=3, sample_formula='auto', max_terms=12,
+                max_items=15, max_splits=5):
+        """
+        Render bounded details without constructing another public result object.
+
+        MIPFRAME HELP BEGIN
+        Render a bounded table or provider-specific family/indexed details.
+
+        Full contract: mf.help("api.Frame.inspect")
+        MIPFRAME HELP END
+        """
+        self._guard()
+        if type(verbose) is not bool: raise TypeError('verbose must be a boolean')
+        self._size(samples); self._size(max_terms)
+        if sample_formula != 'auto' and type(sample_formula) is not bool:
+            raise ValueError('sample_formula must be auto or boolean')
+        if any(type(v) is not int or v < 1 for v in (max_items, max_splits)):
+            raise ValueError('display limits must be positive integers')
+        navigation = self._query.navigation
+        provider = navigation[0] if navigation is not None else None
+        settings = dict(verbose=verbose, samples=samples, sample_formula=sample_formula,
+                        max_terms=max_terms, max_items=max_items, max_splits=max_splits)
+        defaults = dict(verbose=False, samples=3, sample_formula='auto',
+                        max_terms=12, max_items=15, max_splits=5)
+        supported = getattr(provider, 'inspect_options', {'max_items'})
+        unsupported = [name for name,value in settings.items()
+                       if name not in supported and value != defaults[name]]
+        if unsupported:
+            raise ValueError('This view does not support inspect options: '+', '.join(unsupported))
+        if provider is None or not hasattr(provider, 'inspect'):
+            return self._render(max_rows=max_items)
+        return provider.inspect(self, navigation[1],
+            **{name:value for name,value in settings.items() if name in supported})
+
     @property
     def iloc(self):
         """
         MIPFRAME HELP BEGIN
-        Frame.iloc [api.Frame.iloc]
-
         Position lookup or slice; supports negative positions, rejects bool.
 
-        Frame.iloc [property]
-
-        When to use: Position lookup or slice; supports negative positions, rejects bool.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.iloc")
         MIPFRAME HELP END
         """
         return Locator(self, True)
@@ -464,19 +436,9 @@ class Frame:
     def loc(self):
         """
         MIPFRAME HELP BEGIN
-        Frame.loc [api.Frame.loc]
-
         Lookup by declared key, with tuple for compound keys; no-key lookup fails.
 
-        Frame.loc [property]
-
-        When to use: Lookup by declared key, with tuple for compound keys; no-key lookup fails.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.loc")
         MIPFRAME HELP END
         """
         return Locator(self, False)
@@ -485,19 +447,9 @@ class Frame:
     def shape(self):
         """
         MIPFRAME HELP BEGIN
-        Frame.shape [api.Frame.shape]
-
         Exact row count and number of fields; unlike repr this can evaluate the query.
 
-        Frame.shape [property]
-
-        When to use: Exact row count and number of fields; unlike repr this can evaluate the query.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.shape")
         MIPFRAME HELP END
         """
         return len(self), len(self.schema)
@@ -505,7 +457,7 @@ class Frame:
     def __getitem__(self, key):
         self._guard()
         raise _help_hint(TypeError(
-            "Use .iloc for positions, .loc for keys, .family(), .where() or .column(); Frame [] is not supported"
+            "Use .iloc for positions, .loc for keys, Model.family(), .where() or .column(); Frame [] is not supported"
         ), 'error.navigation')
 
     def __bool__(self):
@@ -543,6 +495,7 @@ class Frame:
         self._guard()
         fields = tuple(self.schema if fields is None else fields)
         ctx = Context(self._models, memory_mb)
+        iterator = None
         try:
             iterator = iter(self._raw(fields, ctx))
             while True:
@@ -556,14 +509,19 @@ class Frame:
                 ctx.check_size(row)
                 yield row
         finally:
-            if not ctx.retained:
-                ctx.close()
+            try:
+                if iterator is not None and hasattr(iterator, "close"):
+                    iterator.close()
+            finally:
+                if not ctx.retained:
+                    ctx.close()
 
     def _raw(self, fields, ctx):
         self._guard()
+        ctx = ctx.query_context
         op, p = self._op, self._params
         if op == "source":
-            yield from self._source(fields, ctx)
+            yield from self._query.scan(fields, ctx)
             return
         if op in ("join", "group", "sort", "distinct", "slice", "sample"):
             yield from blocking(self, fields, ctx)
@@ -610,29 +568,9 @@ class Frame:
     def count(self):
         """
         MIPFRAME HELP BEGIN
-        Frame.count [api.Frame.count]
-
         Compute an exact record count.
 
-        Frame.count()
-
-        When to use: Compute an exact record count.
-
-        Inputs: No arguments.
-
-        Returns: Integer; arbitrary queries may require complete execution.
-
-        Establishes: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Schema/type errors or execution/resource errors preserve their diagnostics.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.count")
         MIPFRAME HELP END
         """
         return len(self)
@@ -648,10 +586,11 @@ class Frame:
         preserve=False,
         domains=None,
     ):
+        from mipframe.frame.query import expression_frames
         result = Frame(
             self.schema if schema is None else schema,
             key=self.key if key == "inherit" else key,
-            models=self._models,
+            models=merge_models(self, *expression_frames(params)),
             op=op,
             parents=(self,),
             params=params,
@@ -659,6 +598,14 @@ class Frame:
             domains=self.domains if domains is None else domains,
             relations=self.relations,
         )
+        if op != 'group':
+            renames = None
+            if op == 'select':
+                renames = {e.args[0]: n for n, e in params['expressions'].items() if e.op == 'col'}
+                navigation = self._query.navigation
+                if navigation and not set(navigation[1].values()) <= set(renames):
+                    return result
+            self._query.inherit(result, renames)
         if preserve and getattr(self, "_entity_axis", None):
             from mipframe.frame.entity import RowFrame
             from mipframe.frame.entity import VarFrame
@@ -674,31 +621,13 @@ class Frame:
     def where(self, *predicates, **equalities):
         """
         MIPFRAME HELP BEGIN
-        Frame.where [api.Frame.where]
-
         Filter by serializable boolean predicates and keyword equalities.
 
-        Frame.where(*predicates, **equalities)
-
-        When to use: Filter by serializable boolean predicates and keyword equalities.
-
-        Inputs: Predicates combine by intersection. Ref membership validates axis/snapshot.
-
-        Returns: Same Frame type and order; nullable filters retain only True.
-
-        Establishes: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Schema/type errors or execution/resource errors preserve their diagnostics.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.where")
         MIPFRAME HELP END
         """
+        if self._op == 'filter':
+            return self._parents[0].where(*self._params['predicates'], *predicates, **equalities)
         values = list(predicates)
         for n, v in equalities.items():
             values.append(
@@ -713,47 +642,21 @@ class Frame:
                 )
             if e.type(self.schema).kind != "bool":
                 raise SchemaError("where requires boolean expressions")
-        result = self._derive("filter", {"predicates": tuple(values)}, preserve=True)
+        source = self
+        if self._query.pushdown is not None:
+            candidate = self._query.pushdown(self, predicates, equalities)
+            if candidate is not None:
+                source = candidate
+        result = source._derive("filter", {"predicates": tuple(values)}, preserve=True)
 
-        # Membership queries also own the referenced live selection dependency.
-        def dependencies(e):
-            for a in e.args:
-                if isinstance(a, Frame):
-                    yield a
-                elif isinstance(a, QueryExpr):
-                    yield from dependencies(a)
-
-        dependencies = tuple(f for e in values for f in dependencies(e))
-        if dependencies:
-            result._models = merge_models(self, *dependencies)
         return result
 
     def select(self, *names, **expressions):
         """
         MIPFRAME HELP BEGIN
-        Frame.select [api.Frame.select]
-
         Choose, rename or calculate columns.
 
-        Frame.select(*names, **expressions)
-
-        When to use: Choose, rename or calculate columns.
-
-        Inputs: Column names and named QueryExpr expressions; duplicate outputs are errors.
-
-        Returns: Ordinary Frame. Direct retained/renamed keys can propagate; computed columns gain no inferred uniqueness.
-
-        Establishes: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Schema/type errors or execution/resource errors preserve their diagnostics.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.select")
         MIPFRAME HELP END
         """
         projected = {}
@@ -793,29 +696,9 @@ class Frame:
     def join(self, other, *, on, how="inner", cardinality="auto", require=None):
         """
         MIPFRAME HELP BEGIN
-        Frame.join [api.Frame.join]
-
         Join relations with explicit cardinality and match requirements.
 
-        Frame.join(other, *, on, how='inner', cardinality='auto', require=None)
-
-        When to use: Join relations with explicit cardinality and match requirements.
-
-        Inputs: on=str/tuple/mapping; inner or left; auto/1:1/1:m/m:1/m:m; require=None/left/right/both.
-
-        Returns: Ordinary Frame ordered by left then right. Complete validation precedes output.
-
-        Establishes: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Schema/type errors or execution/resource errors preserve their diagnostics.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.
-
-        See also: concept.frame, error.join
+        Full contract: mf.help("api.Frame.join")
         MIPFRAME HELP END
         """
         if not isinstance(other, Frame):
@@ -866,7 +749,7 @@ class Frame:
             key = tuple(
                 dict.fromkeys((*self.key, *(mapping.get(n, n) for n in other.key)))
             )
-        return Frame(
+        result = Frame(
             schema,
             key=key,
             unique=unique,
@@ -879,33 +762,14 @@ class Frame:
                 **self.domains,
             },
         )
+        return self._query.inherit(result)
 
     def group_by(self, *keys):
         """
         MIPFRAME HELP BEGIN
-        Frame.group_by [api.Frame.group_by]
-
         Declare grouping keys before aggregation.
 
-        Frame.group_by(*keys)
-
-        When to use: Declare grouping keys before aggregation.
-
-        Inputs: One or more scalar columns.
-
-        Returns: Grouped object; use agg to compute a Frame sorted by group keys.
-
-        Establishes: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Schema/type errors or execution/resource errors preserve their diagnostics.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.group_by")
         MIPFRAME HELP END
         """
         return Grouped(self, _names(keys))
@@ -913,29 +777,9 @@ class Frame:
     def distinct(self):
         """
         MIPFRAME HELP BEGIN
-        Frame.distinct [api.Frame.distinct]
-
         Remove duplicate complete output records.
 
-        Frame.distinct()
-
-        When to use: Remove duplicate complete output records.
-
-        Inputs: Current output columns.
-
-        Returns: Ordinary Frame retaining first occurrences, with all output columns unique.
-
-        Establishes: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Schema/type errors or execution/resource errors preserve their diagnostics.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.distinct")
         MIPFRAME HELP END
         """
         return self._derive(
@@ -945,29 +789,9 @@ class Frame:
     def sort_by(self, *by, descending=False):
         """
         MIPFRAME HELP BEGIN
-        Frame.sort_by [api.Frame.sort_by]
-
         Stable exact ordering by selected columns.
 
-        Frame.sort_by(*by, descending=False)
-
-        When to use: Stable exact ordering by selected columns.
-
-        Inputs: Column names; descending bool or per-column directions.
-
-        Returns: Same type; missing values last.
-
-        Establishes: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Schema/type errors or execution/resource errors preserve their diagnostics.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.sort_by")
         MIPFRAME HELP END
         """
         names = _names(by)
@@ -989,29 +813,9 @@ class Frame:
     def head(self, n=5):
         """
         MIPFRAME HELP BEGIN
-        Frame.head [api.Frame.head]
-
         Construct a lazy prefix limit.
 
-        Frame.head(n=5)
-
-        When to use: Construct a lazy prefix limit.
-
-        Inputs: Nonnegative integer n.
-
-        Returns: Same type, original domains; does not count first or skip validation barriers.
-
-        Establishes: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Schema/type errors or execution/resource errors preserve their diagnostics.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.head")
         MIPFRAME HELP END
         """
         return self.iloc[: self._size(n)]
@@ -1019,29 +823,9 @@ class Frame:
     def tail(self, n=5):
         """
         MIPFRAME HELP BEGIN
-        Frame.tail [api.Frame.tail]
-
         Select a final suffix.
 
-        Frame.tail(n=5)
-
-        When to use: Select a final suffix.
-
-        Inputs: Nonnegative integer n; may require full input evaluation.
-
-        Returns: Same type and relative order.
-
-        Establishes: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Schema/type errors or execution/resource errors preserve their diagnostics.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.tail")
         MIPFRAME HELP END
         """
         n = self._size(n)
@@ -1050,29 +834,9 @@ class Frame:
     def sample(self, n=5, *, random_state=None):
         """
         MIPFRAME HELP BEGIN
-        Frame.sample [api.Frame.sample]
-
         Sample without replacement and retain relative input order.
 
-        Frame.sample(n=5, *, random_state=None)
-
-        When to use: Sample without replacement and retain relative input order.
-
-        Inputs: n and optional integer random_state.
-
-        Returns: Same type; reproducible with fixed random_state.
-
-        Establishes: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Schema/type errors or execution/resource errors preserve their diagnostics.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.sample")
         MIPFRAME HELP END
         """
         if random_state is not None and type(random_state) is not int:
@@ -1096,29 +860,9 @@ class Frame:
     def one(self):
         """
         MIPFRAME HELP BEGIN
-        Frame.one [api.Frame.one]
-
         Require exactly one output record.
 
-        Frame.one()
-
-        When to use: Require exactly one output record.
-
-        Inputs: Zero-argument query.
-
-        Returns: One record/entity; checks at most two outputs after upstream barriers.
-
-        Establishes: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Schema/type errors or execution/resource errors preserve their diagnostics.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.one")
         MIPFRAME HELP END
         """
         from mipframe.check.report import CardinalityError
@@ -1137,29 +881,9 @@ class Frame:
     def refs(self, name):
         """
         MIPFRAME HELP BEGIN
-        Frame.refs [api.Frame.refs]
-
         Extract unique nonmissing typed entity references.
 
-        Frame.refs(name)
-
-        When to use: Extract unique nonmissing typed entity references.
-
-        Inputs: A Ref column; not an untyped integer column.
-
-        Returns: RowFrame or VarFrame in model order.
-
-        Establishes: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Schema/type errors or execution/resource errors preserve their diagnostics.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.refs")
         MIPFRAME HELP END
         """
         typ = self.schema[name]
@@ -1178,35 +902,15 @@ class Frame:
             self._owner_for(typ), PlanIDs(source, typ.axis)
         )
         result._models = self._models
-        result._source_spec = {"kind": "entity_refs", "source": self, "column": name}
+        result._query.spec = {"kind": "entity_refs", "source": self, "column": name}
         return result
 
     def column(self, name):
         """
         MIPFRAME HELP BEGIN
-        Frame.column [api.Frame.column]
-
         Read only one column and its dependencies.
 
-        Frame.column(name)
-
-        When to use: Read only one column and its dependencies.
-
-        Inputs: Column name.
-
-        Returns: ColumnView with exact reductions and aligned comparisons.
-
-        Establishes: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Schema/type errors or execution/resource errors preserve their diagnostics.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.column")
         MIPFRAME HELP END
         """
         return ColumnView(self, name)
@@ -1214,29 +918,9 @@ class Frame:
     def nunique(self, columns):
         """
         MIPFRAME HELP BEGIN
-        Frame.nunique [api.Frame.nunique]
-
         Count distinct combinations of selected columns.
 
-        Frame.nunique(columns)
-
-        When to use: Count distinct combinations of selected columns.
-
-        Inputs: Column name or tuple.
-
-        Returns: Exact integer count.
-
-        Establishes: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Schema/type errors or execution/resource errors preserve their diagnostics.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.nunique")
         MIPFRAME HELP END
         """
         names = (columns,) if isinstance(columns, str) else tuple(columns)
@@ -1245,61 +929,21 @@ class Frame:
     def check(self, kind, columns=None, **kwargs):
         """
         MIPFRAME HELP BEGIN
-        Frame.check [api.Frame.check]
-
         Verify a declared relational property.
 
-        Frame.check(kind, columns=None, **kwargs)
-
-        When to use: Verify a declared relational property.
-
-        Inputs: unique/product with columns; function with key/value.
-
-        Returns: Report; product includes all declared domains, never a materialized Cartesian product.
-
-        Establishes: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Schema/type errors or execution/resource errors preserve their diagnostics.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.check")
         MIPFRAME HELP END
         """
         from mipframe.check.frame import check
 
         return check(self, kind, columns, **kwargs)
 
-    def collect(self, *, memory_mb=None):
+    def to_records(self, *, memory_mb=None):
         """
         MIPFRAME HELP BEGIN
-        Frame.collect [api.Frame.collect]
+        Export independent records within the materialization budget.
 
-        Explicitly materialize detached records within a budget.
-
-        Frame.collect(*, memory_mb=None)
-
-        When to use: Explicitly materialize detached records within a budget.
-
-        Inputs: Optional memory_mb.
-
-        Returns: Independent list; over limit raises MaterializationLimitError without a partial return.
-
-        Establishes: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Schema/type errors or execution/resource errors preserve their diagnostics.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.to_records")
         MIPFRAME HELP END
         """
         from mipframe.options import options
@@ -1320,62 +964,13 @@ class Frame:
             result.append(row)
         return result
 
-    def to_records(self, *, memory_mb=None):
-        """
-        MIPFRAME HELP BEGIN
-        Frame.to_records [api.Frame.to_records]
-
-        Export independent records using the collect contract.
-
-        Frame.to_records(*, memory_mb=None)
-
-        When to use: Export independent records using the collect contract.
-
-        Inputs: Optional memory_mb.
-
-        Returns: Detached Ref identities and exact scalar values.
-
-        Establishes: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Schema/type errors or execution/resource errors preserve their diagnostics.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.
-
-        See also: concept.frame
-        MIPFRAME HELP END
-        """
-        return self.collect(memory_mb=memory_mb)
 
     def iter_batches(self, batch_size=65536, *, memory_mb=None):
         """
         MIPFRAME HELP BEGIN
-        Frame.iter_batches [api.Frame.iter_batches]
-
         Stream complete schema-carrying detached batches.
 
-        Frame.iter_batches(batch_size=65536, *, memory_mb=None)
-
-        When to use: Stream complete schema-carrying detached batches.
-
-        Inputs: Positive batch_size and optional memory_mb.
-
-        Returns: Iterator; interrupted/closed live queries raise instead of silently ending.
-
-        Establishes: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Schema/type errors or execution/resource errors preserve their diagnostics.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.iter_batches")
         MIPFRAME HELP END
         """
         from mipframe.options import options
@@ -1404,29 +999,9 @@ class Frame:
     def to_spec(self):
         """
         MIPFRAME HELP BEGIN
-        Frame.to_spec [api.Frame.to_spec]
-
         Serialize a versioned query AST.
 
-        Frame.to_spec()
-
-        When to use: Serialize a versioned query AST.
-
-        Inputs: No implicit execution or trusted proof flags.
-
-        Returns: Independent spec; restoration requires explicit model/relation bindings.
-
-        Establishes: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Schema/type errors or execution/resource errors preserve their diagnostics.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.to_spec")
         MIPFRAME HELP END
         """
         from mipframe.frame.serialization import to_spec
@@ -1436,29 +1011,9 @@ class Frame:
     def write(self, path, *, format=None):
         """
         MIPFRAME HELP BEGIN
-        Frame.write [api.Frame.write]
-
         Atomically write a complete relation.
 
-        Frame.write(path, *, format=None)
-
-        When to use: Atomically write a complete relation.
-
-        Inputs: Path; JSONL or optional Parquet.
-
-        Returns: Exact rational and Ref identity encoding; Parquet needs mipframe[parquet].
-
-        Establishes: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Schema/type errors or execution/resource errors preserve their diagnostics.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.write")
         MIPFRAME HELP END
         """
         from mipframe.frame.serialization import write
@@ -1468,29 +1023,9 @@ class Frame:
     def explain(self):
         """
         MIPFRAME HELP BEGIN
-        Frame.explain [api.Frame.explain]
-
         Inspect a query plan without executing it.
 
-        Frame.explain()
-
-        When to use: Inspect a query plan without executing it.
-
-        Inputs: No arguments.
-
-        Returns: Schema, keys, dependencies, paths and blocking/validation stages.
-
-        Establishes: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Schema/type errors or execution/resource errors preserve their diagnostics.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.
-
-        See also: concept.frame
+        Full contract: mf.help("api.Frame.explain")
         MIPFRAME HELP END
         """
         from mipframe.frame.plan import explain
@@ -1500,17 +1035,13 @@ class Frame:
     def _search_runs(self):
         """Descriptive provenance survives relational composition; never a proof fact."""
         self._guard()
-        runs, seen, pending = [], set(), [self]
-        while pending:
-            frame = pending.pop()
-            if id(frame) in seen:
-                continue
-            seen.add(id(frame))
+        from mipframe.frame.query import dependencies
+        runs = []
+        for frame in dependencies(self):
             frame._guard()
             for info in getattr(frame, "_search_provenance", ()):
                 if info not in runs:
                     runs.append(dict(info))
-            pending.extend(reversed(frame._parents))
         return runs
 
     def _search_display(self):
@@ -1534,12 +1065,16 @@ class Frame:
         return lines
 
     def __repr__(self):
-        from mipframe.options import options
+        return self._render()
 
-        names = tuple(getattr(self, "_display_columns", self.schema))[
+    def _render(self, max_rows=None):
+        from mipframe.options import options
+        max_rows = options.display.max_rows if max_rows is None else max_rows
+
+        names = tuple(self._query.display_columns or self.schema)[
             : options.display.max_cols
         ]
-        records = list(islice(self._iterate(names), options.display.max_rows + 1))
+        records = list(islice(self._iterate(names), max_rows + 1))
         total = self._known_count
         header = (
             f"<{type(self).__name__} key={self.key} · "
@@ -1549,9 +1084,9 @@ class Frame:
         lines = [*self._search_display(), header, "  ".join(names)]
         lines.extend(
             "  ".join(self._display(n, r[n]) for n in names)
-            for r in records[: options.display.max_rows]
+            for r in records[:max_rows]
         )
-        if len(records) > options.display.max_rows:
+        if len(records) > max_rows:
             lines.append("...")
         return "\n".join(lines)
 
@@ -1576,26 +1111,9 @@ class Grouped:
     def agg(self, **aggregates):
         """
         MIPFRAME HELP BEGIN
-        Grouped.agg [api.Grouped.agg]
-
         Compute exact grouped aggregates.
 
-        Grouped.agg(**aggregates)
-
-        When to use: Compute exact grouped aggregates.
-
-        Inputs: Named mf.count() or col(...).count/sum/min/max/nunique expressions.
-
-        Returns: Ordinary Frame keyed by the grouping columns.
-
-        Establishes: Only observed groups are emitted. Missing values ignored; empty group extrema are None.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Illustrative example (requires caller-provided inputs):
-        G = T.group_by("row").agg(n=mf.count(), total=mf.col("coef").sum())
-
-        See also: api.Frame.group_by
+        Full contract: mf.help("api.Grouped.agg")
         MIPFRAME HELP END
         """
         if not aggregates:
@@ -1627,19 +1145,9 @@ class Grouped:
 class RecordBatch:
     """
     MIPFRAME HELP BEGIN
-    RecordBatch [api.RecordBatch]
-
     Schema-carrying immutable batch with detached records.
 
-    RecordBatch [type]
-
-    When to use: Schema-carrying immutable batch with detached records.
-
-    Returns: A public domain type. Obtain live handles through their owning Model or query.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: api.Frame.iter_batches
+    Full contract: mf.help("api.RecordBatch")
     MIPFRAME HELP END
     """
     def __init__(self, schema, rows):

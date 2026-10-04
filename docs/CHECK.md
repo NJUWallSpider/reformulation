@@ -170,7 +170,7 @@ dependencies; large tables stay pageable.
 - `INCONCLUSIVE`: the certificate or allowed enumeration work did not decide it.
 
 `ok` means `status == "PROVED"`; `require()` raises `ValidationError` otherwise.
-`ValidationReport` is a compatibility name for the same Report implementation.
+`Report` is a compatibility name for the same Report implementation.
 Existing Frame/ops/indexed checks retain their `summary` and `violations` APIs.
 A successful relational check is not a linear inequality source.
 
@@ -286,7 +286,7 @@ fixtures exercise those mathematical rules without claiming real-data validation
 For a Python loop of Claims, use the incremental builder:
 
 ```python
-with m.check.batch("linear", residual="bounds") as batch:
+with m.check.linear_batch(residual="bounds") as batch:
     for key, target, sources, assumptions in checks:
         batch.add(key=key, target=target, using=sources, assume=assumptions)
     report = batch.run()

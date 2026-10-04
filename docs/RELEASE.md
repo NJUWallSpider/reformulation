@@ -1,7 +1,7 @@
-# Internal release: 0.8.0
+# Internal release: 1.0.0
 
-This is an internal preview for Python 3.11 or later. It is not a stable 1.0
-release and is not intended for PyPI. Package metadata includes
+This is the 1.0.0 internal release for Python 3.11 or later. It is not intended
+for PyPI. Package metadata includes
 `Private :: Do Not Upload`. This release does not assign an open-source license.
 
 ## Install
@@ -11,14 +11,14 @@ Use an isolated environment and a wheel supplied by the project:
 ```sh
 python -m venv .venv
 . .venv/bin/activate
-python -m pip install /path/to/mipframe-0.8.0-py3-none-any.whl
+python -m pip install /path/to/mipframe-1.0.0-py3-none-any.whl
 python -m mipframe help
 python -m mipframe help "recover coordinates" --detail full
 ```
 
 NumPy is the only core dependency. For optional exports, install the same wheel
 with extras, for example
-`python -m pip install '/path/to/mipframe-0.8.0-py3-none-any.whl[scipy]'`.
+`python -m pip install '/path/to/mipframe-1.0.0-py3-none-any.whl[scipy]'`.
 The `parquet` extra provides PyArrow. For offline installation, prepare a wheel
 folder containing NumPy and any required optional dependencies, then pass
 `--no-index --find-links /path/to/wheels` to pip. The mipframe wheel alone does
@@ -34,8 +34,8 @@ python scripts/build_help.py --check
 python -m pytest -q -rs
 python -m build
 python scripts/verify_release.py \
-  --wheel dist/mipframe-0.8.0-py3-none-any.whl \
-  --sdist dist/mipframe-0.8.0.tar.gz
+  --wheel dist/mipframe-1.0.0-py3-none-any.whl \
+  --sdist dist/mipframe-1.0.0.tar.gz
 ```
 
 The verifier checks wheel contents and private-release metadata, exercises

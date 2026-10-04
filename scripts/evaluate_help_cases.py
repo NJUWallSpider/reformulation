@@ -45,10 +45,10 @@ def check9(m):
 
 
 def check10(m):
-    indexed = m.structure.indexed()
+    indexed = m.indexed()
     tensors = [indexed.tensor(r.id) for r in indexed.tensors]
-    t = next(t for t in tensors if sorted(t.shape) == [200, 950] and len(t.vars) == 190000)
-    a, b = t.axes
+    t = next(t for t in tensors if sorted(t.related("dimensions").where(component="shape").column("size")) == [200, 950] and len(t.vars) == 190000)
+    a, b = (t.related("axes").where(axis=axis).rows for axis in (0,1))
     p = t.vars.project(i=a, j=b)
     p.check('product', ('i', 'j')).require()
     assert len(p) == p.nunique(('i', 'j')) == 190000
@@ -59,7 +59,7 @@ def check10(m):
         assert len(q) == 190000
         distributions.append(q.column('a').nunique())
     indexed.verify().require()
-    return {'variables': len(p), 'axis_rows': [len(a), len(b)], 'missing': t.missing_cells,
+    return {'variables': len(p), 'axis_rows': [len(a), len(b)], 'missing': t.one().missing_cells,
             'distinct_coefficients_by_axis': distributions,
             'scope': 'Full discovered tensor and all indexed verification obligations'}
 

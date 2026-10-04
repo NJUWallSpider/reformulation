@@ -1,72 +1,67 @@
-# Signature-assisted indexed views
+# Indexed coordinates and operators as Frames
 
-`m.structure.indexed()` provides discovered and exactly verified
-2D incidence coordinates and sparse reduction/broadcast operators, then publishes a summary in `m.ir.indexed`.
-Reading a model prepares the default full-model result synchronously. Loading restores a saved result or computes it when absent. Calling `m.structure.indexed()` retrieves that result; displaying the model never starts another search.
+`I = m.indexed()` retrieves a completed analysis bound to a snapshot, structural configuration and declared scope. Read prepares the default run; native load restores its saved cache. Display does not start another search.
 
 ```python
-import mipframe as mf
-with mf.read("model.lp") as m:
-    I = m.structure.indexed(memory_mb=128)
-    for record in I.tensors:
-        T = I.tensor(record.id)
-        print(T.shape, T.complete_product, T.missing_cells)
-        T.coordinates.check("unique", ("i", "j")).require()
-    for record in I.operators:
-        O = I.operator(record.id)
-        O.verify().require()
-        print(O.formula())
-    m.save("model.native")
+I = m.indexed()
+T = I.tensors.head(1)
+T.vars
+T.related("axes").where(axis=0).rows
+T.related("coordinates").check("product", ("i", "j")).require()
+
+O = I.operators.where(mf.col("row_count") > 100)
+O.rows
+O.related("kernel")
+O.related("bindings")
+I.verify(O).require()
+print(O.inspect())
 ```
 
-## Candidate rules and guarantees
+`I.tensors`, `I.operators`, `I.partitions` and `I.evidence` are ordinary Frames. The singular methods `tensor(id)`, `operator(id)`, `partition(id)` and `evidence_item(id)` return exactly one-row Frames and reject unknown IDs. Read scalar metadata through `one()`, `loc` or iteration. Keep the Frame for relation navigation.
 
-Candidate sources include homogeneous type/direction/unit seeds, row and variable families at every available
-signature depth, coarser ancestor families and role/direction groups. Only observed role adjacencies are
-considered; arbitrary family subsets are not enumerated. A family is not an axis certificate. Two-incidence
-set graphs are split by exact bipartite traversal, separately by connected component.
+Counts use `row_count` and `var_count`; `.rows/.vars` expose declared members. `Frame.shape` remains the table dimensions. Indexed dimensions live in `related("dimensions")`, with `component` (`shape` or `kernel_shape`), `axis` and `size`.
 
-Partitions retain declared zero-degree members and are checked for nonempty sets, disjoint membership and
-coverage. Only identical variable universes can form coordinate pairs. Coordinate uniqueness is exact;
-a sparse grid can be verified while still having missing cells. Product checks count missing cells without
-materializing the Cartesian product. Digests filter candidates; integer comparisons establish equality.
+| Directory | Members and relations |
+| --- | --- |
+| tensors | `.vars`; `axes`, `axis_members`, `coordinates`, `dimensions`, `partitions` |
+| operators | `.rows`; `bindings`, `kernel`, `alignment`, `dimensions`, `ast`, `statistics`, `tensor` |
+| partitions | `.rows`, `.vars`; `members`, `origins` |
+| evidence | `details` |
 
-Mixed-row support is only structural evidence. Operators require exactly one external anchor term,
-including anchors of the same variable type as the input tensor. Every claimed operator is expanded and
-compared with the full raw row and its bounds using Fraction arithmetic. Kernel invariance and unique-maximum
-axis alignment are separate checks and do not certify symmetry of the optimization model.
+All relation records retain their parent `indexed_key`. It binds snapshot identity, version, run, category and original indexed ID. Axes additionally use `axis`. Filtering, sorting, slicing, direct renaming and key-preserving projection restrict navigation; dropping the linking keys removes it. Aggregation removes navigation. A join retains valid left-side navigation, and repeated parent keys do not duplicate related results. Empty selections retain the correct relation schema.
 
-## Results and resources
+Tensor axes are complete ordered row domains; `axes.where(axis=0).rows` selects the first axis. Coordinates retain typed `var`, `i`, `j` references plus positional `axis0/axis1`. A product check uses the declared domains, including unobserved cells. An operator's adjacent variables are `O.rows.vars`; they are not a separate declared member axis.
 
-`I.tensors`, `I.partitions`, `I.operators`, `I.evidence` are ordinary Frames with bounded display, iteration,
-`len/head/one/loc/to_records`. Tensors expose `vars`, two original row Frames in `axes`, and a Frame
-`coordinates` with snapshot-qualified Ref columns `var`, `i`, `j`. Use
-`I.tensor(record.id)` and `I.operator(record.id)` to obtain domain facades. Operators expose `rows`, `bindings`, exact sparse `kernel`,
-`alignment`, `formula()` and `verify()`. `I.validate(spec)` and `I.verify()` return ValidationReport objects.
+Bindings retain original rows, anchors, scale, lower and upper bounds. Kernel values remain exact Fractions; omitted sparse entries are implicit zeros. Invariant kernels have nullable `k`. Alignment is a separate exact observation, not a symmetry certificate.
 
-Selection parameters accept same-model Frames and deduplicate original IDs. A supplied `signatures` object
-must belong to that model. Omitting signatures reuses the IR's template depth 2 result. All existing levels
-of a supplied signature are considered, including exact-mode ancestors.
+AST, origins and diagnostic details are lossless scalar node tables: `path`, `node_type`, `text`, `number`, `boolean`. Paths use JSON Pointer escaping, containers have their own nodes, array order is explicit in path indices, and parents precede children. Thus empty containers, null, booleans and precise numbers remain distinguishable. `statistics` uses the same representation with numeric observations converted to exact numeric columns. Formula is display text (`O.one().formula`), not the machine definition.
 
-Execution is synchronous with a bounded working-memory cache (default 128 MiB; minimum 16 KiB) and disk
-scratch storage. There is no time/candidate cutoff or partial successful result. Failures clean unpublished
-work and preserve prior results. Large graphs, members and sparse kernels stay in SQL tables; no dense
-matrix is created. Explicit record exports have a separate materialization budget (default 128 MiB).
+## Verification
 
-Complete results are atomically published in versioned `indexing.sqlite`, bound to the model, scope and
-signature configuration. Native save uses a consistent SQLite snapshot; load checks version and content
-integrity and reuses complete results; missing default results are computed before load returns.
-Human displays omit internal cache IDs; machine summaries retain IDs, scopes and signature configurations.
-Detailed objects are accessed through the typed IndexedResult/Tensor/Operator interfaces.
-Detached records outlive the model; live views do not.
+`I.verify()` replays the prepared tensors and operators. `I.verify(selection)` checks exactly a directory selection, including partitions; evidence cannot be verified as a proposition. An empty selection is PROVED with `checked=0`, and does not verify any other items. Foreign snapshots, runs and projections without identity navigation are rejected.
 
-## Entry points
+`summary["checked"]` and `summary["failures"]` count primary checked items, regardless of how many diagnostics one item produces. `evidence["checks"]` lists primary checks; `evidence["details"]` includes subordinate diagnostic rows. REFUTED takes precedence over INCONCLUSIVE; inconclusive or skipped checks never become an overall PROVED result.
 
-Use `I = m.structure.indexed()` to retrieve the full-model result or discover a custom scope.
-Navigate through `I.tensors`, `I.operators`, `T.coordinates`, `O.kernel` and `O.bindings`.
-`I.validate(spec).require()` verifies hypotheses expressed with original IDs or
-snapshot-qualified Refs and independent records. Frame checks verify table properties.
+`I.validate(spec)` retains independent hypotheses for Cartesian coordinates, partitions, row bundles, operators and alignment. Candidate records and Frame relations are accepted; supplying an existing directory identity never bypasses the exact checker. For example:
 
-See [the user guide](USER_GUIDE.md) for interactive navigation. Benchmark indexed discovery using
-`scripts/benchmark_indexed.py BASE --out DIR`; `scripts/evaluate_indexed.py INPUT --out DIR` also checks
-exact LP round trips, numerical integrity and the factual IR summary.
+```python
+O = I.operators.head(1)
+I.validate({"kind": "indexed_operator", "id": O.one().id,
+            "kernel": O.related("kernel"),
+            "rows": O.related("bindings"),
+            "ast": O.related("ast")}).require()
+```
+
+Both methods return `Report`, as does `m.verify()`. The latter checks numerical storage and the runs prepared when it was called. Failed assertions return REFUTED with pageable violations; `.require()` raises `ValidationError`. A corrupt base skips dependent indexed replay. Bad arguments, closed models and execution failures still raise directly.
+
+Integrity/indexed scope is distinct from a mathematical Claim: these reports do not establish MIP feasibility, optimality or a valid reformulation, and cannot serve as linear certificates. Exported recipes replay checks against their bound snapshot rather than trusting saved verdicts.
+
+## Algorithms, persistence and resources
+
+Candidate discovery is unchanged: homogeneous type/direction/unit seeds, all requested structural levels, role direction groups, and exact bipartite components. Only observed adjacencies are considered; discovery is not exhaustive. Exact operator checks expand every original row and compare coefficients and bounds.
+
+Default structural depth is 2 with `method="template"`; explicit exact configuration and custom row/variable scopes remain available. Working buffers spill to disk using the run's memory budget. Full record export uses the separate Frame materialization budget.
+
+Views and diagnostic reports share model-owned storage. Creating thousands of views does not create thousands of database connections. Dropped diagnostic results release their rows; related evidence keeps a result alive when needed. Closing the model invalidates every live view. Detached records remain independent.
+
+Native v3 and existing `indexing.sqlite` caches retain their algorithms, original IDs and storage format. Public field normalization happens at the read boundary. New directory/relation query specifications bind the saved run and can be restored without manual relation bindings; legacy explicit relation bindings remain supported.

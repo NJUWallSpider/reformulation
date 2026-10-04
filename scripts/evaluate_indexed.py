@@ -36,7 +36,7 @@ def evaluate(source, out):
         return response
 
     with ir:
-        indexed = ir.structure.indexed()
+        indexed = ir.indexed()
         tensors = dict(items=indexed.tensors.head(20).to_records(), total=len(indexed.tensors))
         operators = dict(items=indexed.operators.head(20).to_records(), total=len(indexed.operators))
         validations = []
@@ -52,7 +52,7 @@ def evaluate(source, out):
                     {"kind": "indexed_operator", "id": op["id"]},
                 )
             )
-            if "alignment" in indexed.operator(op["id"]).kernel_statistics:
+            if indexed.operator(op["id"]).related("alignment").count():
                 validations.append(
                     call(
                         "validate",

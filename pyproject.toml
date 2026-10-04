@@ -4,14 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mipframe"
-version = "0.8.0"
+version = "1.0.0"
 description = "Read, inspect and analyze exact LP/MPS optimization models in Python"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["numpy>=1.24"]
 classifiers = [
     "Private :: Do Not Upload",
-    "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.13",

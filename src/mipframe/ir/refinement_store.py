@@ -88,7 +88,6 @@ class RefinementStore:
         self.value_cache = OrderedDict()
         self.intern_cache = OrderedDict()
         self.counts = {}
-        self.attribute_views = WeakSet()
         self.family_stores = WeakSet()
         self.db = None
         try:
@@ -132,6 +131,8 @@ class RefinementStore:
             if not old:
                 self.db.execute("INSERT INTO meta VALUES('source',?)", (expected,))
                 self.db.commit()
+            from mipframe.store.lifecycle import register
+            register(owner, self)
             self.dtype = np.dtype("<i4" if max(2 * len(owner.model.rows), len(owner.model.variables)) <= np.iinfo(np.int32).max else "<i8")
         except BaseException:
             self.close()
@@ -155,21 +156,20 @@ class RefinementStore:
         if self.db is None:
             raise MIPFrameError("Refinement store is closed")
 
-    def close(self):
-        for view in self.attribute_views:
-            view._close()
-        for store in self.family_stores:
-            store.db.close()
-        if self.db is not None:
-            self.db.close()
-            self.db = None
-        for array in self.maps:
-            if not array._mmap.closed:
-                array._mmap.close()
+    def _close_connection(self):
+        from mipframe.store.lifecycle import release_all, close_connection
+        actions = [store.db.close for store in self.family_stores]
+        actions.append(lambda: close_connection(self))
+        actions.extend(array._mmap.close for array in self.maps if not array._mmap.closed)
+        release_all(actions)
         self.maps.clear()
         self.arrays.clear()
         self.intern_cache.clear()
-        self.temp.cleanup()
+
+    def close(self):
+        from mipframe.store.lifecycle import release_all, cleanup_directory
+        temp, self.temp = self.temp, None
+        release_all((self._close_connection, lambda: cleanup_directory(temp)))
 
     def _work(self, size, dtype=None):
         self.serial += 1

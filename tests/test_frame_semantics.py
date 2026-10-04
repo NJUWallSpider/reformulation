@@ -38,9 +38,9 @@ def test_join_cardinality_and_stable_order():
             joined = a.join(b, on="k", cardinality=cardinality)
             if not passes:
                 with pytest.raises(mf.CardinalityError):
-                    joined.head(0).collect()
+                    joined.head(0).to_records()
             else:
-                assert joined.collect() == [
+                assert joined.to_records() == [
                     dict(k=k, l=i, r=j)
                     for i, k in enumerate(left)
                     for j, v in enumerate(right)
@@ -56,10 +56,10 @@ def test_match_requirements_are_independent():
     for require in [None, 'left', 'right', 'both']:
         query = a.join(b, on="k", how="left", require=require)
         if require is None:
-            assert query.collect() == [dict(k=1), dict(k=2)]
+            assert query.to_records() == [dict(k=1), dict(k=2)]
         else:
             with pytest.raises(mf.CardinalityError) as exc:
-                query.head(1).collect()
+                query.head(1).to_records()
             assert len(exc.value.report.violations) == (2 if require == "both" else 1)
 
 
@@ -76,7 +76,7 @@ def test_null_exact_composite_and_renamed_keys():
     assert a.head(0).column("b").sum() == 0
     assert a.head(0).group_by().agg(
         s=col("b").sum(), n=mf.count(), lo=col("b").min()
-    ).collect() == [dict(s=0, n=0, lo=None)]
+    ).to_records() == [dict(s=0, n=0, lo=None)]
 
 
 def test_uniqueness_is_local_and_no_false_propagation():
@@ -121,10 +121,10 @@ def test_schema_and_spec_do_not_accept_claimed_proofs():
 def test_sampling_stable_batches_and_export_failures(tmp_path, monkeypatch):
     f = frame([dict(a=i, b=Q(i, 7)) for i in range(30)])
     sample = f.sample(7)
-    assert sample.collect() == sample.collect()
+    assert sample.to_records() == sample.to_records()
     assert list(sample.column("a")) == sorted(sample.column("a"))
     batches = list(f.iter_batches(3, memory_mb=0.015625))
-    assert [r for b in batches for r in b.to_records()] == f.collect()
+    assert [r for b in batches for r in b.to_records()] == f.to_records()
     with pytest.raises(AttributeError):
         batches[0].schema = {}
     from mipframe.frame.schema import encode
@@ -147,22 +147,22 @@ def test_public_analysis_relations_and_roundtrip(tmp_path):
         "Minimize\n o:0x+0y\nSubject To\n a:2x<=4\n b:3y<=9\nBinaries\n x y\nEnd\n"
     )
     with mf.read(p) as m:
-        sig = m.structure.signatures(depth=1)
-        family = sig.family(sig.row_families().one().id)
-        params = family.params
+        sig = mf.analysis.signatures(m.rows,method="template",depth=1)
+        family = m.families(depth=1)
+        params = family.related("parameters")
         assert type(params) is mf.Frame
         assert all(t.kind not in ("object", "list") for t in params.schema.values())
-        assert len(params.relations["histogram"]) > 0
+        assert len(family.related("histogram")) > 0
         assert len(params.where(col("varying"))) > 0
-        assert type(m.rows.signature()) is mf.Frame
+        assert type(mf.analysis.signatures(m.rows,method="algebraic")) is mf.Frame
         assert type(m.rows.families()) is mf.Frame
-        assert len(m.rows.families().relations["members"]) == 2
-        assert list(sig.rows.column("row").ids) == [0, 1]
+        assert len(m.rows.families().related("members")) == 2
+        assert list(sig.column("row").ids) == [0, 1]
         refs = m.terms().refs("var")
         spec = json.loads(json.dumps(refs.to_spec()))
         restored = mf.frame_from_spec(spec, models={m.uid: m})
         assert isinstance(restored, mf.VarFrame) and list(restored.ids) == [0, 1]
-        exported = params.collect()
+        exported = params.to_records()
     assert exported[0]["basis"] == "canonical"
     with pytest.raises(mf.MIPFrameError):
         repr(params)

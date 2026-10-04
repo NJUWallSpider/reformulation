@@ -8,19 +8,9 @@ from mipframe.store.numbers import MIPFrameError
 class ExactArithmeticError(MIPFrameError):
     """
     MIPFRAME HELP BEGIN
-    ExactArithmeticError [api.ExactArithmeticError]
-
     Diagnostic exception; inspect original message and any attached complete Report.
 
-    ExactArithmeticError [type]
-
-    When to use: Diagnostic exception; inspect original message and any attached complete Report.
-
-    Returns: Exception type, not a mathematical result.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.exact
+    Full contract: mf.help("api.ExactArithmeticError")
     MIPFRAME HELP END
     """
     pass
@@ -29,19 +19,9 @@ class ExactArithmeticError(MIPFrameError):
 class NonlinearExpressionError(MIPFrameError):
     """
     MIPFRAME HELP BEGIN
-    NonlinearExpressionError [api.NonlinearExpressionError]
-
     Diagnostic exception; inspect original message and any attached complete Report.
 
-    NonlinearExpressionError [type]
-
-    When to use: Diagnostic exception; inspect original message and any attached complete Report.
-
-    Returns: Exception type, not a mathematical result.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: error.expressions
+    Full contract: mf.help("api.NonlinearExpressionError")
     MIPFRAME HELP END
     """
     pass
@@ -50,26 +30,9 @@ class NonlinearExpressionError(MIPFrameError):
 def q(value):
     """
     MIPFRAME HELP BEGIN
-    q [api.q]
-
     Parse an exact finite rational scalar.
 
-    q(value)
-
-    When to use: Parse an exact finite rational scalar.
-
-    Inputs: int, Fraction, finite Decimal or decimal/scientific/fraction string.
-
-    Returns: Fraction.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    Failures: Float, bool, NaN and infinite algebraic scalars raise ExactArithmeticError.
-
-    Illustrative example (requires caller-provided inputs):
-    mf.q("43/39")
-
-    See also: concept.exact
+    Full contract: mf.help("api.q")
     MIPFRAME HELP END
     """
     if isinstance(value, bool) or not isinstance(value, (int, Fraction, Decimal, str)):

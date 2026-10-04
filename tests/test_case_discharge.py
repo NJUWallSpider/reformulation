@@ -287,13 +287,13 @@ def test_replay_rechecks_case_certificates(m, tamper):
 
 def test_batch_sources_and_reuse(m):
     t, y, ps = branches(m)
-    batch = m.check.batch(residual="bounds")
+    batch = m.check.linear_batch(residual="bounds")
     for k, name in ((0, "cap"), (1, "old")):
         batch.add(key=str(k), target=t, using=[m.rows.by_name(name).ub_claim], assume=[y.eq(k)])
     b = batch.run()
     p = m.check.cases(t, var=y, cases={k: b.for_target(str(k)) for k in (0, 1)})
     assert mf.Report.replay(p.to_spec(), models=[m]).ok
-    batch = m.check.batch()
+    batch = m.check.linear_batch()
     batch.add(key="combined", target=t, using=[p])
     b = batch.run()
     replayed = mf.Report.replay(b.to_spec(), models=[m])
@@ -303,8 +303,8 @@ def test_batch_sources_and_reuse(m):
 def test_2016_merges_share_archive_and_release(m):
     t, y, ps = branches(m)
     reports = [m.check.cases(t, var=y, cases=ps) for _ in range(2016)]
-    archive = reports[0]._store._shared
-    assert all(p._store._shared is archive for p in reports)
+    archive = reports[0]._store._runtime
+    assert all(p._store._runtime is archive for p in reports)
     table_count = archive.execute("SELECT count(*) FROM sqlite_master WHERE type='table'").fetchone()[0]
     assert table_count < 30
     ref = weakref.ref(reports[0])

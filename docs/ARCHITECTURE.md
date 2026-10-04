@@ -24,7 +24,7 @@ mipframe/
         executor.py       shared query budget, exact spill and joins
         sources.py        column-pruned canonical scans
         adapters.py       analysis tables through the same Frame core
-        serialization.py  AST bindings and exact exports
+        serialization.py  shared query DAG bindings and exact exports
         materialized.py   shared completed-result ownership
     store/
         model_store.py    native v3 metadata, identity and exact numbers
@@ -52,6 +52,8 @@ mipframe/
         report.py         complete reports and shared query errors
         frame.py          strict projection and relational checks
         model.py          numerical model validation
+        serialization.py  certificate event export
+        replay.py         bounded import, dependency scheduling and checker replay
     edit/
         plan.py, prepare.py exact edit planning and validation
         build.py, lineage.py, diff.py new snapshots and identity maps
@@ -71,8 +73,11 @@ nullable semantics, exports and migration.
 
 The execution context shares one working budget across its plan. Streaming
 operators request only required columns; blocking operators spill through exact
-SQLite encodings. Validation barriers finish before exposing results. A model
-close guard runs before each iterator resume, before touching mapped arrays.
+SQLite encodings. The context registers live dependencies immediately, but creates
+its temporary directory and SQLite connection only on the first storage operation.
+Validation barriers finish before exposing results. A model close guard runs before
+each iterator resume, before touching mapped arrays. Closing an unused context
+prevents subsequent storage creation.
 
 ## Reading, analysis and ownership
 
@@ -134,7 +139,7 @@ zero counts sparsely, and expose complete paged/iterable histograms with bounded
 previews. Canonical display preserves magnitude; raw and scale-normalized views
 retain source row IDs and multipliers. Dual equality orientations are separate
 profiles. Selection attributes cover selected members, never a representative row.
-`F.rhs` and `F.lhs` expose normalized family bounds.
+`related("parameters")` and `related("histogram")` expose bounds by basis and orientation.
 
 The presentation layer (`ir/display.py`) does not modify refinement keys or
 colors. Overview tables read metadata/role definitions only. A summary pairs row
@@ -143,7 +148,7 @@ Parents resolve to family ranks at the preceding depth, while variable labels
 resolve to their actual colors. Full-model family indexes are reused within a
 result; variable color order and delta links remain disk-backed.
 Public family and role IDs include depth; bound frames accept shorthand but reject
-mismatched explicit depths. IDs remain local to their model/configuration/selection.
+mismatched explicit depths. Labels remain fixed within their model/configuration/depth, even for selected subsets. Full identity uses family_key.
 Depth count deltas, legend refinement and count-only coverage metrics explain the
 hierarchy without loading coefficient profiles. Prefix previews have independent
 family/split caps, exact omitted counts and selected-member coverage. Concentration
@@ -212,7 +217,7 @@ scratch copy, then atomically publishes it after all operator expansions pass. T
 artifact includes a content hash and model/config identity. Native save uses SQLite
 backup; restore validates the artifact without repeating discovery. Loading without a default result computes it before returning. Temporary stores
 are owned by the model and live query objects. IR schema 0.3 summarizes runs;
-large coordinate/parameter tables are accessed through typed signature and indexed facades.
+large parameter tables use family Frame relations; indexed coordinates retain their existing indexed accessors.
 
 ## Complete structural algorithms
 
@@ -297,12 +302,14 @@ simultaneous relative to one immutable source. Model facts never acquire draft
 identities. Schema has a distinct Edit-qualified `draft_ref` scalar for temporary
 Frame construction; model reference consumers continue to require real Ref types.
 
-`check.batch` shares normalized per-target proof tables and the existing linear
+`check.linear_batch` shares normalized per-target proof tables and the existing linear
 checker. Only exact mathematical conclusions may discharge edit obligations.
 Forward and reverse feasible-set implications are tracked independently in LP and
 integer domains. Reverse evidence must close at retained facts; serialized status
 fields are never sufficient. Compilation streams canonical coefficients to a new
-native v3 store, builds independent IR/indexed results, then publishes the Model.
+native v3 store and publishes the Model after exact validation. Default logical
+builds defer IR/indexed preparation; `prepare="indexed"` prepares those analyses
+before publication.
 Lineage is a versioned immutable attachment copied with native snapshots. It stores
 bound proof streams and mappings without embedding the parent numerical model.
 
@@ -319,3 +326,90 @@ rendering. Static object resolution never evaluates live properties. Imports and
 runtime error hints do not load the corpus; the first help query loads it through
 `importlib.resources`. Generated docstrings and reference pages share one source.
 Release builds reject stale content or source fingerprints. See [HELP.md](HELP.md).
+
+
+## Family query navigation
+
+Model family methods publish ordinary Frames. Private refinement contexts bind
+an immutable requested depth; configurations and full-model partitions share
+storage. No query view owns a family-specific database. Numerical scans use
+bounded short-lived scratch storage and always close it on completion or failure.
+
+Declared relation navigation is distinct from legacy attached `relations`.
+Frame.related semijoins with selected family keys. Projection keeps navigation
+only when linking keys survive, including direct renames; grouping removes it.
+Joins retain applicable left navigation. Entity members are deduplicated typed
+Frames. Filtering entities changes statistical scope, never refinement identity.
+
+Signature encodings remain private algorithm values. The public analysis module
+returns Frames for algebraic, typed, template and exact structural features.
+
+
+## Shared query and verification internals
+
+Each Frame owns a private `QuerySource` descriptor for its source specification,
+navigation, pushdown, selection, display and resource capabilities. Derived
+queries retain only capabilities whose identity keys survive. Adjacent filters
+combine before pushdown, so equivalent predicates choose the same numerical
+basis. Source codecs register reconstruction functions separately from query
+operators, including legacy membership specifications. A shared dependency walk
+validates nested sources and expression memberships, including aggregate expressions
+and expressions inside tuples. Column pruning stops at membership Frame boundaries;
+snapshot ownership includes those Frames in every derived query.
+The same direct-input traversal drives dependency validation, search provenance,
+operator input ownership and plan inspection. Sparse multi-column term selections
+use CSC when their combined degree is below half the matrix nonzeros; a budgeted
+position sort restores canonical CSR order. Pattern aggregation lives in
+`ir/patterns.py`, independently of certificate reports.
+
+Query serialization preserves shared DAG nodes with optional `$id` definitions and
+`{"op": "ref", "id": ...}` references in the version-1 plan. Definitions precede
+references in traversal order, including membership expressions. Old tree plans
+remain readable; duplicate IDs, missing references and cycles are rejected.
+`explain()` displays repeated parents as references without executing them.
+
+Proof calculation composes a runtime store; archived certificates own a retained
+lease and read-only proof data rather than copied runtime state. Model-owned
+stores share registration and release helpers. Closing a model attempts every
+connection release even if one cleanup fails, records secondary failures, and
+retries deferred directory cleanup.
+
+Storage integrity facts have one implementation shared by model validation and
+export. Diagnostic reports distinguish checked propositions from their detail
+rows; counts use propositions and status reduction preserves inconclusive or
+skipped results. Failed publication deletes only its own unpublished rows.
+Indexed candidate adapters normalize Frames, records and independent metadata
+before exact validation; directory identity alone never supplies proof.
+
+Edit semantic verification separates claim normalization, grounded facts,
+dependency closure and objective comparison. Lookup indexes cover proof outputs,
+dependencies, fact claims and roots without changing the mathematical closure.
+
+### Proof/edit runtime performance
+
+Edit builds default to numerical/logical publication, with full exact validation
+and independent native storage; IR/indexing are lazy. Internal verified receipts
+bind actual live source/target stores and retain only paged coordinate maps plus
+semantic results. They are never serialized, never inferred from saved status,
+and never retain a complete Edit/proof graph. Diff can always force full replay.
+Receipt tables store only `(id,ns,old)` coordinate maps and row replacements;
+bound, kind and degree comparisons read the immutable snapshots directly.
+
+Linear batches stage validated normalized inputs without an INCONCLUSIVE report.
+The shared exact kernel consumes those inputs directly. A reusable workspace
+resets scratch tables and their staging/membership caches between targets, releasing
+cached Frame references together; evidence Frames read canonical proof
+relations instead of copying all sources/claims/terms into another JSON store.
+Frame operators resolve their execution context through `query_context`, avoiding
+a second manually forwarded query API on proof views. Scratch indexes reuse names
+derived from table/column identities across resets; batch evidence has a
+`(target,direction)` index for per-target lookups.
+Sparse residual accumulation uses a conservative byte allowance and spills
+exactly to SQLite. Case discharge reuses bounded scratch storage and reads
+verified dependency relations directly. Native v3 and certificate streams are
+unchanged; persistence fingerprints still cover the same canonical facts.
+
+Edit bound updates close their input cursors and drop operation-local selection and
+alignment tables on success or failure. Persistent edit tables remain transactional.
+Proof replay separates normalized event validation, dependency scheduling, claim
+reconstruction and checker dispatch; serialized verdicts never replace verification.

@@ -36,16 +36,16 @@ def exercise(path, *, native=None):
             with second.build() as restored:
                 assert restored.version == source.version
                 assert restored.diff(candidate).semantic["mip"] == "SAME"
-                indexed = restored.structure.indexed()
+                indexed = restored.indexed()
                 indexed.verify().require()
                 if path.name == "test10.mps":
                     found = False
                     for record in indexed.tensors:
                         tensor = indexed.tensor(record.id)
-                        if tuple(tensor.shape) in ((950, 200), (200, 950)):
+                        if tuple(tensor.related("dimensions").where(component="shape").column("size")) in ((950, 200), (200, 950)):
                             assert len(tensor.vars) == 190000
-                            assert tensor.missing_cells == 0
-                            tensor.coordinates.check("product", ("i", "j")).require()
+                            assert tensor.one().missing_cells == 0
+                            tensor.related("coordinates").check("product", ("i", "j")).require()
                             found = True
                     assert found, "Expected the test10 950 × 200 coordinate view"
                 with TemporaryDirectory(prefix="mipframe-edit-example-") as tmp:

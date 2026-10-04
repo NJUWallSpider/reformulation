@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from mipframe.frame.entity import RowFrame
 from mipframe.frame.entity import VarFrame
-from mipframe.frame.entity import _Frame
+from mipframe.frame.base import Frame
 from mipframe.frame.entity import _text
 from mipframe.store.numbers import MIPFrameError
 from mipframe.options import options
@@ -61,19 +61,9 @@ def _grid(lines):
 class MatrixAccessor:
     """
     MIPFRAME HELP BEGIN
-    MatrixAccessor [api.MatrixAccessor]
-
     Model matrix operations accessed through m.matrix.
 
-    MatrixAccessor [type]
-
-    When to use: Model matrix operations accessed through m.matrix.
-
-    Returns: A public domain type. Obtain live handles through their owning Model or query.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: api.MatrixAccessor.nnz
+    Full contract: mf.help("api.MatrixAccessor")
     MIPFRAME HELP END
     """
     def __init__(self, owner: Model):
@@ -82,25 +72,9 @@ class MatrixAccessor:
     def nnz(self, *, rows=None, vars=None, axis="row"):
         """
         MIPFRAME HELP BEGIN
-        MatrixAccessor.nnz [api.MatrixAccessor.nnz]
-
         Access the original sparse matrix: nnz.
 
-        MatrixAccessor.nnz(*, rows=None, vars=None, axis='row')
-
-        When to use: Access the original sparse matrix: nnz.
-
-        Inputs: Same-snapshot axes; activity input is unique Frame(var,value), transpose input Frame(row,value).
-
-        Returns: Frame(row,nnz) or Frame(var,nnz), including zero-degree axis members.
-
-        Establishes: Activity is exact and requires all participating inputs unless missing="zero".
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        See also: concept.frame, concept.exact
+        Full contract: mf.help("api.MatrixAccessor.nnz")
         MIPFRAME HELP END
         """
         from mipframe.frame.adapters import sparse_counts
@@ -120,25 +94,9 @@ class MatrixAccessor:
     ):
         """
         MIPFRAME HELP BEGIN
-        MatrixAccessor.activity [api.MatrixAccessor.activity]
-
         Access the original sparse matrix: activity.
 
-        MatrixAccessor.activity(values, *, rows=None, value='value', missing='error', memory_mb=128, max_output_rows=1000000, disk_mb=None)
-
-        When to use: Access the original sparse matrix: activity.
-
-        Inputs: Same-snapshot axes; activity input is unique Frame(var,value), transpose input Frame(row,value).
-
-        Returns: Frame(row,activity), including zero rows.
-
-        Establishes: Activity is exact and requires all participating inputs unless missing="zero".
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        See also: concept.frame, concept.exact
+        Full contract: mf.help("api.MatrixAccessor.activity")
         MIPFRAME HELP END
         """
         from mipframe.ops._matrix import activity
@@ -178,25 +136,9 @@ class MatrixAccessor:
     ):
         """
         MIPFRAME HELP BEGIN
-        MatrixAccessor.transpose_activity [api.MatrixAccessor.transpose_activity]
-
         Access the original sparse matrix: transpose_activity.
 
-        MatrixAccessor.transpose_activity(multipliers, *, vars=None, value='value', missing='error', memory_mb=128, max_output_rows=1000000, disk_mb=None)
-
-        When to use: Access the original sparse matrix: transpose_activity.
-
-        Inputs: Same-snapshot axes; activity input is unique Frame(var,value), transpose input Frame(row,value).
-
-        Returns: Frame(var,value), including zero columns.
-
-        Establishes: Activity is exact and requires all participating inputs unless missing="zero".
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        See also: concept.frame, concept.exact
+        Full contract: mf.help("api.MatrixAccessor.transpose_activity")
         MIPFRAME HELP END
         """
         from mipframe.ops._matrix import transpose_activity
@@ -230,25 +172,9 @@ class MatrixAccessor:
         Select original constraint coefficients; None selects the full axis.
 
         MIPFRAME HELP BEGIN
-        MatrixAccessor.view [api.MatrixAccessor.view]
-
         Access the original sparse matrix: view.
 
-        MatrixAccessor.view(*, rows: 'RowFrame | None' = None, vars: 'VarFrame | None' = None) -> 'MatrixView'
-
-        When to use: Access the original sparse matrix: view.
-
-        Inputs: Same-snapshot axes; activity input is unique Frame(var,value), transpose input Frame(row,value).
-
-        Returns: MatrixView retaining original selected axis order.
-
-        Establishes: Activity is exact and requires all participating inputs unless missing="zero".
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        See also: concept.frame, concept.exact
+        Full contract: mf.help("api.MatrixAccessor.view")
         MIPFRAME HELP END
         """
         return MatrixView(self._owner, rows=rows, vars=vars)
@@ -259,19 +185,9 @@ class MatrixView:
     Read-only logical slice; coefficients stay in the model until requested.
 
     MIPFRAME HELP BEGIN
-    MatrixView [api.MatrixView]
-
     Logical sparse slice with explicit preview and float64 export.
 
-    MatrixView [type]
-
-    When to use: Logical sparse slice with explicit preview and float64 export.
-
-    Returns: A public domain type. Obtain live handles through their owning Model or query.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: api.MatrixView.preview
+    Full contract: mf.help("api.MatrixView")
     MIPFRAME HELP END
     """
 
@@ -297,21 +213,9 @@ class MatrixView:
     def rows(self) -> RowFrame:
         """
         MIPFRAME HELP BEGIN
-        MatrixView.rows [api.MatrixView.rows]
-
         Read selected matrix rows.
 
-        MatrixView.rows [property]
-
-        When to use: Read selected matrix rows.
-
-        Establishes: Preview most_active ranks over all selected rows; largest_coef uses exact maximum absolute values; ties use selected axis order.
-
-        Does not establish: Automatic column selection need not be active in the displayed row prefix. SciPy conversion is inexact and explicit.
-
-        Failures: SciPy requires mipframe[scipy]; nonfinite/overflow/nonzero underflow conversion fails.
-
-        See also: concept.resources, concept.exact
+        Full contract: mf.help("api.MatrixView.rows")
         MIPFRAME HELP END
         """
         self._owner.model
@@ -321,21 +225,9 @@ class MatrixView:
     def vars(self) -> VarFrame:
         """
         MIPFRAME HELP BEGIN
-        MatrixView.vars [api.MatrixView.vars]
-
         Read selected matrix vars.
 
-        MatrixView.vars [property]
-
-        When to use: Read selected matrix vars.
-
-        Establishes: Preview most_active ranks over all selected rows; largest_coef uses exact maximum absolute values; ties use selected axis order.
-
-        Does not establish: Automatic column selection need not be active in the displayed row prefix. SciPy conversion is inexact and explicit.
-
-        Failures: SciPy requires mipframe[scipy]; nonfinite/overflow/nonzero underflow conversion fails.
-
-        See also: concept.resources, concept.exact
+        Full contract: mf.help("api.MatrixView.vars")
         MIPFRAME HELP END
         """
         self._owner.model
@@ -345,21 +237,9 @@ class MatrixView:
     def shape(self) -> tuple[int, int]:
         """
         MIPFRAME HELP BEGIN
-        MatrixView.shape [api.MatrixView.shape]
-
         Read selected matrix shape.
 
-        MatrixView.shape [property]
-
-        When to use: Read selected matrix shape.
-
-        Establishes: Preview most_active ranks over all selected rows; largest_coef uses exact maximum absolute values; ties use selected axis order.
-
-        Does not establish: Automatic column selection need not be active in the displayed row prefix. SciPy conversion is inexact and explicit.
-
-        Failures: SciPy requires mipframe[scipy]; nonfinite/overflow/nonzero underflow conversion fails.
-
-        See also: concept.resources, concept.exact
+        Full contract: mf.help("api.MatrixView.shape")
         MIPFRAME HELP END
         """
         return len(self.rows), len(self.vars)
@@ -403,21 +283,9 @@ class MatrixView:
     def nnz(self) -> int:
         """
         MIPFRAME HELP BEGIN
-        MatrixView.nnz [api.MatrixView.nnz]
-
         Read selected matrix nnz.
 
-        MatrixView.nnz [property]
-
-        When to use: Read selected matrix nnz.
-
-        Establishes: Preview most_active ranks over all selected rows; largest_coef uses exact maximum absolute values; ties use selected axis order.
-
-        Does not establish: Automatic column selection need not be active in the displayed row prefix. SciPy conversion is inexact and explicit.
-
-        Failures: SciPy requires mipframe[scipy]; nonfinite/overflow/nonzero underflow conversion fails.
-
-        See also: concept.resources, concept.exact
+        Full contract: mf.help("api.MatrixView.nnz")
         MIPFRAME HELP END
         """
         m = self._owner.model
@@ -442,21 +310,9 @@ class MatrixView:
     def density(self) -> float:
         """
         MIPFRAME HELP BEGIN
-        MatrixView.density [api.MatrixView.density]
-
         Read selected matrix density.
 
-        MatrixView.density [property]
-
-        When to use: Read selected matrix density.
-
-        Establishes: Preview most_active ranks over all selected rows; largest_coef uses exact maximum absolute values; ties use selected axis order.
-
-        Does not establish: Automatic column selection need not be active in the displayed row prefix. SciPy conversion is inexact and explicit.
-
-        Failures: SciPy requires mipframe[scipy]; nonfinite/overflow/nonzero underflow conversion fails.
-
-        See also: concept.resources, concept.exact
+        Full contract: mf.help("api.MatrixView.density")
         MIPFRAME HELP END
         """
         rows, variables = self.shape
@@ -466,21 +322,9 @@ class MatrixView:
     def row_nnz(self):
         """
         MIPFRAME HELP BEGIN
-        MatrixView.row_nnz [api.MatrixView.row_nnz]
-
         Read selected matrix row_nnz.
 
-        MatrixView.row_nnz [property]
-
-        When to use: Read selected matrix row_nnz.
-
-        Establishes: Preview most_active ranks over all selected rows; largest_coef uses exact maximum absolute values; ties use selected axis order.
-
-        Does not establish: Automatic column selection need not be active in the displayed row prefix. SciPy conversion is inexact and explicit.
-
-        Failures: SciPy requires mipframe[scipy]; nonfinite/overflow/nonzero underflow conversion fails.
-
-        See also: concept.resources, concept.exact
+        Full contract: mf.help("api.MatrixView.row_nnz")
         MIPFRAME HELP END
         """
         self._owner.model
@@ -492,21 +336,9 @@ class MatrixView:
     def var_nnz(self):
         """
         MIPFRAME HELP BEGIN
-        MatrixView.var_nnz [api.MatrixView.var_nnz]
-
         Read selected matrix var_nnz.
 
-        MatrixView.var_nnz [property]
-
-        When to use: Read selected matrix var_nnz.
-
-        Establishes: Preview most_active ranks over all selected rows; largest_coef uses exact maximum absolute values; ties use selected axis order.
-
-        Does not establish: Automatic column selection need not be active in the displayed row prefix. SciPy conversion is inexact and explicit.
-
-        Failures: SciPy requires mipframe[scipy]; nonfinite/overflow/nonzero underflow conversion fails.
-
-        See also: concept.resources, concept.exact
+        Full contract: mf.help("api.MatrixView.var_nnz")
         MIPFRAME HELP END
         """
         self._owner.model
@@ -518,21 +350,9 @@ class MatrixView:
     def entries(self):
         """
         MIPFRAME HELP BEGIN
-        MatrixView.entries [api.MatrixView.entries]
-
         Original selected terms as a TermFrame; no dense conversion.
 
-        MatrixView.entries [property]
-
-        When to use: Original selected terms as a TermFrame; no dense conversion.
-
-        Establishes: Preview most_active ranks over all selected rows; largest_coef uses exact maximum absolute values; ties use selected axis order.
-
-        Does not establish: Automatic column selection need not be active in the displayed row prefix. SciPy conversion is inexact and explicit.
-
-        Failures: SciPy requires mipframe[scipy]; nonfinite/overflow/nonzero underflow conversion fails.
-
-        See also: concept.resources, concept.exact
+        Full contract: mf.help("api.MatrixView.entries")
         MIPFRAME HELP END
         """
         return self._owner.terms(rows=self._rows, vars=self._vars)
@@ -544,26 +364,14 @@ class MatrixView:
         Render a bounded exact grid; rank columns over all selected rows.
 
         MIPFRAME HELP BEGIN
-        MatrixView.preview [api.MatrixView.preview]
-
         Explicit small exact preview; default 8 rows by 12 variables.
 
-        MatrixView.preview(*, max_rows: 'int' = 8, max_vars: 'int' = 12, choose_vars: 'str' = 'most_active') -> 'Formula'
-
-        When to use: Explicit small exact preview; default 8 rows by 12 variables.
-
-        Establishes: Preview most_active ranks over all selected rows; largest_coef uses exact maximum absolute values; ties use selected axis order.
-
-        Does not establish: Automatic column selection need not be active in the displayed row prefix. SciPy conversion is inexact and explicit.
-
-        Failures: SciPy requires mipframe[scipy]; nonfinite/overflow/nonzero underflow conversion fails.
-
-        See also: concept.resources, concept.exact
+        Full contract: mf.help("api.MatrixView.preview")
         MIPFRAME HELP END
         """
         m = self._owner.model
-        _Frame._size(max_rows)
-        _Frame._size(max_vars)
+        Frame._size(max_rows)
+        Frame._size(max_vars)
         if choose_vars not in ("most_active", "first", "largest_coef"):
             raise ValueError(
                 "choose_vars must be 'most_active', 'first', or 'largest_coef'"
@@ -638,21 +446,9 @@ class MatrixView:
                         The returned matrix remains usable after the model closes.
 
         MIPFRAME HELP BEGIN
-        MatrixView.to_scipy [api.MatrixView.to_scipy]
-
         Export independent float64 CSR with local axes matching rows.ids and vars.ids.
 
-        MatrixView.to_scipy()
-
-        When to use: Export independent float64 CSR with local axes matching rows.ids and vars.ids.
-
-        Establishes: Preview most_active ranks over all selected rows; largest_coef uses exact maximum absolute values; ties use selected axis order.
-
-        Does not establish: Automatic column selection need not be active in the displayed row prefix. SciPy conversion is inexact and explicit.
-
-        Failures: SciPy requires mipframe[scipy]; nonfinite/overflow/nonzero underflow conversion fails.
-
-        See also: concept.resources, concept.exact
+        Full contract: mf.help("api.MatrixView.to_scipy")
         MIPFRAME HELP END
         """
         m = self._owner.model

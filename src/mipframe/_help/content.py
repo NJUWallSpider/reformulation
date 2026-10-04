@@ -56,7 +56,7 @@ topic('concept.frame', 'Rows, variables and sparse terms', 'Rows and Vars are en
       non_guarantees='An entity neighborhood does not retain one edge per source. A Row or Var has no coef field.',
       example='r = m.rows.iloc[0]\nx = m.vars.by_name("x")\nT = x.terms\nedge = T.head(1).one()\nedge.row, edge.var, edge.coef',
       body='''Use r.vars and x.rows for deduplicated neighborhoods; use r.terms, x.terms or m.terms(rows=R, vars=V) for coefficients.
-Use .iloc for positions, .loc for declared keys, .by_name for names and .family for a bound IR family.
+Use .iloc for positions, .loc for declared keys, .by_name for names and m.family(label).rows or .vars for family members.
 RowFrame.loc and VarFrame.loc accept integer IDs or same-snapshot, same-axis Refs within the selection.
 select/join return ordinary Frames. where/head/sort preserve entity type. Entity sets support &, | and -.
 Ref columns retain their snapshot and axis. .refs("var") returns the corresponding entity set.
@@ -165,7 +165,7 @@ topic('concept.report-resources', 'Report resource lifecycle',
       keywords=('report resources file descriptor exhaustion cleanup close memory batch certificates',),
       guarantees='Scalar mathematical checkers release their temporary workspace after publication and share retained evidence per live model owner. Batch targets share one store; for_target does not open another database.',
       non_guarantees='Report and LinExpr have no public close() method. Retained evidence still uses memory and disk. Unrelated queries and separately retained batches have their own storage; memory_mb is not a global process budget.',
-      body='''Use check.batch("linear") for a loop of explicit claims, sources and per-target assumptions. Use check.linear_many when the inputs already exist as Frames.
+      body='''Use check.linear_batch() for a loop of explicit claims, sources and per-target assumptions. Use check.linear_many when the inputs already exist as Frames.
 Retaining thousands of scalar mathematical Reports does not allocate one persistent SQLite connection per Report. Releasing the last Report, Claim, evidence Frame and dependent proof for a node makes its stored rows reclaimable; free database pages can be reused.
 Small expressions use bounded exact in-memory terms; larger materialized expressions share spill storage. Temporary SQLite callbacks do not keep discarded workspaces alive; manual garbage collection is not part of the API contract.
 Keep source models and proof dependencies alive until verification and any Edit that consumes them are complete.
@@ -173,14 +173,15 @@ Export needed audit data with Report.to_spec or Report.write; exported status al
 Release unneeded reports, evidence Frames, expressions and containers holding them. Dependent reports and staged edits may still retain references, so deleting one name need not free storage immediately.
 Model.close releases owned query resources and invalidates dependent live results. Close a model only when its live results are no longer needed.
 Do not call private report stores to close shared evidence. This release offers no per-report deterministic close API.''',
-      related=('api.Checker.batch','api.Checker.linear_many','api.Report.for_target','api.Report.write','api.Report.replay','api.Model.close','concept.resources'))
+      related=('api.Checker.linear_batch','api.Checker.linear_many','api.Report.for_target','api.Report.write','api.Report.replay','api.Model.close','concept.resources'))
 
 topic('concept.exact', 'Exact arithmetic and external numerical values', 'Use integer, Fraction, finite Decimal or mf.q text for mathematical scalars.',
       aliases=('exact arithmetic','float','rational','decimal','9.6'),
       guarantees='m.check and LinExpr operate on the exact rational values of the bound snapshot.',
       non_guarantees='Converting a solver float to a rational does not certify feasibility, optimality or a dual bound.',
       example='a = mf.q("9.6")\nb = mf.q("43/39")',
-      body='''Booleans, NaN, infinity and Python floats are rejected as algebraic scalars. Infinity is allowed only in documented bound fields.
+      body='''Booleans, NaN, infinity and Python floats are rejected as algebraic scalars. Infinity is allowed in Frame number columns representing bounds.
+Frame arithmetic keeps finite quotients exact, including finite/infinity = Fraction(0). Indeterminate infinity arithmetic (infinity-infinity, zero*infinity, infinity/infinity and sums of opposite infinities) raises ExactArithmeticError.
 If an external approximate value is useful for candidate ranking, explicitly choose and record its conversion outside mipframe.
 For proof multipliers, replay the resulting rational certificate including residual bound compensation.
 Exact solution checking may reject a rounded solver point. Do not silently add a tolerance or label it exact.
@@ -192,7 +193,7 @@ topic('concept.resources', 'Execution budgets and bounded display', 'Preview siz
       guarantees='Complete ops finish or raise; no truncated mathematical result is returned.',
       non_guarantees='head() cannot bypass a join validation barrier, sort or aggregation. repr does not promise constant-time upstream work.',
       body=BUDGET+''' Parsing has a separate 32 MiB minimum.
-collect/to_records explicitly materialize and can raise MaterializationLimitError; use iter_batches/write for large outputs.
+to_records explicitly materialize and can raise MaterializationLimitError; use iter_batches/write for large outputs.
 Most ops default to 1,000,000 output records. Set max_output_rows=None only when full output is intended.
 alg *_candidates may stop early and record scope/stop reason. Exhaustive algorithms raise SearchBudgetExceeded when incomplete.
 check.enumerate returns INCONCLUSIVE when its enumeration budget is exhausted; this is different from alg.integer.enumerate.
@@ -283,11 +284,9 @@ for symbol,binding,summary,related in [
  ('MatrixView','mipframe.ops.matrix:MatrixView','Logical sparse slice with explicit preview and float64 export.',('api.MatrixView.preview',)),
  ('MatrixAccessor','mipframe.ops.matrix:MatrixAccessor','Model matrix operations accessed through m.matrix.',('api.MatrixAccessor.nnz',)),
  ('Checker','mipframe.check.accessor:Checker','Exact certificate verification through m.check.',('concept.proofs',)),
- ('LinearBatch','mipframe.check.batch:LinearBatch','Incremental linear certificate builder obtained through m.check.batch("linear").',('api.Checker.batch','concept.report-resources')),
+ ('LinearBatch','mipframe.check.batch:LinearBatch','Incremental linear certificate builder obtained through m.check.linear_batch().',('api.Checker.linear_batch','concept.report-resources')),
  ('CompressedIR','mipframe.ir.compressed:CompressedIR','Bounded factual model map prepared by read/load.',('home',)),
  ('IndexedResult','mipframe.ir.indexing.views:IndexedResult','Completed coordinate and operator discovery, with exact verification.',('recipe.coordinates',)),
- ('IndexedTensor','mipframe.ir.indexing.views:IndexedTensor','Verified coordinate view with explicit declared axes.',('recipe.coordinates',)),
- ('IndexedOperator','mipframe.ir.indexing.views:IndexedOperator','Recovered exact operator with original bindings and kernel.',('api.IndexedOperator.verify',)),
  ('Ref','mipframe.frame.schema:Ref','Detached snapshot-qualified entity identity; navigate with ref.bind(model) or matching rows.loc[ref]/vars.loc[ref].',('concept.identity',)),
  ('DType','mipframe.frame.schema:DType','Scalar column type, including nullable and snapshot-qualified references.',('concept.frame',)),
  ('Record','mipframe.frame.base:Record','Live read-only record; to_record exports detached values.',('concept.identity',)),
@@ -310,9 +309,9 @@ for name,summary,ret in [
  ('save','Atomically save a new native v3 directory.','Saved path; existing destinations are rejected.'),
  ('write_lp','Atomically export exact LP where decimal representation is lossless.','Output path; unsupported coefficients/free rows fail without publishing a partial file.'),
  ('close','Close owned resources and invalidate live dependent queries.','None; independently built snapshots and detached exports remain usable.'),
- ('verify','Validate numerical storage and replay prepared indexed results.','Verification summary; not a general MIP feasibility or optimality proof.'),
+ ('verify','Validate numerical storage and replay prepared indexed results.','Report scoped to model integrity and prepared indexed runs; not MIP feasibility or optimality.'),
 ]:
-    api('Model.'+name,'mipframe.model:Model.'+name,summary,returns=ret,related=('concept.identity',),body=LIVE)
+    api('Model.'+name,'mipframe.model:Model.'+name,summary,returns=ret,related=('concept.identity',),body=(LIVE + (' verify="auto" reuses a process-local verified source/target receipt when available, otherwise replays lineage and checks target facts. verify="replay" always performs that independent verification. Diff Frames and degree statistics are materialized on access; native files never grant a live receipt.' if name=='diff' else '')))
 
 for name,summary in {
  'uid':'Snapshot UUID; independent imports differ.', 'version':'Ordered canonical mathematical content fingerprint.',
@@ -320,11 +319,11 @@ for name,summary in {
  'source':'Import or Edit provenance; not a second numerical model.', 'parent':'Parent snapshot identity or None.',
  'stage':'Explicit snapshot stage such as imported or edited.', 'shape':'Number of rows and variables.',
  'nnz':'Number of original nonzero constraint terms.', 'rows':'RowFrame of all rows.', 'vars':'VarFrame of all variables.',
- 'ir':'Prepared factual compressed IR; reading this property does not start another search.',
+ 'ir':'Factual compressed IR; prepared by read/load, or lazily on first access after a logical Edit build.',
  'matrix':'MatrixAccessor; exact sparse counts/activity and explicit SciPy export.',
- 'check':'Checker for exact certificate verification.', 'structure':'Signature and indexed analysis access.',
+ 'check':'Checker for exact certificate verification.',
+ 'row_families':'Template row-family Frame at depth 2.', 'var_families':'Template variable-family Frame at depth 2.',
  'objective':'Original objective direction, constant and coefficients.', 'lineage':'Saved Edit history, not automatically trusted live proof.',
- 'A':'Independent float64 SciPy CSR export of the full model; conversion is explicit and can fail.',
  'row_index':'Original row IDs for full matrix axis mapping.', 'var_index':'Original variable IDs for full matrix axis mapping.',
 }.items():
     api('Model.'+name,'mipframe.model:Model.'+name,summary,returns=summary,related=('concept.identity',))
@@ -344,8 +343,7 @@ FRAME_METHODS = [
  ('column','Read only one column and its dependencies.','Column name.','ColumnView with exact reductions and aligned comparisons.'),
  ('nunique','Count distinct combinations of selected columns.','Column name or tuple.','Exact integer count.'),
  ('check','Verify a declared relational property.','unique/product with columns; function with key/value.','Report; product includes all declared domains, never a materialized Cartesian product.'),
- ('collect','Explicitly materialize detached records within a budget.','Optional memory_mb.','Independent list; over limit raises MaterializationLimitError without a partial return.'),
- ('to_records','Export independent records using the collect contract.','Optional memory_mb.','Detached Ref identities and exact scalar values.'),
+ ('to_records','Export independent records within the materialization budget.','Optional memory_mb.','Detached Ref identities and exact scalar values.'),
  ('iter_batches','Stream complete schema-carrying detached batches.','Positive batch_size and optional memory_mb.','Iterator; interrupted/closed live queries raise instead of silently ending.'),
  ('write','Atomically write a complete relation.','Path; JSONL or optional Parquet.','Exact rational and Ref identity encoding; Parquet needs mipframe[parquet].'),
  ('to_spec','Serialize a versioned query AST.','No implicit execution or trusted proof flags.','Independent spec; restoration requires explicit model/relation bindings.'),
@@ -382,9 +380,8 @@ for n in ('key','unique','models','domains','relations','iloc','loc','columns','
 for cls in ('RowFrame','VarFrame'):
     for name,summary,ret in [
         ('project','Map each source to exactly one neighbor in every named target domain.','Ordinary Frame keyed by row/var, with named Ref columns and declared target domains.'),
-        ('family','Select a family from the bound structural signature configuration.','Entity Frame; family labels are local to snapshot/configuration/depth.'),
+        ('families','Group selected members by full-model template families.','Frame retaining global family identity and selected-member counts.'),
         ('by_name','Find an entity by its original name explicitly.','One live entity; missing names raise KeyError.'),
-        ('at','Find one entity by positional index.','Row or Var; negative positions allowed, bool rejected.'),
         ('family_membership','Expose family membership as a normalized relation.','Frame retaining explicit signature configuration and depth.'),
         ('pattern_counts','Count source entities by their family-neighborhood pattern.','Ordinary Frame with normalized pattern items/members in relations.'),
     ]:
@@ -396,8 +393,8 @@ for cls in ('RowFrame','VarFrame'):
     for name in ('ids','terms', 'vars' if cls=='RowFrame' else 'rows'):
         api(cls+'.'+name,'mipframe.frame.entity:'+cls+'.'+name,'Read '+('original IDs' if name=='ids' else 'original terms' if name=='terms' else 'deduplicated neighboring entities')+'.',returns=LIVE,related=('concept.frame',))
 for cls,module,names in [
- ('Row','frame.row',('id','name','lb','ub','lhs','rhs','relation','nnz','expr','terms','vars','lb_claim','ub_claim','eq_claim','formula','to_record')),
- ('Var','frame.var',('id','name','kind','type','is_binary','lb','ub','obj','nnz','expr','terms','rows','lb_claim','ub_claim','eq','to_record')),
+ ('Row','frame.row',('source_line','id','name','lb','ub','lhs','rhs','relation','nnz','expr','terms','vars','lb_claim','ub_claim','eq_claim','formula','to_record')),
+ ('Var','frame.var',('source_line','id','name','kind','type','is_binary','lb','ub','obj','nnz','expr','terms','rows','lb_claim','ub_claim','eq','to_record')),
  ('Term','frame.terms',('row','var','coef','to_record')),
 ]:
     for n in names:
@@ -574,7 +571,7 @@ for n,summary,guarantees in [
                   'solution':('integer solution point feasibility exact values',)}.get(n,()),
         related=('concept.proofs','concept.conditions') + {
             'cases':('recipe.cases',),
-            'linear_many':('api.Checker.batch','api.Frame.schema','api.Report.for_target','concept.report-resources'),
+            'linear_many':('api.Checker.linear_batch','api.Frame.schema','api.Report.for_target','concept.report-resources'),
             'solution':('limitation.fractional-point',),
         }.get(n,()),
         body={
@@ -594,23 +591,23 @@ domain="auto" and domain="integer" both enforce the original integer domains; do
             'linear_many':'''targets has target/relation/rhs, with unique string target IDs; terms has target/var/coef.
 using has target and exactly one source field row/var/proof per record, plus side and multiplier (direction for equality target sides).
 Reference columns use m.rows.schema["row"] or m.vars.schema["var"]. A proof source is a string key in the explicit reports mapping.
-Use residual="bounds" for bound compensation. This Frame-native entry point has no assume parameter; use check.batch("linear").add(..., assume=...) for per-target assumptions and ordinary Claim/Report inputs.
+Use residual="bounds" for bound compensation. This Frame-native entry point has no assume parameter; use check.linear_batch().add(..., assume=...) for per-target assumptions and ordinary Claim/Report inputs.
 The result shares paged storage across targets; inspect evidence and use for_target(target_id) for one conclusion. require() on the batch requires every target to be PROVED.''',
         }[n])
 
-api('Checker.batch','mipframe.check.accessor:Checker.batch',
+api('Checker.linear_batch','mipframe.check.accessor:Checker.linear_batch',
     'Build a batch of linear certificates with scalar arguments and per-target assumptions.',
-    inputs='method="linear"; residual="exact" or "bounds"; domain="auto", "relaxation" or "integer"; memory_mb and disk_mb apply to the whole batch.',
+    inputs='residual="exact" or "bounds"; domain="auto", "relaxation" or "integer"; memory_mb and disk_mb apply to the whole batch.',
     returns='LinearBatch context manager. add stages each check; run verifies all targets and returns a Report.',
     guarantees='Consumes inputs incrementally in shared storage. No caller-authored schemas or reports mapping are required.',
     non_guarantees='No multiplier search, condition discharge, enumeration batch or model edit.',
     failures='Unsupported methods or options raise. Invalid inputs, cancellation and resource failures abort unpublished work.',
     resources=BUDGET,
-    aliases=('m.check.batch','linear batch builder','batch checks with assumptions','batch.add',
+    aliases=('m.check.linear_batch','linear batch builder','batch checks with assumptions','batch.add',
              'batch linear proof','many linear certificates','batch certificates',
              'check many linear certificates at once'),
     keywords=('batch linear certificates bulk scalar claims assume assumptions branch proofs simple builder',),
-    example='''with m.check.batch("linear", residual="bounds") as batch:
+    example='''with m.check.linear_batch(residual="bounds") as batch:
     for row in m.rows:
         batch.add(key=str(row.id), target=row.ub_claim, using=[row.ub_claim])
     report = batch.run()
@@ -625,7 +622,7 @@ api('LinearBatch.add','mipframe.check.batch:LinearBatch.add',
     returns='The builder for chaining. No proof is published by add.',
     guarantees='Consumes generators and copies mathematical inputs into shared paged staging now; does not retain a list of target expressions. Parent proof dependencies remain live.',
     failures='Duplicate keys, invalid sources and staging failures abort and close the builder. A closed or already-run builder rejects further additions.',
-    related=('api.Checker.batch','api.Checker.linear','api.LinearBatch.run','concept.conditions'))
+    related=('api.Checker.linear_batch','api.Checker.linear','api.LinearBatch.run','concept.conditions'))
 api('LinearBatch.run','mipframe.check.batch:LinearBatch.run',
     'Verify every staged linear target and seal the builder.',
     returns='Report with evidence["results"] and for_target(key). An empty batch is PROVED.',
@@ -636,7 +633,7 @@ api('LinearBatch.run','mipframe.check.batch:LinearBatch.run',
 api('LinearBatch.close','mipframe.check.batch:LinearBatch.close',
     'Release unpublished batch work and close the builder.',
     returns='None.', guarantees='Idempotent. Reports already returned by run remain valid.',
-    related=('api.Checker.batch','api.LinearBatch.run','concept.report-resources'))
+    related=('api.Checker.linear_batch','api.LinearBatch.run','concept.report-resources'))
 for n in ('status','ok','summary','scope','conclusion','method','dependencies','evidence','counterexample','violations','require','explain','to_spec','write','replay','for_target'):
     api('Report.'+n,'mipframe.check.report:Report.'+n,{
         'require':'Raise ValidationError carrying this report unless status is PROVED.',
@@ -658,7 +655,7 @@ for n,summary,inp in [
  ('set_objective','Replace the entire objective independent of staging order.','Affine source/draft expression and min/max sense; includes its constant.'),
  ('replace_rows','Stage explicit row replacement relationships.','old source rows, new rows/terms and correspondence(old_row,new_label).'),
  ('summary','Validate and summarize the staged plan without building a Model.','No arguments; reports whether build is possible.'),
- ('build','Atomically build an independent edited snapshot and prepare its own IR/indexed.','allow_infeasible=False rejects directly visible impossible bounds/empty rows.'),
+ ('build','Atomically build an independent exact snapshot; structural analyses are lazy by default.','allow_infeasible=False rejects directly visible impossible bounds/empty rows. prepare="logical" defers IR/indexed; prepare="indexed" prepares both before returning.'),
  ('close','Release the Edit and live draft resources.','No arguments.'),
 ]:
     api('Edit.'+n,'mipframe.edit.plan:Edit.'+n,summary,inputs=inp,returns='New staging result, Formula summary or independent Model as appropriate.',
@@ -680,28 +677,30 @@ for name, summary, returns, guarantees in [
     api('CompressedIR.'+name, 'mipframe.ir.compressed:CompressedIR.'+name, summary,
         returns=returns, guarantees=guarantees,
         non_guarantees='The summary does not embed the full numerical model, member lists or parameter histograms. Structural groups do not prove mathematical equivalence.',
-        body='IR schema 0.3 retains IDs, depths, scopes and configurations. Access detailed objects through m.rows, m.vars, m.matrix and m.structure. For a family use m.structure.signatures().family(id, depth=depth); for indexed tensors and operators use m.structure.indexed().tensor(id) or .operator(id).',
-        related=('api.Model.ir', 'api.StructuralSignatures.family', 'api.Structure.indexed'))
+        body='IR schema 0.3 retains IDs, depths, scopes and configurations. Access detailed objects through m.rows, m.vars, m.matrix and m.families(). For a family use m.family(id, depth=depth); for indexed tensors and operators use m.indexed().tensor(id) or .operator(id).',
+        related=('api.Model.ir', 'api.Model.family', 'api.Model.indexed'))
 
 for cls,module,names in [
  ('IndexedResult','ir.indexing.views',('tensors','partitions','operators','evidence','tensor','operator','partition','evidence_item','verify','validate','to_record')),
- ('IndexedTensor','ir.indexing.views',('vars','axes','coordinates','verify')),
- ('IndexedOperator','ir.indexing.views',('rows','bindings','kernel','alignment','formula','verify')),
 ]:
     for n in names:
-        api(cls+'.'+n,'mipframe.'+module+':'+cls+'.'+n,'Inspect or verify '+cls+' '+n+'.',returns='Public summary, domain handle, Frame or verification Report.',
-            guarantees='Large coordinates, bindings and kernels stay in queryable Frames; rendering is bounded.',
-            non_guarantees='A structural signature alone does not prove coordinates, symmetry or a valid cut.',related=('recipe.coordinates','concept.frame'))
+        summary = ('Replay prepared tensors/operators or an explicit directory selection.' if n=='verify' else
+                   'Validate an independently supplied indexed hypothesis.' if n=='validate' else
+                   'Export detached run metadata.' if n=='to_record' else
+                   'Select one indexed item by its required ID.' if n in ('tensor','operator','partition','evidence_item') else
+                   'Query the indexed '+n+' directory.')
+        body = ('An explicit selection must retain indexed_key and belong to this snapshot and run. Partitions can be selected; evidence cannot. Empty selection returns checked=0. Summary checked/failures count primary items, not diagnostic rows; evidence["checks"] lists items, evidence["details"] includes their details. Inconclusive or skipped checks cannot produce PROVED. Inconsistency returns REFUTED; require() raises. Input and execution errors raise directly.' if n=='verify' else
+                'Candidate metadata, AST, coordinates, bindings, kernels, alignment and partition memberships accept Frames. Complete independent candidate dictionaries remain supported. Identity never bypasses exact verification. Diagnostic reports cannot be used as linear certificates.' if n=='validate' else
+                'Counts use row_count/var_count; members use rows/vars. Dimensions, AST and numerical details are related tables. Singular lookups reject unknown IDs with KeyError.')
+        api(cls+'.'+n,'mipframe.'+module+':'+cls+'.'+n,summary,returns=('Report with explicit indexed scope.' if n in ('verify','validate') else 'Detached run metadata.' if n=='to_record' else 'Ordinary Frame with selected-key related navigation.'),
+            guarantees='Verification recipes replay exact checks; directory navigation follows the selected identity keys.',
+            non_guarantees='A structural signature alone does not prove coordinates, symmetry or a valid cut.',body=body,related=('concept.indexed','recipe.coordinates','concept.frame'))
 api('Ref.bind','mipframe.frame.schema:Ref.bind','Bind a detached identity to the corresponding live snapshot.',inputs='Model with matching uid/version and correct axis/ID.',returns='Live Row or Var.',related=('concept.identity',))
 for symbol,bind in [('frame_from_spec','mipframe.frame.serialization:frame_from_spec'),('read_frame','mipframe.frame.serialization:read_frame')]:
     api(symbol,bind,'Restore an exact relation with explicit snapshot/dependency bindings.',returns='Frame; externally claimed uniqueness is not trusted.',related=('concept.identity','api.Frame.write'))
 
 # Additional domain facades are registered by their public reachability, not private helpers.
 for cls,module,names in [
- ('Structure','ir.signatures',('indexed','signatures','summary','splits')),
- ('StructuralSignatures','ir.signatures',('config','mode','rows','vars','row_families','var_families','family','summary','splits')),
- ('StructuralConstraintFamily','ir.signatures',('rows','params','inspect')),
- ('VariableFamily','ir.signatures',('vars','params','inspect')),
  ('Lineage','edit.lineage',('parent','semantic','validation','findings','operations','evidence','changes','mapping','resolve','proof')),
  ('ModelDiff','edit.diff',('semantic','objective_changed','nnz_before','nnz_after','row_nnz_stats','col_nnz_stats')),
 ]:
@@ -726,8 +725,6 @@ for item in TOPICS:
             item['aliases'].append('m.check.' + symbol.split('.',1)[1])
         if symbol.startswith('MatrixAccessor.'):
             item['aliases'].append('m.matrix.' + symbol.split('.',1)[1])
-        if symbol.startswith('Structure.'):
-            item['aliases'].append('m.structure.' + symbol.split('.',1)[1])
         if symbol.startswith('Model.'):
             item['aliases'].append('m.' + symbol.split('.',1)[1])
     # Avoid projecting an unrelated failure/limitation onto entity lookup methods.
@@ -769,10 +766,6 @@ for item in TOPICS:
     if item['id']=='concept.proofs':item['aliases'].append('exact linear verification')
     if item['id']=='error.navigation':item['aliases'].extend(['MatrixEntries','Projection','IncidenceCounts','legacy analyze'])
 for symbol,binding,summary in [
- ('AlgebraicSignature','mipframe.ir.algebraic:AlgebraicSignature','Canonical exact single-row coefficient pattern, distinct from the original row formula.'),
- ('TypedSignature','mipframe.ir.typed:TypedSignature','Single-row pattern with variable-domain observations.'),
- ('StructuralSignature','mipframe.ir.signatures:StructuralSignature','One entity role in a bound structural refinement configuration.'),
- ('ConstraintFamily','mipframe.ir.families:ConstraintFamily','Read-only family facade with explicit original members.'),
  ('NameIndex','mipframe.store.names:NameIndex','Explicit original-name lookup index; names do not replace typed Ref identity.'),
  ('DraftRef','mipframe.edit.draft:DraftRef','Detached Edit-local draft identity, distinct from a source snapshot Ref.'),
  ('canonical_ratio','mipframe.ir.algebraic:canonical_ratio','Compute a canonical exact coefficient ratio for signature observations.'),
@@ -782,7 +775,6 @@ for binding,ident in EXCEPTIONS.items():
     symbol=binding.split(':')[1]
     api(symbol,binding,'Diagnostic exception; inspect original message and any attached complete Report.',returns='Exception type, not a mathematical result.',related=(ident,))
 api('NotDAGError','mipframe.check.algorithm:NotDAGError','Directed graph is not a DAG; inspect the attached cycle evidence.',related=('api.ops.graph.topological_order',))
-api('ValidationReport','mipframe.check.report:ValidationReport','Compatibility name for the same Report implementation.',related=('concept.proofs',))
 topic('concept.options','Explicit display and query settings','options.display, options.ir and options.query configure presentation or working limits.',aliases=('options',),
     non_guarantees='Display limits do not reduce the mathematical scope of a query or verification.',related=('concept.resources',))
 topic('capability.ops','Exact structural operations','Use sets, graphs and grouped multiset equality for complete structural facts.',kind='capability',aliases=('ops','ops.sets','ops.graph'),
@@ -792,3 +784,53 @@ topic('capability.alg','Discrete searches','Find graph candidates or run explici
     guarantees='Candidate and exhaustive APIs have distinct completeness contracts.',non_guarantees='Search results do not grant proof or Edit authority.',related=('concept.search','recipe.enumeration'))
 topic('capability.audit','Serialization audit','Use audit.roundtrip to reparse supported LP output and compare exact facts.',kind='capability',aliases=('audit',),
     non_guarantees='No MPS export, solver postsolve map or linear implication certificate is provided.',related=('api.audit.roundtrip','limitation.export'))
+
+
+for symbol, binding, summary, returns in [
+ ('Model.families','mipframe.model:Model.families','Inspect template structural family directories and their members.','Frame; kind=row or var, depth=2 by default.'),
+ ('Model.family','mipframe.model:Model.family','Select one template family by F/V label and explicit depth.','Exactly one-row Frame; unknown labels raise KeyError, conflicting depths raise ValueError.'),
+ ('Model.refinement','mipframe.model:Model.refinement','Inspect parent/child family transitions, including unchanged groups.','Frame with selected/global counts and related before/after directories.'),
+ ('Model.indexed','mipframe.model:Model.indexed','Retrieve or discover indexed coordinates with explicit structural configuration.','IndexedResult; cached full-model results are reused.'),
+ ('Frame.related','mipframe.frame.base:Frame.related','Navigate a declared relation using the current selected keys.','Frame, RowFrame or VarFrame according to the relation declaration.'),
+ ('Frame.rows','mipframe.frame.base:Frame.rows','Read declared row members of the current family or indexed selection.','Deduplicated RowFrame; selections without a declared row-member axis reject access.'),
+ ('Frame.vars','mipframe.frame.base:Frame.vars','Read declared variable members of the current family or indexed selection.','Deduplicated VarFrame; selections without a declared variable-member axis reject access.'),
+ ('Frame.inspect','mipframe.frame.base:Frame.inspect','Render a bounded table or provider-specific family/indexed details.','String; verbose includes all-orientation diagnostics as bounded previews.'),
+ ('analysis.families','mipframe.analysis:families','Group entities with an explicit advanced feature rule.','Frame with global identities and selected member counts.'),
+ ('analysis.signatures','mipframe.analysis:signatures','Read exact entity features, patterns and structural levels.','Frame; one Row input produces one row, never a Signature object.'),
+]:
+    api(symbol,binding,summary,returns=returns,
+        body=('max_items bounds the preview for every Frame. Family views also support max_splits, samples, sample_formula, max_terms and verbose; indexed views support max_items and verbose. Unsupported non-default display options raise ValueError.' if symbol=='Frame.inspect' else ''),
+        aliases=(('m.' + symbol.split('.', 1)[1],) if symbol.startswith('Model.')
+                 else ('mf.' + symbol,) if symbol.startswith('analysis.') else ()),
+        guarantees='Snapshot and analysis configuration remain bound. Family and indexed views share storage; original mathematical facts remain accessible through entity members.',
+        non_guarantees='A repeated structure is an observation, not symmetry, redundancy, coordinates or a mathematical proof.',
+        related=('concept.families','concept.frame','recipe.roles'))
+
+topic('concept.families','Families as Frames','Start with m.row_families, m.var_families or m.family(label).',
+    aliases=('family','families','structural signatures','template structural','family members','family parameters'),
+    keywords=('structure template rows vars family membership refinement depth parameters',),
+    body='''m.families(kind="row", depth=2) returns a family Frame; m.family("F0") returns a single-row Frame.
+Both row_families and var_families default to depth 2. Row patterns at depth d explicitly reference variable roles at d-1.
+Use f.rows for row members and v.vars for variable members. f.rows.vars and v.vars.rows traverse neighboring entities.
+Filtering a directory restricts related members and statistics; selected entity families retain global labels and family_key.
+count describes selected members; total_count describes the full-model family. Use family_key for cross-table identity, not display labels alone.
+related("pattern") exposes complete normalized patterns. related("parameters"), related("histogram") and related("sources") retain basis and orientation.
+Use .where(basis="canonical") for canonical observations, or raw / scale_normalized explicitly. sources retains original row and transformation factors.
+config records the bound options; levels exposes depth overview. Scalar columns and normalized relations replace all old Family/Signature facades.
+Keep family_key when projecting if subsequent family navigation is required; direct renaming is supported. Aggregation removes navigation.
+Use mf.analysis.families/signatures with explicit method=algebraic, typed, template or exact_structural for advanced work. Typo aliases algebratic/exact_strctural exist only there.
+Model.refinement returns parent/child transitions; Model.indexed accepts explicit depth/method/options rather than a signatures object.
+Views are live and require the model to stay open; they do not own one database per family. repr is bounded and does not compute numeric profiles.''',
+    related=('api.Model.families','api.Model.family','api.Frame.related','api.Frame.inspect','api.analysis.families','api.analysis.signatures'))
+
+
+topic('api.analysis','Advanced feature analysis','Explicit feature rules returning Frames.',
+    kind='api', aliases=('mf.analysis','analysis'),
+    body='Use analysis.families or analysis.signatures with an explicit method. The Model family methods default to template structural.',
+    related=('api.analysis.families','api.analysis.signatures','concept.families'))
+
+# Indexed data follows the same Model/Frame navigation contract as families.
+topic('concept.indexed', 'Indexed directories and related Frames',
+      'Use ordinary Frames for indexed coordinates, partitions, operators and evidence.',
+      aliases=('indexed frames','indexed kernel','indexed axes','indexed AST'),
+      body='I = m.indexed() binds a snapshot, configuration and declared scope.\nI.tensors, I.operators, I.partitions and I.evidence are ordinary Frames.\nI.tensor(id), I.operator(id), I.partition(id), I.evidence_item(id) return exactly one-row Frames; unknown IDs raise KeyError.\nUse O.one().row_count for metadata, O.rows for original rows, and O.related("kernel"), "bindings", "alignment", "ast", "statistics" or "dimensions" for complete data.\nUse T.vars, T.related("coordinates"), and T.related("axes").where(axis=0).rows. Coordinates retain the complete declared axis domains.\nFrame.shape always means table dimensions. Indexed dimensions live in related("dimensions") as component,axis,size.\nAST, origins and diagnostics use path,node_type,text,number,boolean node tables; empty containers and array order are preserved. Statistics retain exact numeric values.\nFiltering, sorting, slicing and key-preserving projection restrict related results. Keep indexed_key for navigation; axes additionally require axis. Members are deduplicated.\nI.verify(selection=None) checks prepared tensors/operators by default; an explicit directory selection can also verify partitions. Empty selection checks zero items. Discovery evidence is not a proposition.\nI.validate(spec) checks independently supplied hypotheses, including Frame relations. Neither directory identity nor saved status grants proof authority.\nm.verify() returns Report for storage integrity and prepared indexed runs. Inconsistency returns REFUTED; require() raises. Corrupt base data skips dependent checks; execution and input errors still raise.\nThese reports cannot be used as linear certificates or Edit justifications. Live views share stores; detached records remain usable after close.',related=('api.Model.indexed','api.IndexedResult.verify','api.IndexedResult.validate','api.Frame.related','api.Model.verify'))

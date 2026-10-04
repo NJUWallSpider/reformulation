@@ -55,6 +55,9 @@ G = A.group_by("var").agg(n=count(), total=col("weight").sum())
 and/or。nullable 筛选只保留 True；缺失 join 键不匹配，分组和 distinct 将缺失
 作为一个组。count() 统计记录；列 count/sum/min/max/nunique 忽略缺失。
 空 sum 为零，空列极值报错；分组无有效值的极值为 None。
+无穷边界的计算也遵守精确规则：有限数除以无穷得到 `Fraction(0)`；
+`inf - inf`、`0 * inf`、`inf / inf` 和包含相反无穷值的求和抛
+`ExactArithmeticError`，不会生成 NaN 或有限 float。
 
 ## 关联与证明
 
@@ -87,10 +90,15 @@ rare = C.where(col("nnz") <= 2).refs("var")
 
 查询共享工作预算，默认 128 MiB，最低 16 KiB；解析仍最低 32 MiB。
 阻塞算子使用临时 SQLite，精确数值编码和有理数比较不依赖 REAL。
+执行上下文在首次需要落盘时才创建临时目录和数据库，纯流式读取无需额外 SQLite。
 预算不代表整个进程的 RSS 上限。repr 读取有界前缀，不额外 count；未知总量显示
 `total not computed`。排序、聚合或验证仍可能需要扫描完整输入。
+`inspect(max_items=N)` 对普通 Frame 也限制预览条数。族视图支持参数与样本展示；
+Indexed 视图支持 `max_items` 和 `verbose`。不适用的非默认展示选项明确报错。
+相邻 `where` 合并后统一下推；参数表的 `basis` 筛选不因写成多个 `where`
+而额外计算其他数值基准。
 
-collect/to_records 显式物化，默认限 128 MiB，超限抛 MaterializationLimitError。
+to_records() 显式物化，默认限 128 MiB，超限抛 MaterializationLimitError。
 iter_batches 完整流式输出只读批次，write 原子输出精确 JSONL；Parquet 输出需要
 `mipframe[parquet]`，有理数保存为分子/分母，Ref 类型身份写入 schema 元数据。
 独立记录中的 Ref 不依赖打开模型；调用 ref.bind(m) 才恢复实体导航。
@@ -104,14 +112,16 @@ copy = mf.read_frame("analysis.jsonl", models=(m,))
 ```
 
 模型外分析关系需要显式 relations 绑定。to_spec 不保存用户可伪造的唯一性证明。
-explain 不执行查询，可查看计划、schema、键与验证屏障。
+共享子查询在 to_spec 中只定义一次，后续位置保存引用；旧的树形规格仍可读取。
+explain 不执行查询，可查看计划、schema、键与验证屏障，共享父节点显示为引用。
+membership 子查询和算法输入也纳入依赖展示与搜索来源追踪。
 
 ## 迁移
 
 | 原写法 | 新写法 |
 |---|---|
 | F[0] / F[:5] | F.iloc[0] / F.head(5) |
-| m.rows["F0"] | m.rows.family("F0@2") |
+| m.rows["F0"] | m.family("F0@2").rows |
 | frame.index | frame.ids（实体）或声明 key |
 | x.rows 的边项 | x.terms 的 Term |
 | V.rows.project(...) | V.project(...) |

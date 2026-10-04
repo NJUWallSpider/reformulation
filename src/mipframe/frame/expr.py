@@ -8,7 +8,6 @@ import operator
 from mipframe.frame.schema import DType
 from mipframe.frame.schema import SchemaError
 from mipframe.frame.schema import dtype
-from mipframe.frame.schema import encode
 from mipframe.frame.schema import decode
 from mipframe.frame.schema import Ref
 
@@ -17,19 +16,9 @@ from mipframe.frame.schema import Ref
 class QueryExpr:
     """
     MIPFRAME HELP BEGIN
-    QueryExpr [api.QueryExpr]
-
     Serializable table expression, not a model-variable affine function.
 
-    QueryExpr [type]
-
-    When to use: Serializable table expression, not a model-variable affine function.
-
-    Returns: A public domain type. Obtain live handles through their owning Model or query.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: error.expressions
+    Full contract: mf.help("api.QueryExpr")
     MIPFRAME HELP END
     """
     op: str
@@ -101,19 +90,9 @@ class QueryExpr:
     def is_null(self):
         """
         MIPFRAME HELP BEGIN
-        QueryExpr.is_null [api.QueryExpr.is_null]
-
         Construct the is_null table expression.
 
-        QueryExpr.is_null()
-
-        When to use: Construct the is_null table expression.
-
-        Returns: Serializable predicate or aggregation expression.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: error.expressions
+        Full contract: mf.help("api.QueryExpr.is_null")
         MIPFRAME HELP END
         """
         return QueryExpr("is_null", (self,))
@@ -121,19 +100,9 @@ class QueryExpr:
     def is_not_null(self):
         """
         MIPFRAME HELP BEGIN
-        QueryExpr.is_not_null [api.QueryExpr.is_not_null]
-
         Construct the is_not_null table expression.
 
-        QueryExpr.is_not_null()
-
-        When to use: Construct the is_not_null table expression.
-
-        Returns: Serializable predicate or aggregation expression.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: error.expressions
+        Full contract: mf.help("api.QueryExpr.is_not_null")
         MIPFRAME HELP END
         """
         return ~self.is_null()
@@ -141,19 +110,9 @@ class QueryExpr:
     def isin(self, values):
         """
         MIPFRAME HELP BEGIN
-        QueryExpr.isin [api.QueryExpr.isin]
-
         Construct the isin table expression.
 
-        QueryExpr.isin(values)
-
-        When to use: Construct the isin table expression.
-
-        Returns: Serializable predicate or aggregation expression.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: error.expressions
+        Full contract: mf.help("api.QueryExpr.isin")
         MIPFRAME HELP END
         """
         if hasattr(values, "schema"):
@@ -163,19 +122,9 @@ class QueryExpr:
     def count(self):
         """
         MIPFRAME HELP BEGIN
-        QueryExpr.count [api.QueryExpr.count]
-
         Construct the count table expression.
 
-        QueryExpr.count()
-
-        When to use: Construct the count table expression.
-
-        Returns: Serializable predicate or aggregation expression.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: error.expressions
+        Full contract: mf.help("api.QueryExpr.count")
         MIPFRAME HELP END
         """
         return Aggregate("count", self)
@@ -183,19 +132,9 @@ class QueryExpr:
     def sum(self):
         """
         MIPFRAME HELP BEGIN
-        QueryExpr.sum [api.QueryExpr.sum]
-
         Construct the sum table expression.
 
-        QueryExpr.sum()
-
-        When to use: Construct the sum table expression.
-
-        Returns: Serializable predicate or aggregation expression.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: error.expressions
+        Full contract: mf.help("api.QueryExpr.sum")
         MIPFRAME HELP END
         """
         return Aggregate("sum", self)
@@ -203,19 +142,9 @@ class QueryExpr:
     def min(self):
         """
         MIPFRAME HELP BEGIN
-        QueryExpr.min [api.QueryExpr.min]
-
         Construct the min table expression.
 
-        QueryExpr.min()
-
-        When to use: Construct the min table expression.
-
-        Returns: Serializable predicate or aggregation expression.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: error.expressions
+        Full contract: mf.help("api.QueryExpr.min")
         MIPFRAME HELP END
         """
         return Aggregate("min", self)
@@ -223,19 +152,9 @@ class QueryExpr:
     def max(self):
         """
         MIPFRAME HELP BEGIN
-        QueryExpr.max [api.QueryExpr.max]
-
         Construct the max table expression.
 
-        QueryExpr.max()
-
-        When to use: Construct the max table expression.
-
-        Returns: Serializable predicate or aggregation expression.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: error.expressions
+        Full contract: mf.help("api.QueryExpr.max")
         MIPFRAME HELP END
         """
         return Aggregate("max", self)
@@ -243,32 +162,20 @@ class QueryExpr:
     def nunique(self):
         """
         MIPFRAME HELP BEGIN
-        QueryExpr.nunique [api.QueryExpr.nunique]
-
         Construct the nunique table expression.
 
-        QueryExpr.nunique()
-
-        When to use: Construct the nunique table expression.
-
-        Returns: Serializable predicate or aggregation expression.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: error.expressions
+        Full contract: mf.help("api.QueryExpr.nunique")
         MIPFRAME HELP END
         """
         return Aggregate("nunique", self)
 
     @property
     def dependencies(self):
-        if self.op == "col":
-            return {self.args[0]}
-        result = set()
-        for arg in self.args:
-            if isinstance(arg, QueryExpr):
-                result |= arg.dependencies
-        return result
+        from mipframe.frame.query import expression_nodes
+        return {
+            item.args[0] for item in expression_nodes(self)
+            if isinstance(item, QueryExpr) and item.op == "col"
+        }
 
     def type(self, schema):
         op, a = self.op, self.args
@@ -288,9 +195,12 @@ class QueryExpr:
                 raise SchemaError("Membership key types or snapshots differ")
             return DType("bool", left.nullable)
         if op == "isin":
+            nullable = left.nullable
             for v in a[1]:
-                _comparable(left, v.type(schema))
-            return DType("bool", left.nullable)
+                right = v.type(schema)
+                _comparable(left, right)
+                nullable |= right.nullable or right.kind == "null"
+            return DType("bool", nullable)
         if op == "is_null":
             return DType("bool")
         if op == "not":
@@ -360,12 +270,9 @@ class QueryExpr:
             )
         if a is None or b is None:
             return None
-        if (
-            op == "div"
-            and isinstance(a, (int, Fraction))
-            and isinstance(b, (int, Fraction))
-        ):
-            return Fraction(a) / Fraction(b)
+        if op in ("add", "sub", "mul", "div"):
+            from mipframe.store.numbers import exact_binary
+            return exact_binary(op, a, b)
         return {
             "eq": operator.eq,
             "ne": operator.ne,
@@ -373,30 +280,11 @@ class QueryExpr:
             "le": operator.le,
             "gt": operator.gt,
             "ge": operator.ge,
-            "add": operator.add,
-            "sub": operator.sub,
-            "mul": operator.mul,
-            "div": operator.truediv,
         }[op](a, b)
 
     def to_spec(self):
-        if self.op == "literal":
-            return {"op": "literal", "value": encode(self.args[0])}
-        if self.op == "col":
-            return {"op": "col", "name": self.args[0]}
-        if self.op == "isin_frame":
-            return {
-                "op": self.op,
-                "input": self.args[0].to_spec(),
-                "frame": self.args[1].to_spec(),
-            }
-        if self.op == "isin":
-            return {
-                "op": self.op,
-                "input": self.args[0].to_spec(),
-                "values": [v.to_spec() for v in self.args[1]],
-            }
-        return {"op": self.op, "args": [a.to_spec() for a in self.args]}
+        from mipframe.frame.serialization import expression_spec
+        return expression_spec(self, lambda frame: frame.to_spec())
 
 
 def _comparable(a, b):
@@ -431,24 +319,9 @@ def literal(value):
 def col(name):
     """
     MIPFRAME HELP BEGIN
-    col [api.col]
-
     Reference a named Frame column in a query expression.
 
-    col(name)
-
-    When to use: Reference a named Frame column in a query expression.
-
-    Inputs: Existing column name when bound to a Frame.
-
-    Returns: QueryExpr.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    Illustrative example (requires caller-provided inputs):
-    mf.col("coef") < 0
-
-    See also: error.expressions
+    Full contract: mf.help("api.col")
     MIPFRAME HELP END
     """
     if not isinstance(name, str):
@@ -465,19 +338,9 @@ class Aggregate:
 def count():
     """
     MIPFRAME HELP BEGIN
-    count [api.count]
-
     Construct a group aggregation counting records.
 
-    count()
-
-    When to use: Construct a group aggregation counting records.
-
-    Returns: Aggregate for Grouped.agg; unlike column count it counts rows.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: api.Grouped.agg
+    Full contract: mf.help("api.count")
     MIPFRAME HELP END
     """
     return Aggregate("count")

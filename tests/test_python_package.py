@@ -18,28 +18,28 @@ def test_read_builds_exact_ir(tmp_path):
         assert model.shape == (2, 2) and model.nnz == 4
         assert model.objective.constant == Fraction(3)
         assert "constraints  : 2" in repr(model)
-        assert model.variables.by_name("x").cost == Fraction(1, 10)
-        assert model.variables[-1].kind == "I"
-        assert [v.id for v in model.variables[::-1]] == [1, 0]
-        row = model.constraints.by_name("demand")
-        assert row.lower == 2 and row.upper is None
+        assert model.vars.by_name("x").obj == Fraction(1, 10)
+        assert model.vars.iloc[-1].kind == "I"
+        assert [v.id for v in model.vars.iloc[::-1]] == [1, 0]
+        row = model.rows.by_name("demand")
+        assert row.lb == 2 and row.ub == float("inf")
         assert row.source_line > 0
-        coefficients = row.coefficients
+        coefficients = {t.var.id: t.coef for t in row.terms}
         coefficients[0] = 999
-        assert row.coefficients[0] == 1
+        assert {t.var.id: t.coef for t in row.terms}[0] == 1
         assert model.objective.coefficients == {0: Fraction(1, 10), 1: Fraction(2)}
         assert not (model.model.path / "analysis.sqlite").exists()
-        assert model.verify()["status"] == "PASS"
+        assert model.verify().status == "PROVED"
         model.write_lp(tmp_path / "out.lp")
         assert not (model.model.path / "analysis.sqlite").exists()
         with pytest.raises(IndexError):
-            model.variables[2]
+            model.vars.iloc[2]
         with pytest.raises(IndexError):
-            model.variables[-3]
+            model.vars.iloc[-3]
         with pytest.raises(KeyError):
-            model.constraints.by_name("missing")
+            model.rows.by_name("missing")
         with pytest.raises(TypeError):
-            model.variables[0.5]
+            model.vars.iloc[0.5]
 
 
 def test_lifecycle_and_native_snapshot(tmp_path):
@@ -51,9 +51,9 @@ def test_lifecycle_and_native_snapshot(tmp_path):
         getattr(model.model, name)._mmap
         for name in ("row_ptr", "col_idx", "coeff_id", "col_ptr", "col_positions")
     ]
-    rows = model.constraints
+    rows = model.rows
     objective = model.objective
-    row = rows[0]
+    row = rows.iloc[0]
     expected = repr(model)
     assert '模型' in expected and '\\"quoted\\"' in expected
     with pytest.raises(mf.MIPFrameError, match="outside"):
@@ -82,14 +82,14 @@ def test_lifecycle_and_native_snapshot(tmp_path):
         lambda: model.shape,
         lambda: model.objective.constant,
         lambda: len(rows),
-        lambda: row.coefficients,
+        lambda: {t.var.id: t.coef for t in row.terms},
         lambda: objective.constant,
     ):
         with pytest.raises(mf.MIPFrameError, match="closed"):
             operation()
     with mf.load(saved) as restored:
         assert repr(restored) == expected
-        assert restored.verify()["status"] == "PASS"
+        assert restored.verify().status == "PROVED"
     assert saved.exists()
 
 
@@ -121,7 +121,7 @@ def test_failures_cleanup(monkeypatch, tmp_path):
             model.save(tmp_path / "failed")
         assert not (tmp_path / "failed").exists()
         assert not list(tmp_path.glob(".mipframe-save-*"))
-        assert model.verify()["status"] == "PASS"
+        assert model.verify().status == "PROVED"
 
 
 def test_format_and_dimensions(tmp_path):
@@ -144,7 +144,7 @@ def test_examples(script):
 
 
 def test_public_surface():
-    assert mf.__version__ == "0.8.0"
+    assert mf.__version__ == "1.0.0"
     assert not hasattr(mf, "IR") and not hasattr(mf.Model, "build")
     assert not hasattr(mf.Model, "summary")
     from importlib.util import find_spec

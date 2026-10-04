@@ -597,7 +597,7 @@ def test_materialized_sources_share_cache_allowance(monkeypatch):
     from mipframe.store.algorithm_store import AlgorithmStore
 
     f = membership({0: {1}, 1: {1, 2}})
-    ctx = f._resource
+    ctx = f._query.resource
     original = ctx.rows
     cache_limits = []
 

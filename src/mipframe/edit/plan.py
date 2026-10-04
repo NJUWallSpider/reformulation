@@ -1,6 +1,6 @@
 """Transactional, source-relative edit declarations backed by paged SQLite."""
 
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from fractions import Fraction
 from math import inf
 import uuid
@@ -27,19 +27,9 @@ UNSET = object()
 class EditConflictError(MIPFrameError):
     """
     MIPFRAME HELP BEGIN
-    EditConflictError [api.EditConflictError]
-
     Diagnostic exception; inspect original message and any attached complete Report.
 
-    EditConflictError [type]
-
-    When to use: Diagnostic exception; inspect original message and any attached complete Report.
-
-    Returns: Exception type, not a mathematical result.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: api.Edit
+    Full contract: mf.help("api.EditConflictError")
     MIPFRAME HELP END
     """
     pass
@@ -48,19 +38,9 @@ class EditConflictError(MIPFrameError):
 class EditValidationError(ValidationError):
     """
     MIPFRAME HELP BEGIN
-    EditValidationError [api.EditValidationError]
-
     Diagnostic exception; inspect original message and any attached complete Report.
 
-    EditValidationError [type]
-
-    When to use: Diagnostic exception; inspect original message and any attached complete Report.
-
-    Returns: Exception type, not a mathematical result.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: api.Edit.build
+    Full contract: mf.help("api.EditValidationError")
     MIPFRAME HELP END
     """
     pass
@@ -69,19 +49,9 @@ class EditValidationError(ValidationError):
 class NonIsolatedVariableError(EditValidationError):
     """
     MIPFRAME HELP BEGIN
-    NonIsolatedVariableError [api.NonIsolatedVariableError]
-
     Diagnostic exception; inspect original message and any attached complete Report.
 
-    NonIsolatedVariableError [type]
-
-    When to use: Diagnostic exception; inspect original message and any attached complete Report.
-
-    Returns: Exception type, not a mathematical result.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: limitation.elimination
+    Full contract: mf.help("api.NonIsolatedVariableError")
     MIPFRAME HELP END
     """
     pass
@@ -90,19 +60,9 @@ class NonIsolatedVariableError(EditValidationError):
 class UndischargedAssumptionError(MIPFrameError):
     """
     MIPFRAME HELP BEGIN
-    UndischargedAssumptionError [api.UndischargedAssumptionError]
-
     Diagnostic exception; inspect original message and any attached complete Report.
 
-    UndischargedAssumptionError [type]
-
-    When to use: Diagnostic exception; inspect original message and any attached complete Report.
-
-    Returns: Exception type, not a mathematical result.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.conditions
+    Full contract: mf.help("api.UndischargedAssumptionError")
     MIPFRAME HELP END
     """
     pass
@@ -121,19 +81,9 @@ def num(x):
 class Edit:
     """
     MIPFRAME HELP BEGIN
-    Edit [api.Edit]
-
     Source-relative simultaneous modifications producing a new independent snapshot.
 
-    Edit [type]
-
-    When to use: Source-relative simultaneous modifications producing a new independent snapshot.
-
-    Returns: A public domain type. Obtain live handles through their owning Model or query.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: recipe.edits
+    Full contract: mf.help("api.Edit")
     MIPFRAME HELP END
     """
     def __init__(self, owner, *, memory_mb=128, disk_mb=None):
@@ -319,32 +269,9 @@ class Edit:
     def add_vars(self, specs):
         """
         MIPFRAME HELP BEGIN
-        Edit.add_vars [api.Edit.add_vars]
-
         Stage new variables and return Edit-local handles.
 
-        Edit.add_vars(specs)
-
-        When to use: Stage new variables and return Edit-local handles.
-
-        Inputs: specs(label,name?,kind?,lb?,ub?,obj?); defaults C,0,+inf,0.
-
-        Returns: New staging result, Formula summary or independent Model as appropriate.
-
-        Establishes: All operations are source-relative and simultaneous. Each staging call is atomic; conflicting writes are rejected.
-
-        Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
-
-        Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
-        Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
-        For deleting facts, proof chains must close to final retained source facts; self-proof and ungrounded cycles fail.
-        Use native save to retain lineage; historical saved status is not a new live proof.
-
-        See also: recipe.edits, concept.conditions
+        Full contract: mf.help("api.Edit.add_vars")
         MIPFRAME HELP END
         """
         with self._transaction():
@@ -446,32 +373,9 @@ class Edit:
     def add_rows(self, *, rows, terms, because=None):
         """
         MIPFRAME HELP BEGIN
-        Edit.add_rows [api.Edit.add_rows]
-
         Stage a complete batch of new rows atomically.
 
-        Edit.add_rows(*, rows, terms, because=None)
-
-        When to use: Stage a complete batch of new rows atomically.
-
-        Inputs: rows(label,name?,lb?,ub?); terms(label,var,coef), or nullable var/draft_var endpoints.
-
-        Returns: New staging result, Formula summary or independent Model as appropriate.
-
-        Establishes: All operations are source-relative and simultaneous. Each staging call is atomic; conflicting writes are rejected.
-
-        Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
-
-        Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
-        Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
-        For deleting facts, proof chains must close to final retained source facts; self-proof and ungrounded cycles fail.
-        Use native save to retain lineage; historical saved status is not a new live proof.
-
-        See also: recipe.edits, concept.conditions
+        Full contract: mf.help("api.Edit.add_rows")
         MIPFRAME HELP END
         """
         with self._transaction():
@@ -494,32 +398,9 @@ class Edit:
     def add_row(self, expr, *, lb=UNSET, ub=UNSET, name=None, because=None):
         """
         MIPFRAME HELP BEGIN
-        Edit.add_row [api.Edit.add_row]
-
         Stage a new row with a new identity.
 
-        Edit.add_row(expr, *, lb=<unchanged>, ub=<unchanged>, name=None, because=None)
-
-        When to use: Stage a new row with a new identity.
-
-        Inputs: Claim or LinExpr with explicit lb/ub; optional name and because.
-
-        Returns: New staging result, Formula summary or independent Model as appropriate.
-
-        Establishes: All operations are source-relative and simultaneous. Each staging call is atomic; conflicting writes are rejected.
-
-        Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
-
-        Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
-        Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
-        For deleting facts, proof chains must close to final retained source facts; self-proof and ungrounded cycles fail.
-        Use native save to retain lineage; historical saved status is not a new live proof.
-
-        See also: recipe.edits, concept.conditions
+        Full contract: mf.help("api.Edit.add_row")
         MIPFRAME HELP END
         """
         with self._transaction():
@@ -575,32 +456,9 @@ class Edit:
     def drop_rows(self, R, *, because=None):
         """
         MIPFRAME HELP BEGIN
-        Edit.drop_rows [api.Edit.drop_rows]
-
         Stage deletion of source rows.
 
-        Edit.drop_rows(R, *, because=None)
-
-        When to use: Stage deletion of source rows.
-
-        Inputs: Source Row/RowFrame; because must cover every lost finite side if provided.
-
-        Returns: New staging result, Formula summary or independent Model as appropriate.
-
-        Establishes: All operations are source-relative and simultaneous. Each staging call is atomic; conflicting writes are rejected.
-
-        Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
-
-        Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
-        Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
-        For deleting facts, proof chains must close to final retained source facts; self-proof and ungrounded cycles fail.
-        Use native save to retain lineage; historical saved status is not a new live proof.
-
-        See also: recipe.edits, concept.conditions
+        Full contract: mf.help("api.Edit.drop_rows")
         MIPFRAME HELP END
         """
         with self._transaction():
@@ -610,32 +468,9 @@ class Edit:
     def drop_vars(self, V):
         """
         MIPFRAME HELP BEGIN
-        Edit.drop_vars [api.Edit.drop_vars]
-
         Remove only finally unreferenced variables.
 
-        Edit.drop_vars(V)
-
-        When to use: Remove only finally unreferenced variables.
-
-        Inputs: Source Var/VarFrame; final row degree and objective coefficient must be zero.
-
-        Returns: New staging result, Formula summary or independent Model as appropriate.
-
-        Establishes: All operations are source-relative and simultaneous. Each staging call is atomic; conflicting writes are rejected.
-
-        Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
-
-        Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
-        Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
-        For deleting facts, proof chains must close to final retained source facts; self-proof and ungrounded cycles fail.
-        Use native save to retain lineage; historical saved status is not a new live proof.
-
-        See also: recipe.edits, concept.conditions
+        Full contract: mf.help("api.Edit.drop_vars")
         MIPFRAME HELP END
         """
         with self._transaction():
@@ -646,89 +481,73 @@ class Edit:
         op = self._op("set_" + axis, because)
         s = self._store
         chosen = s.raw_table("id INTEGER PRIMARY KEY")
-        for ident in self._selected(selection, axis):
-            if s.execute(
-                "SELECT 1 FROM dropped WHERE axis=? AND id=?", (axis, ident)
-            ).fetchone():
-                raise EditConflictError("Cannot modify a deleted entity")
-            s.execute(f"INSERT OR IGNORE INTO {chosen} VALUES(?)", (ident,))
-            s.execute("INSERT OR IGNORE INTO subjects VALUES(?,?,?)", (op, axis, ident))
-        for field, value in updates.items():
-            if value is UNSET:
-                continue
-            s.execute("INSERT INTO fields VALUES(?,?)", (op, field))
-
-            def valid(x):
-                if field == "kind":
-                    if x not in ("C", "I"):
-                        raise SchemaError("kind must be C or I")
-                    return x
-                return str(bound(x, field))
-
-            if isinstance(value, Frame):
-                if not ref_type(self._owner, axis).compatible(
-                    value.schema.get(axis, DType("null", True))
-                ):
-                    raise SchemaError("Wrong bound key type")
-                aligned = s.raw_table("id INTEGER PRIMARY KEY,value TEXT")
-                for rec in self._frame(value, (axis, "value")):
-                    s.execute(
-                        f"INSERT INTO {aligned} VALUES(?,?)",
-                        (rec[axis], valid(rec["value"])),
-                    )
-                for a, b in ((aligned, chosen), (chosen, aligned)):
+        scratch = [chosen]
+        try:
+            with closing(self._selected(selection, axis)) as selected:
+                for ident in selected:
                     if s.execute(
-                        f"SELECT id FROM {a} EXCEPT SELECT id FROM {b} LIMIT 1"
+                        "SELECT 1 FROM dropped WHERE axis=? AND id=?", (axis, ident)
                     ).fetchone():
-                        raise SchemaError("Bound keys must match the selection exactly")
-                vals = s.execute(f"SELECT id,value FROM {aligned} ORDER BY id")
-            else:
-                x = valid(value)
-                vals = (
-                    (i, x) for i, in s.execute(f"SELECT id FROM {chosen} ORDER BY id")
-                )
-            for ident, x in vals:
-                old = s.execute(
-                    "SELECT value FROM changes WHERE axis=? AND id=? AND field=?",
-                    (axis, ident, field),
-                ).fetchone()
-                if old and old[0] != x:
-                    raise EditConflictError("Conflicting values for the same field")
-                s.execute(
-                    "INSERT OR IGNORE INTO changes VALUES(?,?,?,?)",
-                    (axis, ident, field, x),
-                )
+                        raise EditConflictError("Cannot modify a deleted entity")
+                    s.execute(f"INSERT OR IGNORE INTO {chosen} VALUES(?)", (ident,))
+                    s.execute("INSERT OR IGNORE INTO subjects VALUES(?,?,?)", (op, axis, ident))
+            for field, value in updates.items():
+                if value is UNSET:
+                    continue
+                s.execute("INSERT INTO fields VALUES(?,?)", (op, field))
+
+                def valid(x):
+                    if field == "kind":
+                        if x not in ("C", "I"):
+                            raise SchemaError("kind must be C or I")
+                        return x
+                    return str(bound(x, field))
+
+                if isinstance(value, Frame):
+                    if not ref_type(self._owner, axis).compatible(
+                        value.schema.get(axis, DType("null", True))
+                    ):
+                        raise SchemaError("Wrong bound key type")
+                    aligned = s.raw_table("id INTEGER PRIMARY KEY,value TEXT")
+                    scratch.append(aligned)
+                    with closing(self._frame(value, (axis, "value"))) as records:
+                        for rec in records:
+                            s.execute(
+                                f"INSERT INTO {aligned} VALUES(?,?)",
+                                (rec[axis], valid(rec["value"])),
+                            )
+                    for a, b in ((aligned, chosen), (chosen, aligned)):
+                        if s.execute(
+                            f"SELECT id FROM {a} EXCEPT SELECT id FROM {b} LIMIT 1"
+                        ).fetchone():
+                            raise SchemaError("Bound keys must match the selection exactly")
+                    vals = s.execute(f"SELECT id,value FROM {aligned} ORDER BY id")
+                else:
+                    x = valid(value)
+                    vals = s.execute(f"SELECT id,? FROM {chosen} ORDER BY id", (x,))
+                with closing(vals):
+                    for ident, x in vals:
+                        old = s.execute(
+                            "SELECT value FROM changes WHERE axis=? AND id=? AND field=?",
+                            (axis, ident, field),
+                        ).fetchone()
+                        if old and old[0] != x:
+                            raise EditConflictError("Conflicting values for the same field")
+                        s.execute(
+                            "INSERT OR IGNORE INTO changes VALUES(?,?,?,?)",
+                            (axis, ident, field, x),
+                        )
+        finally:
+            from mipframe.store.lifecycle import release_all
+            release_all(lambda table=table: s.execute(f"DROP TABLE {table}") for table in scratch)
         return op
 
     def set_var_bounds(self, V, *, lb=UNSET, ub=UNSET, because=None):
         """
         MIPFRAME HELP BEGIN
-        Edit.set_var_bounds [api.Edit.set_var_bounds]
-
         Change source variable bounds.
 
-        Edit.set_var_bounds(V, *, lb=<unchanged>, ub=<unchanged>, because=None)
-
-        When to use: Change source variable bounds.
-
-        Inputs: Source variables; scalar or exactly key-aligned Frame(var,value) per side.
-
-        Returns: New staging result, Formula summary or independent Model as appropriate.
-
-        Establishes: All operations are source-relative and simultaneous. Each staging call is atomic; conflicting writes are rejected.
-
-        Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
-
-        Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
-        Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
-        For deleting facts, proof chains must close to final retained source facts; self-proof and ungrounded cycles fail.
-        Use native save to retain lineage; historical saved status is not a new live proof.
-
-        See also: recipe.edits, concept.conditions
+        Full contract: mf.help("api.Edit.set_var_bounds")
         MIPFRAME HELP END
         """
         with self._transaction():
@@ -738,32 +557,9 @@ class Edit:
     def set_row_bounds(self, R, *, lb=UNSET, ub=UNSET, because=None):
         """
         MIPFRAME HELP BEGIN
-        Edit.set_row_bounds [api.Edit.set_row_bounds]
-
         Change source row bounds without changing its expression.
 
-        Edit.set_row_bounds(R, *, lb=<unchanged>, ub=<unchanged>, because=None)
-
-        When to use: Change source row bounds without changing its expression.
-
-        Inputs: Source rows; scalar or exactly key-aligned Frame(row,value) per side.
-
-        Returns: New staging result, Formula summary or independent Model as appropriate.
-
-        Establishes: All operations are source-relative and simultaneous. Each staging call is atomic; conflicting writes are rejected.
-
-        Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
-
-        Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
-        Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
-        For deleting facts, proof chains must close to final retained source facts; self-proof and ungrounded cycles fail.
-        Use native save to retain lineage; historical saved status is not a new live proof.
-
-        See also: recipe.edits, concept.conditions
+        Full contract: mf.help("api.Edit.set_row_bounds")
         MIPFRAME HELP END
         """
         with self._transaction():
@@ -773,32 +569,9 @@ class Edit:
     def fix(self, V, value, *, because=None):
         """
         MIPFRAME HELP BEGIN
-        Edit.fix [api.Edit.fix]
-
         Set both source variable bounds to one exact value.
 
-        Edit.fix(V, value, *, because=None)
-
-        When to use: Set both source variable bounds to one exact value.
-
-        Inputs: Source variables, value and optional verified evidence.
-
-        Returns: New staging result, Formula summary or independent Model as appropriate.
-
-        Establishes: All operations are source-relative and simultaneous. Each staging call is atomic; conflicting writes are rejected.
-
-        Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
-
-        Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
-        Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
-        For deleting facts, proof chains must close to final retained source facts; self-proof and ungrounded cycles fail.
-        Use native save to retain lineage; historical saved status is not a new live proof.
-
-        See also: recipe.edits, concept.conditions
+        Full contract: mf.help("api.Edit.fix")
         MIPFRAME HELP END
         """
         return self.set_var_bounds(V, lb=value, ub=value, because=because)
@@ -806,32 +579,9 @@ class Edit:
     def set_domains(self, V, *, kind):
         """
         MIPFRAME HELP BEGIN
-        Edit.set_domains [api.Edit.set_domains]
-
         Set the canonical variable domain.
 
-        Edit.set_domains(V, *, kind)
-
-        When to use: Set the canonical variable domain.
-
-        Inputs: Source variables; kind C/I or key-aligned value Frame.
-
-        Returns: New staging result, Formula summary or independent Model as appropriate.
-
-        Establishes: All operations are source-relative and simultaneous. Each staging call is atomic; conflicting writes are rejected.
-
-        Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
-
-        Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
-        Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
-        For deleting facts, proof chains must close to final retained source facts; self-proof and ungrounded cycles fail.
-        Use native save to retain lineage; historical saved status is not a new live proof.
-
-        See also: recipe.edits, concept.conditions
+        Full contract: mf.help("api.Edit.set_domains")
         MIPFRAME HELP END
         """
         with self._transaction():
@@ -841,32 +591,9 @@ class Edit:
     def set_objective(self, expr, *, sense):
         """
         MIPFRAME HELP BEGIN
-        Edit.set_objective [api.Edit.set_objective]
-
         Replace the entire objective independent of staging order.
 
-        Edit.set_objective(expr, *, sense)
-
-        When to use: Replace the entire objective independent of staging order.
-
-        Inputs: Affine source/draft expression and min/max sense; includes its constant.
-
-        Returns: New staging result, Formula summary or independent Model as appropriate.
-
-        Establishes: All operations are source-relative and simultaneous. Each staging call is atomic; conflicting writes are rejected.
-
-        Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
-
-        Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
-        Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
-        For deleting facts, proof chains must close to final retained source facts; self-proof and ungrounded cycles fail.
-        Use native save to retain lineage; historical saved status is not a new live proof.
-
-        See also: recipe.edits, concept.conditions
+        Full contract: mf.help("api.Edit.set_objective")
         MIPFRAME HELP END
         """
         if sense not in ("min", "max"):
@@ -908,32 +635,9 @@ class Edit:
     def replace_rows(self, old, *, rows, terms, correspondence, because=None):
         """
         MIPFRAME HELP BEGIN
-        Edit.replace_rows [api.Edit.replace_rows]
-
         Stage explicit row replacement relationships.
 
-        Edit.replace_rows(old, *, rows, terms, correspondence, because=None)
-
-        When to use: Stage explicit row replacement relationships.
-
-        Inputs: old source rows, new rows/terms and correspondence(old_row,new_label).
-
-        Returns: New staging result, Formula summary or independent Model as appropriate.
-
-        Establishes: All operations are source-relative and simultaneous. Each staging call is atomic; conflicting writes are rejected.
-
-        Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
-
-        Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
-        Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
-        For deleting facts, proof chains must close to final retained source facts; self-proof and ungrounded cycles fail.
-        Use native save to retain lineage; historical saved status is not a new live proof.
-
-        See also: recipe.edits, concept.conditions
+        Full contract: mf.help("api.Edit.replace_rows")
         MIPFRAME HELP END
         """
         because = because or {}
@@ -988,32 +692,9 @@ class Edit:
     def summary(self):
         """
         MIPFRAME HELP BEGIN
-        Edit.summary [api.Edit.summary]
-
         Validate and summarize the staged plan without building a Model.
 
-        Edit.summary()
-
-        When to use: Validate and summarize the staged plan without building a Model.
-
-        Inputs: No arguments; reports whether build is possible.
-
-        Returns: New staging result, Formula summary or independent Model as appropriate.
-
-        Establishes: All operations are source-relative and simultaneous. Each staging call is atomic; conflicting writes are rejected.
-
-        Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
-
-        Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
-        Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
-        For deleting facts, proof chains must close to final retained source facts; self-proof and ungrounded cycles fail.
-        Use native save to retain lineage; historical saved status is not a new live proof.
-
-        See also: recipe.edits, concept.conditions
+        Full contract: mf.help("api.Edit.summary")
         MIPFRAME HELP END
         """
         from mipframe.frame.row import Formula
@@ -1029,77 +710,33 @@ class Edit:
             f"Planned edits\n  source: {self._owner.shape[0]:,} rows × {self._owner.shape[1]:,} vars; {self._owner.nnz:,} nnz\n  target: {p.nrows:,} rows × {p.nvars:,} vars; {p.nnz:,} nnz\n  max row nnz: {max_row:,}; max column nnz: {max_var:,}\n  build checks: {p.errors:,} errors; {p.infeasible:,} directly infeasible facts\n  semantics: {p.semantic}"
         )
 
-    def build(self, *, allow_infeasible=False):
+    def build(self, *, allow_infeasible=False, prepare="logical"):
         """
         MIPFRAME HELP BEGIN
-        Edit.build [api.Edit.build]
+        Atomically build an independent exact snapshot; structural analyses are lazy by default.
 
-        Atomically build an independent edited snapshot and prepare its own IR/indexed.
-
-        Edit.build(*, allow_infeasible=False)
-
-        When to use: Atomically build an independent edited snapshot and prepare its own IR/indexed.
-
-        Inputs: allow_infeasible=False rejects directly visible impossible bounds/empty rows.
-
-        Returns: New staging result, Formula summary or independent Model as appropriate.
-
-        Establishes: All operations are source-relative and simultaneous. Each staging call is atomic; conflicting writes are rejected.
-
-        Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
-
-        Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
-        Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
-        For deleting facts, proof chains must close to final retained source facts; self-proof and ungrounded cycles fail.
-        Use native save to retain lineage; historical saved status is not a new live proof.
-
-        See also: recipe.edits, concept.conditions
+        Full contract: mf.help("api.Edit.build")
         MIPFRAME HELP END
         """
         self._guard(True)
         if type(allow_infeasible) is not bool:
             raise TypeError("allow_infeasible must be boolean")
+        if prepare not in ("logical", "indexed"):
+            raise ValueError("prepare must be 'logical' or 'indexed'")
         p = self._prepare()
         p.require(allow_infeasible)
         from mipframe.edit.build import build
 
-        result = build(self, p, allow_infeasible)
+        result = build(self, p, allow_infeasible, prepare=prepare)
         self._sealed = True
         return result
 
     def close(self):
         """
         MIPFRAME HELP BEGIN
-        Edit.close [api.Edit.close]
-
         Release the Edit and live draft resources.
 
-        Edit.close()
-
-        When to use: Release the Edit and live draft resources.
-
-        Inputs: No arguments.
-
-        Returns: New staging result, Formula summary or independent Model as appropriate.
-
-        Establishes: All operations are source-relative and simultaneous. Each staging call is atomic; conflicting writes are rejected.
-
-        Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
-
-        Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
-
-        Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
-
-        Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
-        Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
-        For deleting facts, proof chains must close to final retained source facts; self-proof and ungrounded cycles fail.
-        Use native save to retain lineage; historical saved status is not a new live proof.
-
-        See also: recipe.edits, concept.conditions
+        Full contract: mf.help("api.Edit.close")
         MIPFRAME HELP END
         """
         self._store.close()

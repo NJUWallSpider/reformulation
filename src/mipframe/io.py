@@ -23,28 +23,9 @@ def read(
     Read a numerical model and prepare its IR and default indexed results.
 
     MIPFRAME HELP BEGIN
-    read [api.read]
-
     Import an LP/MPS file into a new independent exact snapshot.
 
-    read(path: 'str | os.PathLike', *, format: 'str | None' = None, memory_mb: 'float' = 128, **format_options) -> "'Model'"
-
-    When to use: Import an LP/MPS file into a new independent exact snapshot.
-
-    Inputs: Path; optional explicit format and parser options. MPS accepts mps_format="auto" (default), "fixed" or "free", and explicit rhs/bounds/ranges vector names.
-
-    Returns: Model with default IR and indexed prepared.
-
-    Establishes: Independent read calls receive independent uid. MPS auto checks complete record boundaries; padded free-format names and exact numbers are not truncated into fixed-width fields.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    Resources: memory_mb defaults to 128; parser minimum is 32 MiB.
-
-    Illustrative example (requires caller-provided inputs):
-    m = mf.read("model.mps")
-
-    See also: concept.identity
+    Full contract: mf.help("api.read")
     MIPFRAME HELP END
     """
     from mipframe.model import Model
@@ -80,23 +61,9 @@ def load(directory: str | os.PathLike) -> "Model":
     Load a native model, restoring indexed results or computing them if absent.
 
     MIPFRAME HELP BEGIN
-    load [api.load]
-
     Load native v3 with retained uid/version and validated saved analyses.
 
-    load(directory: 'str | os.PathLike') -> "'Model'"
-
-    When to use: Load native v3 with retained uid/version and validated saved analyses.
-
-    Inputs: Native directory.
-
-    Returns: Model.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    Failures: Old or corrupt formats are rejected; reimport old models from LP/MPS.
-
-    See also: concept.identity
+    Full contract: mf.help("api.load")
     MIPFRAME HELP END
     """
     from mipframe.model import Model

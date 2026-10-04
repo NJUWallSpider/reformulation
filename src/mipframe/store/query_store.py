@@ -53,9 +53,8 @@ class QueryStore:
         self.db.execute(f'PRAGMA temp.cache_size=-{max(1, self.memory // 4096)}')
         self.db.execute('PRAGMA mmap_size=0')
         self._serial = 0
-        if not hasattr(self.owner, '_query_stores'):
-            self.owner._query_stores = weakref.WeakSet()
-        self.owner._query_stores.add(self)
+        from mipframe.store.lifecycle import register
+        register(self.owner, self)
 
     def guard(self):
         self.owner.model

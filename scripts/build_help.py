@@ -41,7 +41,9 @@ def signature(obj):
 
 
 def documentation(t):
-    text = card(t, True)
+    # Full contracts live in the searchable catalog and generated API guide.
+    # Source docstrings retain the summary and an exact lookup target.
+    text = t['summary'] + '\n\nFull contract: mf.help("' + t['id'] + '")'
     return 'MIPFRAME HELP BEGIN\n'+text+'\nMIPFRAME HELP END'
 
 

@@ -41,56 +41,23 @@ def read_text(tmp_path, text=TEXT, name='model.lp'):
     return mf.read(path)
 
 
-@pytest.mark.parametrize('source', ['lp', 'mps', 'native'])
+@pytest.mark.parametrize('source', ['lp','mps','native'])
 def test_model_family_properties_reuse_loaded_ir(tmp_path, monkeypatch, source):
-    from mipframe.ir.signatures import StructuralSignatures
-    from mipframe.ir.signatures import Structure
-
-    if source == 'native':
-        with read_text(tmp_path) as original:
-            saved = original.save(tmp_path / 'saved')
-        m = mf.load(saved)
-    elif source == 'mps':
-        m = mf.read(Path(__file__).resolve().parents[1] / 'examples/data/tiny.mps')
-    else:
-        m = read_text(tmp_path)
-    rows, variables = m.row_families, m.var_families
-    assert {r['id'] for r in rows} == {r['id'] for r in m.ir.structure['row_families']}
-    assert {r['id'] for r in variables} == {r['id'] for r in m.ir.structure['variable_roles']}
-    default = m.structure.signatures()
-    custom = m.structure.signatures(depth=3, mode='exact')
-    assert custom.family('F0').signature.mode == 'exact'
-
-    def forbidden(*args, **kwargs):
-        pytest.fail('Default family access must reuse the loaded tables')
-
-    monkeypatch.setattr(Structure, 'signatures', forbidden)
-    monkeypatch.setattr(StructuralSignatures, 'row_families', forbidden)
-    monkeypatch.setattr(StructuralSignatures, 'var_families', forbidden)
+    from mipframe.ir.refinement_store import RefinementStore
+    if source=='native':
+        with read_text(tmp_path) as original: saved=original.save(tmp_path/'saved')
+        m=mf.load(saved)
+    elif source=='mps': m=mf.read(Path(__file__).resolve().parents[1]/'examples/data/tiny.mps')
+    else: m=read_text(tmp_path)
+    rows,variables=m.row_families,m.var_families
+    monkeypatch.setattr(RefinementStore,'_round',lambda *a: pytest.fail('must reuse completed refinement'))
     try:
-        assert m.row_families is rows
-        assert m.var_families is variables
-        assert not callable(rows) and not callable(variables)
-        family = default.family('F0', depth=2)
-        assert family.id == 'F0'
-        assert family.depth == 2 and family.parent_depth == 1
-        with pytest.raises(KeyError): rows.loc['F0@2']
-        with pytest.raises(TypeError): m.rows['F0@2']
-        assert family.signature.depth == 2 and family.signature.mode == 'template'
-        assert tuple(family.rows.ids) == tuple(m.rows.family('F0@2').ids)
-        role = default.family('V0', depth=1)
-        assert role.id == 'V0'
-        assert role.depth == 1 and role.parent_depth == 0
-        with pytest.raises(KeyError): variables.loc['V0@1']
-        with pytest.raises(TypeError): m.vars['V0@1']
-        assert role.signature.depth == 1 and role.signature.mode == 'template'
-        assert tuple(role.vars.ids) == tuple(m.vars.family('V0@1').ids)
-    finally:
-        m.close()
-    for operation in (lambda: m.row_families, lambda: m.var_families,
-                      lambda: len(rows), lambda: len(variables), lambda: len(family.rows)):
-        with pytest.raises(mf.MIPFrameError, match='closed'):
-            operation()
+        assert m.row_families.to_records()==rows.to_records()
+        assert m.var_families.to_records()==variables.to_records()
+        assert set(rows.column('depth'))==set(variables.column('depth'))=={2}
+        assert m.family('F0').one().family_key==rows.head(1).one().family_key
+    finally: m.close()
+    with pytest.raises(mf.MIPFrameError): rows.count()
 
 
 def test_eager_schema_facts_exact_numerics(tmp_path):
@@ -117,7 +84,7 @@ def test_eager_schema_facts_exact_numerics(tmp_path):
         assert (obj['sense'],obj['constant'],obj['nonzeros'],obj['kind'])==('min',3,2,'varying')
         assert obj['sign_counts']==dict(positive=1,negative=1,zero=4)
         assert sum(r['fraction'] for r in obj['role_support'])==1
-        assert {m.variables[i].name for i in m.vars.where(mf.col('obj') != 0).ids}=={'x','y'}
+        assert {m.vars.loc[i].name for i in m.vars.where(mf.col('obj') != 0).ids}=={'x','y'}
         assert len(m.terms().where((abs(mf.col('coef')) > 0) & (abs(mf.col('coef')) <= NEAR_ZERO)))==1
         assert sum(ir.domains['bounds'].values())==6
         assert all(item['kind'] in ('fact','structural_abstraction') for item in ir.attention)
@@ -201,30 +168,30 @@ def test_structure_matches_typed_queries_without_handles(tmp_path):
     with read_text(tmp_path) as m:
         ir=m.ir
         s=ir.structure
-        signatures = m.structure.signatures()
         assert s['mode']=='template' and s['depth']==2 and s['variable_role_depth']==1
         assert [r['depth'] for r in s['overview']]==[0,1,2]
         for level in s['overview']:
-            assert level['row_roles']==len(m.structure.signatures(depth=level['depth']).row_families())
-            assert level['var_roles']==len(m.structure.signatures(depth=level['depth']).var_families())
+            assert level['row_roles']==len(m.families(kind='row',depth=level['depth']))
+            assert level['var_roles']==len(m.families(kind='var',depth=level['depth']))
         assert sum(r['count'] for r in s['variable_roles'])==len(m.vars)
         assert sum(r['count'] for r in s['row_families'])==len(m.rows)
         for kind,records in [('var',s['variable_roles']),('row',s['row_families'])]:
             assert [r['count'] for r in records]==sorted((r['count'] for r in records),reverse=True)
             for r in records:
-                family=signatures.family(r['id'], depth=r['depth'])
+                family=m.family(r['id'], depth=r['depth']).one()
                 assert r['count']==family.count
                 assert r['parent']==family.parent
                 assert r['signature_id'].startswith('rf:2:' if kind=='row' else 'vr:1:')
                 if kind=='row':
                     for role in r['structure']:
                         assert role['var_role_depth'] == family.depth - 1
-                        assert len(signatures.family(role["var_role"], depth=role["var_role_depth"]).vars)>0
-                    assert r['parameters']['varying_coefficient_roles']==[r.role for r in family.params.where(mf.col('varying')) if r.role not in ('lb','ub')]
+                        assert len(m.family(role["var_role"], depth=role["var_role_depth"]).vars)>0
+                    assert r['parameters']['varying_coefficient_roles']==[r.role for r in m.family(r['id'],depth=r['depth']).related('parameters').where(basis='canonical',orientation=0,quantity='coefficient',varying=True) if r.role not in ('lb','ub')]
         for delta in s['refinements']:
-            live=signatures.splits(kind=delta['kind'], from_depth=delta['from_depth'], depth=delta['to_depth'])
-            assert delta['split_count']==len(live)
-            assert delta['unchanged']==live.unchanged
+            live=m.refinement(delta['from_depth'],delta['to_depth'],kind=delta['kind'])
+            assert delta['split_count']==live.where(unchanged=False).select('parent_key').distinct().count()
+            unchanged=live.where(unchanged=True)
+            assert delta['unchanged']==dict(families=unchanged.count(),members=unchanged.column('count').sum() or 0)
             assert sum(split['count'] for split in delta['splits'])+delta['unchanged']['members']==(len(m.rows) if delta['kind']=='row' else len(m.vars))
             for split in delta['splits']:
                 assert sum(c['count'] for c in split['children'])==split['count']
@@ -290,7 +257,7 @@ def test_save_load_stable_machine_ir_reuses_refinement(tmp_path,monkeypatch):
                 assert isinstance(m.__dict__['_ir'],CompressedIR)
                 assert m.ir.to_dict()==expected
                 record = expected['structure']['row_families'][0]
-                assert m.rows.family(f"{record['id']}@{record['depth']}").ids is not None
+                assert m.family(f"{record['id']}@{record['depth']}").rows.ids is not None
 
 
 def test_display_budget_does_not_truncate_machine_ir(tmp_path,monkeypatch):
@@ -413,18 +380,18 @@ def test_varying_degree_and_coefficient_parameters(tmp_path):
 
 
 def test_ir_variation_summary_leaves_histograms_lazy(tmp_path, monkeypatch):
-    from mipframe.ir.family_attributes import FamilyAttributes
+    import mipframe.ir.family_attributes as numeric
 
     text = ('Minimize\n o:0\nSubject To\n'
             ' a:2x+3y<=7\n b:4x+3y<=9\n c:-2x-3y>=-7\nEnd\n')
     with monkeypatch.context() as patch:
-        patch.setattr(FamilyAttributes, '_build',
+        patch.setattr(numeric, '_build',
                       lambda *args: pytest.fail('IR summary built a full histogram'))
         m = read_text(tmp_path, text)
     with m:
         for record in m.ir.structure['row_families']:
-            family = m.structure.signatures().family(record['id'], depth=record['depth'])
-            expected = [r.role for r in family.params.where(mf.col('varying'))
+            family = m.family(record['id'], depth=record['depth'])
+            expected = [r.role for r in family.related('parameters').where(basis='canonical',orientation=0,quantity='coefficient',varying=True)
                         if r.role not in ('lb', 'ub')]
             assert record['parameters']['varying_coefficient_roles'] == expected
 

@@ -48,7 +48,7 @@ def enumerate_claim(ctx, target, variables, using, assume, max_states, time_limi
     mapping = ctx.raw_table("v INTEGER PRIMARY KEY,original INTEGER UNIQUE")
     bounds = ctx.raw_table("v INTEGER PRIMARY KEY,lo TEXT,hi TEXT")
     for i, (v,) in enumerate(ctx.execute(f"SELECT v FROM {selected} ORDER BY v"), 1):
-        var = ctx.owner.vars.by_id(v)
+        var = ctx.owner.vars.loc[v]
         if var.kind != "I":
             raise UnsupportedEnumerationDomain(
                 "Enumeration variables must be declared integer"

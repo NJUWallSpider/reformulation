@@ -103,7 +103,7 @@ def main():
             **entry,
             "build_seconds": elapsed,
             "ir": ir.ir.to_dict(),
-            "verification": ir.verify(),
+            "verification": dict(status=ir.verify().status, **ir.verify().summary),
             "independent_scip_audit": scip_audit(ir, source),
         }
         names = {v[0]: f"v{v[0]}" for v in ir.model.variables}

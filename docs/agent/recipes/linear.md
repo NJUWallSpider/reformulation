@@ -13,7 +13,7 @@ target = x <= target_rhs
 proof = m.check.linear(target, using=[r.ub_claim], residual="bounds")
 proof.require()
 proof.evidence
-with m.check.batch("linear", residual="bounds") as batch:
+with m.check.linear_batch(residual="bounds") as batch:
     batch.add(key="bound", target=target, using=[r.ub_claim])
     batch.add(key="conditional", target=x <= 0, assume=[x.eq(0)])
     proofs = batch.run()

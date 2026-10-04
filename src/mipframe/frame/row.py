@@ -10,7 +10,7 @@ from math import inf
 from typing import TYPE_CHECKING
 
 from mipframe.frame.entity import TermFrame
-from mipframe.frame.entity import _Frame
+from mipframe.frame.base import Frame
 from mipframe.frame.entity import _sense
 from mipframe.frame.entity import _text
 
@@ -34,19 +34,9 @@ from mipframe.entity import Entity
 class Row(Entity):
     """
     MIPFRAME HELP BEGIN
-    Row [api.Row]
-
     Original row expression and two independent bounds.
 
-    Row [type]
-
-    When to use: Original row expression and two independent bounds.
-
-    Returns: A public domain type. Obtain live handles through their owning Model or query.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.frame, api.Row.expr
+    Full contract: mf.help("api.Row")
     MIPFRAME HELP END
     """
     _fields = (
@@ -58,7 +48,20 @@ class Row(Entity):
         "unique_coef",
         "var_types",
     )
-    columns = ("row", "name", "lb", "ub", "nnz", "relation")
+    columns = ("source_line", "row", "name", "lb", "ub", "nnz", "relation")
+
+    @property
+    def source_line(self):
+        """
+        One-based source line, or None for constructed entities.
+
+        MIPFRAME HELP BEGIN
+        Read the original source_line field or entity relation.
+
+        Full contract: mf.help("api.Row.source_line")
+        MIPFRAME HELP END
+        """
+        return self._owner.model.rows[self.id][4] or None
 
     def __init__(self, owner: Model, ident: int):
         self._owner = owner
@@ -78,21 +81,9 @@ class Row(Entity):
     def expr(self):
         """
         MIPFRAME HELP BEGIN
-        Row.expr [api.Row.expr]
-
         Original affine expression; row expressions contain no bound and constant zero.
 
-        Row.expr [property]
-
-        When to use: Original affine expression; row expressions contain no bound and constant zero.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Row.expr")
         MIPFRAME HELP END
         """
         from mipframe.linear.expr import row_expr
@@ -102,21 +93,9 @@ class Row(Entity):
     def lb_claim(self):
         """
         MIPFRAME HELP BEGIN
-        Row.lb_claim [api.Row.lb_claim]
-
         Original finite lower side with snapshot/entity provenance.
 
-        Row.lb_claim [property]
-
-        When to use: Original finite lower side with snapshot/entity provenance.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Row.lb_claim")
         MIPFRAME HELP END
         """
         from mipframe.linear.claim import source_claim
@@ -126,21 +105,9 @@ class Row(Entity):
     def ub_claim(self):
         """
         MIPFRAME HELP BEGIN
-        Row.ub_claim [api.Row.ub_claim]
-
         Original finite upper side with snapshot/entity provenance.
 
-        Row.ub_claim [property]
-
-        When to use: Original finite upper side with snapshot/entity provenance.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Row.ub_claim")
         MIPFRAME HELP END
         """
         from mipframe.linear.claim import source_claim
@@ -150,21 +117,9 @@ class Row(Entity):
     def eq_claim(self):
         """
         MIPFRAME HELP BEGIN
-        Row.eq_claim [api.Row.eq_claim]
-
         Original equality side; both finite row bounds must coincide.
 
-        Row.eq_claim [property]
-
-        When to use: Original equality side; both finite row bounds must coincide.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Row.eq_claim")
         MIPFRAME HELP END
         """
         from mipframe.linear.claim import source_claim
@@ -174,21 +129,9 @@ class Row(Entity):
     def id(self) -> int:
         """
         MIPFRAME HELP BEGIN
-        Row.id [api.Row.id]
-
         Read the original id field or entity relation.
 
-        Row.id [property]
-
-        When to use: Read the original id field or entity relation.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Row.id")
         MIPFRAME HELP END
         """
         self._owner.model
@@ -198,21 +141,9 @@ class Row(Entity):
     def name(self) -> str:
         """
         MIPFRAME HELP BEGIN
-        Row.name [api.Row.name]
-
         Read the original name field or entity relation.
 
-        Row.name [property]
-
-        When to use: Read the original name field or entity relation.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Row.name")
         MIPFRAME HELP END
         """
         return self._metadata[1]
@@ -226,21 +157,9 @@ class Row(Entity):
     def lb(self):
         """
         MIPFRAME HELP BEGIN
-        Row.lb [api.Row.lb]
-
         Read the original lb field or entity relation.
 
-        Row.lb [property]
-
-        When to use: Read the original lb field or entity relation.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Row.lb")
         MIPFRAME HELP END
         """
         return self.lhs
@@ -249,21 +168,9 @@ class Row(Entity):
     def ub(self):
         """
         MIPFRAME HELP BEGIN
-        Row.ub [api.Row.ub]
-
         Read the original ub field or entity relation.
 
-        Row.ub [property]
-
-        When to use: Read the original ub field or entity relation.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Row.ub")
         MIPFRAME HELP END
         """
         return self.rhs
@@ -272,21 +179,9 @@ class Row(Entity):
     def relation(self):
         """
         MIPFRAME HELP BEGIN
-        Row.relation [api.Row.relation]
-
         Read the original relation field or entity relation.
 
-        Row.relation [property]
-
-        When to use: Read the original relation field or entity relation.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Row.relation")
         MIPFRAME HELP END
         """
         return self.sense
@@ -295,21 +190,9 @@ class Row(Entity):
     def lhs(self):
         """
         MIPFRAME HELP BEGIN
-        Row.lhs [api.Row.lhs]
-
         Read the original lhs field or entity relation.
 
-        Row.lhs [property]
-
-        When to use: Read the original lhs field or entity relation.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Row.lhs")
         MIPFRAME HELP END
         """
         m = self._owner.model
@@ -319,21 +202,9 @@ class Row(Entity):
     def rhs(self):
         """
         MIPFRAME HELP BEGIN
-        Row.rhs [api.Row.rhs]
-
         Read the original rhs field or entity relation.
 
-        Row.rhs [property]
-
-        When to use: Read the original rhs field or entity relation.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Row.rhs")
         MIPFRAME HELP END
         """
         m = self._owner.model
@@ -348,21 +219,9 @@ class Row(Entity):
     def nnz(self) -> int:
         """
         MIPFRAME HELP BEGIN
-        Row.nnz [api.Row.nnz]
-
         Read the original nnz field or entity relation.
 
-        Row.nnz [property]
-
-        When to use: Read the original nnz field or entity relation.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Row.nnz")
         MIPFRAME HELP END
         """
         m = self._owner.model
@@ -372,21 +231,9 @@ class Row(Entity):
     def terms(self) -> TermFrame:
         """
         MIPFRAME HELP BEGIN
-        Row.terms [api.Row.terms]
-
         Original nonzero terms, not a dense row or column.
 
-        Row.terms [property]
-
-        When to use: Original nonzero terms, not a dense row or column.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Row.terms")
         MIPFRAME HELP END
         """
         return TermFrame(self._owner, self.id)
@@ -395,39 +242,13 @@ class Row(Entity):
     def vars(self):
         """
         MIPFRAME HELP BEGIN
-        Row.vars [api.Row.vars]
-
         Read the original vars field or entity relation.
 
-        Row.vars [property]
-
-        When to use: Read the original vars field or entity relation.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Row.vars")
         MIPFRAME HELP END
         """
-        return self._owner.rows._select((self.id,)).neighbors()
+        return self._owner.rows._select((self.id,)).vars
 
-    def signature(self, signature="algebratic", *, depth=None, **options):
-        if signature in ("structural", "exact_structural", "exact_strctural"):
-            from mipframe.ir.signatures import StructuralSignature
-            from mipframe.ir.signatures import signature_result
-
-            result = signature_result(self._owner, signature, depth, options)
-            return StructuralSignature(result, "row", self.id)
-        if depth is not None or options:
-            raise ValueError(
-                "depth and refinement options require signature='structural'"
-            )
-        from mipframe.ir.algebraic import signature_method
-
-        return signature_method(signature)(self._owner, self.id)
 
     def _statistics(self):
         m = self._owner.model
@@ -526,25 +347,13 @@ class Row(Entity):
                         reads only the prefix. Equal magnitudes are ordered by variable ID.
 
         MIPFRAME HELP BEGIN
-        Row.formula [api.Row.formula]
-
         Bounded exact Formula display with explicitly limited terms.
 
-        Row.formula(*, order: 'str' = 'abs_coef', max_terms: 'int' = 16) -> 'Formula'
-
-        When to use: Bounded exact Formula display with explicitly limited terms.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Absent finite source bounds raise MissingBoundError; closed models reject live access.
-
-        See also: concept.frame, concept.proofs
+        Full contract: mf.help("api.Row.formula")
         MIPFRAME HELP END
         """
         m = self._owner.model
-        max_terms = _Frame._size(max_terms)
+        max_terms = Frame._size(max_terms)
         if order not in ("abs_coef", "index", "name"):
             raise ValueError("order must be 'abs_coef', 'index', or 'name'")
         count = min(max_terms, self.nnz)

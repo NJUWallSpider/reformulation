@@ -30,27 +30,9 @@ def clique_candidates(
     Deterministic greedy maximal cliques, ranked among the objects found.
 
     MIPFRAME HELP BEGIN
-    alg.graph.clique_candidates [api.alg.graph.clique_candidates]
-
     Find greedy inclusion-maximal cliques, ranked among those found.
 
-    alg.graph.clique_candidates(E, *, u='u', v='v', vertices=None, scope=None, score=None, value='value', top=100, min_size=2, max_states=1000000, time_limit=None, memory_mb=128, max_output_rows=1000000, disk_mb=None)
-
-    When to use: Find greedy inclusion-maximal cliques, ranked among those found.
-
-    Inputs: E(u,v); optional vertices domain, induced scope and unique score(vertex,value). Scores must cover scope and be finite exact values.
-
-    Returns: Frame(clique,vertex); relations["summary"] has clique,size,score; relations["search"] has scope, budgets and stop reason.
-
-    Establishes: Simple undirected adjacency; reversed/parallel edges deduplicate and self-loops confer no adjacency. min_size=1 includes isolates. top counts whole objects, not member records. Every returned object is verified; search can omit others and stop early with an explicit reason.
-
-    Does not establish: No MIP proof, automatic symmetry claim or approved cut is produced.
-
-    Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. max_output_rows defaults to 1,000,000; exceeding it fails the whole call. None explicitly removes that limit. Output counts membership plus summary/mapping rows. State/time limits are separate; resource failures never silently truncate an object.
-
-    Roots/extensions use exact score, degree, then key. Maximal means inclusion-maximal in the induced scope, not maximum size or weight. Negative scores are allowed. No guarantee of the globally best top-k.
-
-    See also: concept.search, recipe.conflicts
+    Full contract: mf.help("api.alg.graph.clique_candidates")
     MIPFRAME HELP END
     """
     minimum(min_size, "min_size")
@@ -114,27 +96,9 @@ def maximal_cliques(
     All inclusion-maximal cliques in the induced scope, or an exception.
 
     MIPFRAME HELP BEGIN
-    alg.graph.maximal_cliques [api.alg.graph.maximal_cliques]
-
     Enumerate every inclusion-maximal clique in the declared scope.
 
-    alg.graph.maximal_cliques(E, *, u='u', v='v', vertices=None, scope=None, min_size=2, max_states=None, time_limit=None, memory_mb=128, max_output_rows=1000000, disk_mb=None)
-
-    When to use: Enumerate every inclusion-maximal clique in the declared scope.
-
-    Inputs: E(u,v); optional full vertices, induced scope and score(vertex,value); min_size filters objects.
-
-    Returns: Frame(clique,vertex), with summary(clique,size,score) and search metadata relations.
-
-    Establishes: Every qualifying maximal clique or an exception. No top parameter. min_size=1 includes isolated singletons; no empty clique. State/time exhaustion raises SearchBudgetExceeded without a partial successful Frame.
-
-    Does not establish: No MIP proof, automatic symmetry claim or approved cut is produced.
-
-    Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. max_output_rows defaults to 1,000,000; exceeding it fails the whole call. None explicitly removes that limit. Output counts membership plus summary/mapping rows. State/time limits are separate; resource failures never silently truncate an object.
-
-    Scope is an induced graph; maximality need not hold in the original larger graph. score orders objects, not a maximum-weight optimization guarantee.
-
-    See also: concept.search, recipe.conflicts
+    Full contract: mf.help("api.alg.graph.maximal_cliques")
     MIPFRAME HELP END
     """
     minimum(min_size, "min_size")
@@ -286,27 +250,9 @@ def odd_cycle_candidates(
 ):
     """
     MIPFRAME HELP BEGIN
-    alg.graph.odd_cycle_candidates [api.alg.graph.odd_cycle_candidates]
-
     Find verified undirected odd cycles of specified lengths.
 
-    alg.graph.odd_cycle_candidates(E, *, u='u', v='v', vertices=None, scope=None, lengths=(5, 7, 9), chordless=True, score=None, value='value', top=100, max_states=1000000, time_limit=None, memory_mb=128, max_output_rows=1000000, disk_mb=None)
-
-    When to use: Find verified undirected odd cycles of specified lengths.
-
-    Inputs: E(u,v); lengths is a nonempty sequence of odd integers >=3; optional vertices, induced scope, score(vertex,value), chordless and top.
-
-    Returns: Frame(cycle,position,vertex); summary(cycle,length,score) and search metadata relations.
-
-    Establishes: Vertices are distinct; zero-based positions omit the repeated closing vertex. chordless rejects adjacency between nonconsecutive vertices. Every returned object is verified; search can omit others and stop early with an explicit reason.
-
-    Does not establish: No MIP proof, automatic symmetry claim or approved cut is produced.
-
-    Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. max_output_rows defaults to 1,000,000; exceeding it fails the whole call. None explicitly removes that limit. Output counts membership plus summary/mapping rows. State/time limits are separate; resource failures never silently truncate an object.
-
-    Canonical rotation starts at the smallest key; reversed undirected cycles deduplicate. Scoring sums vertex values and does not establish an inequality violation.
-
-    See also: concept.search, recipe.conflicts
+    Full contract: mf.help("api.alg.graph.odd_cycle_candidates")
     MIPFRAME HELP END
     """
     nonnegative(top, "top")
@@ -358,27 +304,9 @@ def simple_cycles(
 ):
     """
     MIPFRAME HELP BEGIN
-    alg.graph.simple_cycles [api.alg.graph.simple_cycles]
-
     Enumerate all simple cycles in an explicitly directed or undirected graph.
 
-    alg.graph.simple_cycles(E, *, directed, u='u', v='v', vertices=None, scope=None, min_length=None, max_length=None, chordless=False, max_states=None, time_limit=None, memory_mb=128, max_output_rows=1000000, disk_mb=None)
-
-    When to use: Enumerate all simple cycles in an explicitly directed or undirected graph.
-
-    Inputs: E(u,v); directed must be specified. Optional min_length/max_length, vertices, induced scope, chordless and score(vertex,value).
-
-    Returns: Frame(cycle,position,vertex); summary(cycle,length,score) and search metadata relations.
-
-    Establishes: Exhaustive within declared length and induced scope. Directed cycles include self-loops and reciprocal 2-cycles by default; undirected minimum length is 3. State/time exhaustion raises SearchBudgetExceeded without a partial successful Frame.
-
-    Does not establish: No MIP proof, automatic symmetry claim or approved cut is produced.
-
-    Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. max_output_rows defaults to 1,000,000; exceeding it fails the whole call. None explicitly removes that limit. Output counts membership plus summary/mapping rows. State/time limits are separate; resource failures never silently truncate an object.
-
-    Directed reversal is different; undirected reversal deduplicates. chordless=True is supported only for undirected graphs. max_length=None gives no length ceiling.
-
-    See also: concept.search, recipe.conflicts
+    Full contract: mf.help("api.alg.graph.simple_cycles")
     MIPFRAME HELP END
     """
     if type(directed) is not bool or type(chordless) is not bool:

@@ -1,6 +1,5 @@
 """Package-wide display and numeric policy settings."""
 
-from math import isfinite
 
 
 class DisplayOptions:
@@ -33,42 +32,11 @@ class DisplayOptions:
         self._max_cols = self._validate(value)
 
 
-class NumericOptions:
-    """Reserved approximate-input tolerances; exact file signatures ignore them."""
-
-    def __init__(self):
-        self.rtol = 1e-9
-        self.atol = 1e-12
-
-    @staticmethod
-    def _validate(value):
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise TypeError("Numeric tolerances must be real numbers")
-        if not isfinite(value) or value < 0:
-            raise ValueError("Numeric tolerances must be finite and nonnegative")
-        return float(value)
-
-    @property
-    def rtol(self):
-        return self._rtol
-
-    @rtol.setter
-    def rtol(self, value):
-        self._rtol = self._validate(value)
-
-    @property
-    def atol(self):
-        return self._atol
-
-    @atol.setter
-    def atol(self, value):
-        self._atol = self._validate(value)
 
 
 class Options:
     def __init__(self):
         self.display = DisplayOptions()
-        self.numeric = NumericOptions()
         self.ir = IROptions()
         self.query = QueryOptions()
 

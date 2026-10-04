@@ -1,10 +1,8 @@
 """Structural-signature assisted indexed discovery and cached results."""
 
 from mipframe.ir.indexing.views import IndexedResult
-from mipframe.ir.indexing.views import IndexedTensor
-from mipframe.ir.indexing.views import IndexedOperator
 
-__all__ = ["IndexedResult", "IndexedTensor", "IndexedOperator", "indexed", "restore"]
+__all__ = ["IndexedResult", "indexed", "restore"]
 from mipframe.ir.indexing.store import Store
 from mipframe.ir.indexing.store import ident
 from mipframe.ir.indexing.store import js
@@ -23,13 +21,13 @@ def indexed(owner, *, rows=None, vars=None, signatures=None, memory_mb=128):
         ):
             raise ValueError(f"{name} must be a same-model {cls.__name__}")
     sig = owner.ir._result if signatures is None else signatures
-    from mipframe.ir.signatures import StructuralSignatures
+    from mipframe.ir.signatures import _Refinement
 
-    if not isinstance(sig, StructuralSignatures) or sig._store.owner is not owner:
+    if not isinstance(sig, _Refinement) or sig._store.owner is not owner:
         raise ValueError("signatures must belong to this model")
     if rows is None and vars is None:
         for result in getattr(owner, "_indexed_results", {}).values():
-            record = result.to_record()
+            record = result._record()
             if record["scope"]["full_model"] and record["signatures"] == {
                 "config": sig.config,
                 "depth": sig.depth,

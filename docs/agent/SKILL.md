@@ -5,10 +5,9 @@ description: Inspect linear LP/MPS models with mipframe, compose exact sparse qu
 
 # Working with mipframe
 
-This guide targets MIPFrame 0.8.0 and Python 3.11 or newer. Check the active
-interpreter and `mf.__version__` before using unfamiliar syntax. A system `python3`
-may differ from the environment's `python`. Use the documentation shipped with the
-installed package when an older copied guide disagrees.
+This guide targets MIPFrame 1.0.0 and Python 3.11 or newer. Check the configured interpreter and `mf.__version__`.
+If the installed version matches this skill, use the current interpreter.
+Do not search for or switch to another Python environment.
 
 ```python
 import sys
@@ -48,6 +47,33 @@ correct answer. Inspect a public signature or docstring when the argument contra
 is uncertain. Avoid rebuilding parsers or sparse indexing already supplied by the
 library, while keeping ordinary Python available for small custom calculations.
 
+## Unified entity and indexed navigation
+
+Use `m.vars` / `m.rows`, `by_name(name)`, `loc[id_or_ref]`, and `iloc[position]`.
+Bounds are exact finite values or infinities; `source_line` is one-based or `None`.
+`to_records()` explicitly materializes detached records within a budget.
+Export a numerical SciPy copy with `m.matrix.view().to_scipy()`.
+
+Indexed directories follow the family Frame model: `I = m.indexed()`, then
+`O = I.operators.where(...)`, `O.rows`, and `O.related("kernel")` or
+`O.related("bindings")`. `I.operator(id)` returns a one-row Frame, so metadata
+uses `O.one().row_count` or `O.one().formula`. Tensor members use `T.vars`;
+its axes use `T.related("axes").where(axis=0).rows`. Frame.shape is the table
+shape; indexed dimensions are in `related("dimensions")`.
+Keep `indexed_key` when projecting to preserve related navigation. All relations
+follow the current selection and share storage. Use `inspect(max_items=...)` for
+bounded previews, including ordinary Frames. Indexed views additionally support
+`verbose`; family-specific display options are rejected on other providers.
+
+`m.verify()` and `I.verify(selection)` return Reports with integrity/indexed scope.
+Inconsistency returns REFUTED; use `.require()` to raise. Neither is a linear
+certificate or an Edit justification. `summary["checked"]` and `summary["failures"]`
+count primary checks; `evidence["checks"]` lists these checks and
+`evidence["details"]` adds subordinate diagnostics. A skipped or inconclusive check
+prevents an overall PROVED result. Use mathematical checkers for those claims.
+All mathematical checkers use exact arithmetic; no tolerance or arithmetic switch
+changes their comparison rules. See `mf.help("concept.indexed", detail="full")`.
+
 ## Observe, hypothesize, query, verify, act, audit
 
 Read the IR after importing a model. `read()` and `load()` prepare default IR and
@@ -73,17 +99,38 @@ original terms and bounds before reasoning about a row. Equal support does not
 imply equal coefficients, equal bounds, redundancy or symmetry. Comparing complete
 local templates still omits any external coupling that was not in the payload.
 
+## Structural families
+
+Start with `m.row_families` or `m.var_families`: both are template structural
+Frames at depth 2. `m.family("F0")` is a one-row Frame with `.rows`; variable
+families have `.vars`. Filter several families and use the same navigation.
+`m.rows.head(100).families()` restricts members, preserving global family IDs.
+`count` is selected coverage; `total_count` is the full-model population.
+
+Use `f.related("pattern")` for exact structural tokens, `f.related("parameters")`
+for numeric summaries, and `f.related("histogram")` for complete distributions.
+Filter `basis="canonical"`, `"raw"` or `"scale_normalized"` explicitly; retain
+`orientation` when comparing zero-RHS equalities. `f.inspect()` is bounded.
+Keep `family_key` when selecting columns if you need later relation navigation.
+A depth-d row pattern references depth-(d-1) variable roles, not necessarily the
+families in the default variable directory.
+
+Advanced algebraic, typed and exact structural rules live in
+`mf.analysis.families/signatures(..., method=...)`, always returning Frames.
+Use `m.refinement(...)` for parent/child transitions and `m.indexed(...)` for
+indexed discovery. There is no `m.structure` or public Family/Signature object.
+
 ## Rows, Vars, Terms and identity
 
 The canonical tables are Rows `(row,name,lb,ub)`, Vars
-`(var,name,kind,lb,ub,obj)` and Terms `(row,var,coef)`. Finite numeric facts are
+`(var,name,kind,lb,ub,obj,source_line)` and Terms `(row,var,coef)`. Finite numeric facts are
 exact rationals. Terms exclude the objective, bounds and structural zeros.
 Canonical variable kind is C or I; binary status is derived from effective integer
 bounds and includes variables fixed at zero or one.
 
 Use `m.rows.iloc[0]` for a position, `.loc[key]` for a declared key,
-`.by_name("name")` for explicit name lookup and `.family("F0@2")` for a family
-selection in that bound configuration. Frame `[]` is not a mixed-purpose index.
+`.by_name("name")` for explicit name lookup. Use `m.family("F0@2").rows`
+or `m.family("V0@2").vars` for family members. Frame `[]` is not a mixed-purpose index.
 Use `.ids` for original IDs and typed Ref columns for relationships.
 `m.rows.loc[ref]` and `m.vars.loc[ref]` accept typed Refs with matching snapshot
 uid/version and entity axis, and require membership in the selected Frame.
@@ -173,7 +220,7 @@ For many linear checks, use the scalar-style batch builder. It accepts the same
 `using` and `assume` arguments as `linear`, without constructing schemas:
 
 ```python
-with m.check.batch("linear", residual="bounds") as batch:
+with m.check.linear_batch(residual="bounds") as batch:
     for key, claim, sources, assumptions in checks:
         batch.add(key=key, target=claim, using=sources, assume=assumptions)
     report = batch.run()
@@ -185,7 +232,7 @@ Keys are unique nonempty strings. `add` consumes each input immediately; `run`
 verifies and publishes the complete batch. Results survive the builder's context
 exit. Every target retains its own explicit and inherited assumptions; a batch
 does not merge branches or discharge conditions. If targets, terms and sources
-already exist as Frames, use `linear_many`. See `mf.help("Checker.batch")`.
+already exist as Frames, use `linear_many`. See `mf.help("Checker.linear_batch")`.
 
 An insufficient certificate is INCONCLUSIVE, not a proof that the target is false.
 A local enumeration counterexample need not extend to a full-model feasible point.

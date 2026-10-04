@@ -1,4 +1,5 @@
 """Batch linear certificates share one scratch database and normalized result tables."""
+from mipframe.frame.schema import decode_tree
 
 import json
 import sqlite3
@@ -6,23 +7,17 @@ import weakref
 from collections.abc import Mapping
 from fractions import Fraction
 from mipframe.store.algorithm_store import AlgorithmStore
+from mipframe.check.workspace import ProofWorkspace
 from mipframe.frame.base import Frame
 from mipframe.frame.schema import DType, ref_type, SchemaError, encode, decode
 from mipframe.linear.expr import LinExpr, owners
 from mipframe.linear.claim import Claim, source_claim
 from mipframe.linear.scalar import q
 from mipframe.check.report import Report
-from mipframe.check.certificate import ProofContext, InvalidCertificateError
+from mipframe.check.certificate import ProofContext, ArchivedProof, InvalidCertificateError
 
 
-def restore_json(x):
-    if isinstance(x, dict):
-        if set(x) in ({"rational"}, {"infinity"}, {"ref"}):
-            return decode(x)
-        return {k: restore_json(v) for k, v in x.items()}
-    if isinstance(x, list):
-        return [restore_json(v) for v in x]
-    return x
+
 
 
 # Every target uses the same normalized relations; no table or Python object per target.
@@ -32,6 +27,7 @@ TABLES = {
     "assumptions": "claim INTEGER",
     "sources": "id INTEGER,direction TEXT,claim INTEGER,multiplier TEXT,parent INTEGER",
     "deps": "id INTEGER,kind TEXT,entity INTEGER,side TEXT,parent INTEGER",
+    "bounds_evidence": "id INTEGER,direction TEXT,v INTEGER,c TEXT,side TEXT,bound TEXT,contribution TEXT",
 }
 
 
@@ -96,6 +92,26 @@ class Batch:
             self._release_parents(parents)
             raise
 
+    def stage(self, key, ctx, ident, double):
+        parents = []
+        for parent in ctx.parents:
+            i = self._parent_ids.get(id(parent))
+            if i is None:
+                i = self._parent_serial
+                self._parent_serial += 1
+                self._parent_ids[id(parent)] = i
+                self.parents[i] = parent
+                self._parent_counts[i] = 0
+            self._parent_counts[i] += 1
+            parents.append(i)
+        target = self.s.execute(
+            f"INSERT INTO {self.result}(key,metadata) VALUES(?,?)",
+            (key, json.dumps(dict(target=ident, double=double, parents=parents, domain=ctx.proof_domain)))
+        ).lastrowid
+        for name, dest in self.tables.items():
+            self.s.execute(f"INSERT INTO {dest} SELECT ?,* FROM {getattr(ctx,name)}", (target,))
+        self._models[target] = ctx.models
+
     def _release_parents(self, parents):
         for i in parents:
             self._parent_counts[i] -= 1
@@ -146,6 +162,8 @@ class Batch:
             violations=r.violations,
             counterexample=r.counterexample,
         ).items():
+            if name in ("sources", "claims", "terms", "assumptions", "bounds", "dependencies"):
+                continue
             self.s.execute(
                 f"INSERT INTO {self.frames} VALUES(?,?,?,?)",
                 (
@@ -171,19 +189,13 @@ class Batch:
         if rec is None:
             raise KeyError(key)
         ident, status, metadata = rec
-        meta = restore_json(json.loads(metadata))
-        ctx = ProofContext.__new__(ProofContext)
-        ctx._shared = self.s
-        ctx.db, ctx.memory = self.s.db, self.s.memory
-        ctx.owner = self.owner
-        ctx.models = self._models[ident]
-        # Scalar archives override this with a shared lease for the node. Every
-        # Claim/Frame view keeps it, so dropping its Report cannot invalidate it.
-        ctx._lease = self.lease(ident)
-        for name, t in self.tables.items():
-            columns = ",".join(x.strip().split()[0] for x in TABLES[name].split(","))
-            setattr(ctx, name, f"(SELECT {columns} FROM {t} WHERE target={ident})")
-        ctx.parents = [self.parents[i] for i in meta["parents"]]
+        meta = decode_tree(json.loads(metadata))
+        tables = {}
+        for name, table in self.tables.items():
+            columns = ','.join(x.strip().split()[0] for x in TABLES[name].split(','))
+            tables[name] = f'(SELECT {columns} FROM {table} WHERE target={ident})'
+        ctx = ArchivedProof(self.owner, self.s, self._models[ident], tables,
+                            (self.parents[i] for i in meta['parents']), self.lease(ident))
 
         def frame(name):
             schema, key = self.s.execute(
@@ -199,11 +211,11 @@ class Batch:
                     (ident, name),
                 ):
                     ctx.guard()
-                    row = restore_json(json.loads(payload))
+                    row = decode_tree(json.loads(payload))
                     yield {n: row[n] for n in fields}
 
             f = Frame(schema, models=ctx.models, source=source, key=json.loads(key))
-            f._resource = ctx
+            f._query.resource = ctx
             return f
 
         ev = {
@@ -213,6 +225,10 @@ class Batch:
             )
             if name not in ("dependencies", "violations", "counterexample")
         }
+        from mipframe.check.evidence import normalized_evidence
+        normalized = normalized_evidence(ctx)
+        dependencies = normalized.pop("dependencies")
+        ev.update(normalized)
         r = Report(
             ctx,
             status == "PROVED",
@@ -223,7 +239,7 @@ class Batch:
                         if "claim" in meta["conclusion"] else meta["conclusion"]["value"]),
             scope=meta["scope"],
             method=meta["method"],
-            dependencies=frame("dependencies"),
+            dependencies=dependencies,
             evidence=ev,
             counterexample=frame("counterexample"),
             recipe=meta["recipe"],
@@ -390,33 +406,14 @@ def retain_report(report):
         raise
 
 
-def drop_transient(store, before):
-    for (name,) in list(store.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' "
-        "AND (name GLOB 'a[0-9]*' OR name GLOB 'f[0-9]*')"
-    )):
-        if int(name[1:]) > before:
-            store.execute(f"DROP TABLE {name}")
-
-
 class LinearBatch:
     """
     A streaming builder; successful run transfers storage to its Report.
 
     MIPFRAME HELP BEGIN
-    LinearBatch [api.LinearBatch]
+    Incremental linear certificate builder obtained through m.check.linear_batch().
 
-    Incremental linear certificate builder obtained through m.check.batch("linear").
-
-    LinearBatch [type]
-
-    When to use: Incremental linear certificate builder obtained through m.check.batch("linear").
-
-    Returns: A public domain type. Obtain live handles through their owning Model or query.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: api.Checker.batch, concept.report-resources
+    Full contract: mf.help("api.LinearBatch")
     MIPFRAME HELP END
     """
 
@@ -428,7 +425,7 @@ class LinearBatch:
         self._requests = None
         self._sealed = False
         try:
-            self._store = AlgorithmStore((checker._owner,), memory_mb=memory_mb,
+            self._store = ProofWorkspace((checker._owner,), memory_mb=memory_mb,
                                          disk_mb=disk_mb, max_output_rows=None)
             self._requests = Batch(checker._owner, self._store)
         except BaseException:
@@ -445,25 +442,9 @@ class LinearBatch:
         Stage one keyed check; consume its inputs now without retaining expressions.
 
         MIPFRAME HELP BEGIN
-        LinearBatch.add [api.LinearBatch.add]
-
         Stage one keyed target with the same using and assume arguments as check.linear.
 
-        LinearBatch.add(*, key, target, using=(), assume=())
-
-        When to use: Stage one keyed target with the same using and assume arguments as check.linear.
-
-        Inputs: A unique nonempty string key, Claim target, original source Claims or verified Reports, optional exact multipliers and assumptions. Equality certificates also accept using={"le": ..., "ge": ...}.
-
-        Returns: The builder for chaining. No proof is published by add.
-
-        Establishes: Consumes generators and copies mathematical inputs into shared paged staging now; does not retain a list of target expressions. Parent proof dependencies remain live.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Duplicate keys, invalid sources and staging failures abort and close the builder. A closed or already-run builder rejects further additions.
-
-        See also: api.Checker.batch, api.Checker.linear, api.LinearBatch.run, concept.conditions
+        Full contract: mf.help("api.LinearBatch.add")
         MIPFRAME HELP END
         """
         self._guard()
@@ -473,8 +454,8 @@ class LinearBatch:
                 raise SchemaError("Batch keys must be nonempty strings")
             if s.execute(f"SELECT 1 FROM {self._requests.result} WHERE key=?", (key,)).fetchone():
                 raise SchemaError(f"Duplicate certificate target: {key}")
-            before = s.serial
-            ctx = ProofContext(self._checker._owner, "linear", domain=self._domain, _shared=s)
+            s.begin()
+            ctx = ProofContext(self._checker._owner, "linear", domain=self._domain, runtime=s)
             ident = ctx.add_claim(target)
             ctx.assume(assume)
             double = isinstance(using, dict)
@@ -485,12 +466,8 @@ class LinearBatch:
                     ctx.ingest(using[direction], direction)
             else:
                 ctx.ingest(using)
-            staged = ctx.finish_report(
-                "INCONCLUSIVE", ctx.claim(ident), {},
-                recipe=dict(kind="linear", target=ident, residual=self._residual, double=double),
-            )
-            self._requests.capture(key, staged)
-            drop_transient(s, before)
+            self._requests.stage(key, ctx, ident, double)
+            s.reset()
             s.disk_check()
             return self
         except BaseException:
@@ -502,25 +479,9 @@ class LinearBatch:
         Verify every staged target and return the complete batch, sealing this builder.
 
         MIPFRAME HELP BEGIN
-        LinearBatch.run [api.LinearBatch.run]
-
         Verify every staged linear target and seal the builder.
 
-        LinearBatch.run()
-
-        When to use: Verify every staged linear target and seal the builder.
-
-        Returns: Report with evidence["results"] and for_target(key). An empty batch is PROVED.
-
-        Establishes: Overall PROVED requires every target proved. Insufficient certificates yield per-target INCONCLUSIVE. All assumptions and domains remain attached to their own conclusions.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        Failures: Errors or cancellation publish no partial result. run may be called only once.
-
-        Successful run transfers result storage to the Report. The result, subreports and evidence views survive builder.close() or context exit while their source models remain open.
-
-        See also: api.Report.for_target, api.Report.require, api.Report.replay, concept.report-resources
+        Full contract: mf.help("api.LinearBatch.run")
         MIPFRAME HELP END
         """
         from mipframe.check.accessor import Checker
@@ -536,27 +497,22 @@ class LinearBatch:
                 if row is None:
                     break
                 last_target, key = row
-                request = self._requests.one(key)
-                before = s.serial
-                ctx = ProofContext(self._checker._owner, "linear", domain=self._domain, _shared=s)
-
-                def sources(direction):
-                    for claim, multiplier, parent in request._store.execute(
-                        f"SELECT claim,multiplier,parent FROM {request._store.sources} "
-                        "WHERE direction=? ORDER BY id", (direction,)
-                    ):
-                        source = (request._store.claim(claim) if parent is None
-                                  else request._parents[parent])
-                        yield Fraction(multiplier), source
-
-                using = ({d: sources(d) for d in ("le", "ge")}
-                         if request._recipe["double"] else sources("main"))
-                result = Checker.linear.__wrapped__(
-                    self._checker, ctx, request.conclusion, using=using,
-                    assume=request._assumption_reader(), residual=self._residual,
-                )
+                s.begin()
+                ctx = ProofContext(self._checker._owner, "linear", domain=self._domain, runtime=s)
+                metadata = json.loads(s.execute(
+                    f"SELECT metadata FROM {self._requests.result} WHERE id=?", (last_target,)
+                ).fetchone()[0])
+                for name, table in self._requests.tables.items():
+                    columns = ','.join(x.strip().split()[0] for x in TABLES[name].split(','))
+                    s.execute(f"INSERT INTO {getattr(ctx,name)} SELECT {columns} FROM {table} WHERE target=?", (last_target,))
+                ctx.parents = [self._requests.parents[i] for i in metadata["parents"]]
+                ctx.models = self._requests._models[last_target]
+                ctx.proof_domain = metadata["domain"]
+                from mipframe.check.accessor import verify_linear
+                result = verify_linear(ctx, metadata["target"], residual=self._residual,
+                                       double=metadata["double"])
                 batch.capture(key, result)
-                drop_transient(s, before)
+                s.reset()
             for table in (*self._requests.tables.values(), self._requests.frames,
                           self._requests.records, self._requests.result):
                 s.execute(f"DROP TABLE {table}")
@@ -574,21 +530,9 @@ class LinearBatch:
         Discard unpublished work; a Report returned by run remains valid.
 
         MIPFRAME HELP BEGIN
-        LinearBatch.close [api.LinearBatch.close]
-
         Release unpublished batch work and close the builder.
 
-        LinearBatch.close()
-
-        When to use: Release unpublished batch work and close the builder.
-
-        Returns: None.
-
-        Establishes: Idempotent. Reports already returned by run remain valid.
-
-        Does not establish: No model change or additional mathematical conclusion is implied.
-
-        See also: api.Checker.batch, api.LinearBatch.run, concept.report-resources
+        Full contract: mf.help("api.LinearBatch.close")
         MIPFRAME HELP END
         """
         if self._store is not None:
@@ -625,7 +569,7 @@ def linear_many(
         "integer",
     ):
         raise ValueError("Invalid residual or domain")
-    s = AlgorithmStore(
+    s = ProofWorkspace(
         (owner,), memory_mb=memory_mb, disk_mb=disk_mb, max_output_rows=None
     )
     try:
@@ -637,6 +581,7 @@ def linear_many(
         us = s.raw_table(
             "target INTEGER,axis TEXT,entity INTEGER,proof TEXT,side TEXT,multiplier TEXT,direction TEXT"
         )
+        s.index(us, ("target", "direction"))
 
         def records(frame, required):
             if not isinstance(frame, Frame) or not set(required) <= set(frame.schema):
@@ -732,9 +677,7 @@ def linear_many(
                     owners((owner,), p.conclusion.expr._models)
                     claim = p.conclusion
                 else:
-                    entity = (owner.rows if axis == "row" else owner.vars).by_id(
-                        rec[axis]
-                    )
+                    entity = (owner.rows if axis == "row" else owner.vars).loc[rec[axis]]
                     claim = source_claim(entity, side)
                 if claim.relation != "==" and a < 0:
                     raise InvalidCertificateError("Negative inequality multiplier")
@@ -759,14 +702,14 @@ def linear_many(
                 break
             i, key, relation, rhs = row
             last_target = i
-            before = s.serial
+            s.begin()
             ctx = ProofContext(
                 owner,
                 "linear",
                 domain=domain,
                 memory_mb=memory_mb,
                 disk_mb=disk_mb,
-                _shared=s,
+                runtime=s,
             )
             expr = LinExpr(
                 owner,
@@ -785,7 +728,7 @@ def linear_many(
                         reports[proof]
                         if axis == "proof"
                         else source_claim(
-                            (owner.rows if axis == "row" else owner.vars).by_id(entity),
+                            (owner.rows if axis == "row" else owner.vars).loc[entity],
                             side,
                         )
                     )
@@ -809,8 +752,8 @@ def linear_many(
                 checker, ctx, claim, using=certificate, residual=residual
             )
             batch.capture(key, r)
-            # Drop only transient per-target tables. Batch capture allocates no new tables.
-            drop_transient(s, before)
+            # The archive owns the result; reuse the workspace for the next target.
+            s.reset()
         s.disk_check()
         return batch.report()
     except BaseException:

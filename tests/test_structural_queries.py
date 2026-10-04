@@ -31,7 +31,7 @@ def test_raw_csr_and_name_indices(model, monkeypatch):
     sparse = pytest.importorskip("scipy.sparse")
     with monkeypatch.context() as patch:
         patch.setattr(sparse.csr_matrix, "toarray", forbidden)
-        a = model.A
+        a = model.matrix.view().to_scipy()
     assert isinstance(a, sparse.csr_matrix)
     assert a.dtype == np.float64 and a.shape == (25, 16) and a.nnz == 50
     assert a[model.row_index["outside"], model.var_index["w"]] == 0.5
@@ -40,11 +40,11 @@ def test_raw_csr_and_name_indices(model, monkeypatch):
     assert isinstance(model.row_index, mf.NameIndex)
     assert isinstance(model.var_index, mf.NameIndex)
     assert list(model.row_index) == [f"r{i}" for i in range(24)] + ["outside"]
-    assert model.row_index.to_dict() == {r.name: r.id for r in model.constraints}
-    assert model.var_index.to_dict() == {v.name: v.id for v in model.variables}
+    assert model.row_index.to_dict() == {r.name: r.id for r in model.rows}
+    assert model.var_index.to_dict() == {v.name: v.id for v in model.vars}
     assert len(model.row_index) == a.shape[0] and len(model.var_index) == a.shape[1]
     a.data[:] = 7
-    fresh = model.A
+    fresh = model.matrix.view().to_scipy()
     assert fresh[24, 13] == 0.5
     assert not np.shares_memory(a.data, fresh.data)
     assert model.rows.by_name("outside").terms.iloc[0]["coef"] == Fraction(1, 2)
@@ -56,7 +56,7 @@ def test_raw_csr_and_name_indices(model, monkeypatch):
 
 def test_name_indices_are_lazy_readonly_and_bounded(model, monkeypatch):
     monkeypatch.setattr(model.model, "num", forbidden)
-    monkeypatch.setattr(mf.Model, "A", property(forbidden))
+    monkeypatch.setattr(mf.MatrixView, "to_scipy", forbidden)
     index = model.row_index
     assert index["r17"] == 17
     with pytest.raises(KeyError):
@@ -89,7 +89,7 @@ def test_raw_access_requires_scipy_only_when_requested(model, monkeypatch):
     rows = model.rows.head(24)
     assert len(rows.incidence_counts().where(mf.col("nnz") <= 2)) == 12
     with pytest.raises(mf.MIPFrameError, match=r"mipframe\[scipy\]"):
-        model.A
+        model.matrix.view().to_scipy()
 
 
 def test_new_views_guard_close(model):
@@ -100,10 +100,10 @@ def test_new_views_guard_close(model):
     next(stream)
     model.close()
     for action in (
-        lambda: model.A,
+        lambda: model.matrix.view().to_scipy(),
         lambda: len(counts),
         lambda: repr(filtered),
-        lambda: filtered.collect(),
+        lambda: filtered.to_records(),
         lambda: next(stream),
         lambda: index["r0"],
     ):

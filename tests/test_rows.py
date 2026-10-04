@@ -66,14 +66,14 @@ def test_termframe_records_selection_and_statistics(model):
     assert terms.iloc[1].var.obj==3 and terms.iloc[1].coef==-17
     assert terms.iloc[-1].var.lb==-inf
     assert list(terms.tail(2).column('var').ids)==[2,3]
-    assert terms.iloc[::-1].collect()==list(reversed(terms.collect()))
+    assert terms.iloc[::-1].to_records()==list(reversed(terms.to_records()))
     assert terms.head(2).tail(1).one()==terms.iloc[1]
-    assert terms.sample(3,random_state=7).collect()==terms.sample(3,random_state=7).collect()
+    assert terms.sample(3,random_state=7).to_records()==terms.sample(3,random_state=7).to_records()
     assert terms.column('coef').sum()==46
     assert terms.column('coef').min()==-17 and terms.column('coef').max()==42
     joined=terms.join(model.vars.select('var','type'),on='var',cardinality='m:1',require='left')
     assert {r.type:r.count for r in joined.column('type').value_counts()}=={'B':2,'C':1,'I':1}
-    snapshot=terms.collect();snapshot[0]['coef']=999
+    snapshot=terms.to_records();snapshot[0]['coef']=999
     assert terms.iloc[0].coef==42
     with pytest.raises(TypeError): first['coef']=999
     assert len(terms.head(0))==len(terms.tail(0))==0
@@ -111,7 +111,7 @@ def test_formula_order_bounds_empty_and_validation(model):
     assert repr(empty.terms).startswith("<TermFrame")
     assert "coef range  : [—, —]" in repr(empty)
 
-    rows = model.rows.family('F0@2').sample(1, random_state=42)
+    rows = model.family('F0@2').rows.sample(1, random_state=42)
     row = rows.one()
     assert f'{row.id}  {row.name}: {row.formula()}' in rows.formula()
     empty = model.rows.head(0)
@@ -146,8 +146,8 @@ def test_frame_formula_preserves_selection_and_reads_only_visible_rows(model, mo
     assert output.count('0  capacity: 42 x18 - 17 x91 + ... <= 1000') == 1
     assert output.count('[2 of 4 terms shown]') == 1
     assert 'lower:' in output
-    assert output == rows.show(formula=True, order='index', max_terms=2)
-    assert rows.show() == repr(rows)
+    assert output == rows.formula(order='index', max_terms=2)
+    assert rows.inspect() == repr(rows)
     assert capsys.readouterr().out == ''
 
 

@@ -105,19 +105,9 @@ def vector(ctx, owner, values, value="value"):
 class LinExpr:
     """
     MIPFRAME HELP BEGIN
-    LinExpr [api.LinExpr]
-
     Immutable sparse affine expression; use variable arithmetic, row.expr or m.linexpr.
 
-    LinExpr [type]
-
-    When to use: Immutable sparse affine expression; use variable arithmetic, row.expr or m.linexpr.
-
-    Returns: A public domain type. Obtain live handles through their owning Model or query.
-
-    Does not establish: No model change or additional mathematical conclusion is implied.
-
-    See also: concept.proofs, concept.exact
+    Full contract: mf.help("api.LinExpr")
     MIPFRAME HELP END
     """
     def __setattr__(self, name, value):
@@ -202,21 +192,9 @@ class LinExpr:
     def constant(self):
         """
         MIPFRAME HELP BEGIN
-        LinExpr.constant [api.LinExpr.constant]
-
         Read or construct affine expression constant.
 
-        LinExpr.constant [property]
-
-        When to use: Read or construct affine expression constant.
-
-        Inputs: Exact finite scalars and compatible snapshot identities.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: Expression manipulation alone does not establish a valid model constraint.
-
-        See also: concept.proofs, concept.exact
+        Full contract: mf.help("api.LinExpr.constant")
         MIPFRAME HELP END
         """
         self._guard()
@@ -226,21 +204,9 @@ class LinExpr:
     def terms(self):
         """
         MIPFRAME HELP BEGIN
-        LinExpr.terms [api.LinExpr.terms]
-
         Canonical sorted nonzero expression terms; an ordinary Frame, not original TermFrame.
 
-        LinExpr.terms [property]
-
-        When to use: Canonical sorted nonzero expression terms; an ordinary Frame, not original TermFrame.
-
-        Inputs: Exact finite scalars and compatible snapshot identities.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: Expression manipulation alone does not establish a valid model constraint.
-
-        See also: concept.proofs, concept.exact
+        Full contract: mf.help("api.LinExpr.terms")
         MIPFRAME HELP END
         """
         self._guard()
@@ -264,21 +230,9 @@ class LinExpr:
     def vars(self):
         """
         MIPFRAME HELP BEGIN
-        LinExpr.vars [api.LinExpr.vars]
-
         Read or construct affine expression vars.
 
-        LinExpr.vars [property]
-
-        When to use: Read or construct affine expression vars.
-
-        Inputs: Exact finite scalars and compatible snapshot identities.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: Expression manipulation alone does not establish a valid model constraint.
-
-        See also: concept.proofs, concept.exact
+        Full contract: mf.help("api.LinExpr.vars")
         MIPFRAME HELP END
         """
         return self.terms.refs("var")
@@ -349,28 +303,9 @@ class LinExpr:
     def le(self, other):
         """
         MIPFRAME HELP BEGIN
-        LinExpr.le [api.LinExpr.le]
-
         Construct an unproved mathematical <= Claim.
 
-        LinExpr.le(other)
-
-        When to use: Construct an unproved mathematical <= Claim.
-
-        Inputs: Exact finite scalar, Var or compatible affine expression from the same snapshot.
-
-        Returns: Claim, or DraftClaim when the other operand contains draft variables.
-
-        Establishes: Equivalent to the <= operator.
-
-        Does not establish: Does not add a row, prove the proposition or permit implicit bool.
-
-        Failures: Inexact scalars, cross-snapshot operands and closed owners are rejected.
-
-        Illustrative example (requires caller-provided inputs):
-        claim = s.le(U)
-
-        See also: error.expressions, concept.proofs, concept.exact
+        Full contract: mf.help("api.LinExpr.le")
         MIPFRAME HELP END
         """
         return self <= other
@@ -378,28 +313,9 @@ class LinExpr:
     def ge(self, other):
         """
         MIPFRAME HELP BEGIN
-        LinExpr.ge [api.LinExpr.ge]
-
         Construct an unproved mathematical >= Claim.
 
-        LinExpr.ge(other)
-
-        When to use: Construct an unproved mathematical >= Claim.
-
-        Inputs: Exact finite scalar, Var or compatible affine expression from the same snapshot.
-
-        Returns: Claim, or DraftClaim when the other operand contains draft variables.
-
-        Establishes: Equivalent to the >= operator.
-
-        Does not establish: Does not add a row, prove the proposition or permit implicit bool.
-
-        Failures: Inexact scalars, cross-snapshot operands and closed owners are rejected.
-
-        Illustrative example (requires caller-provided inputs):
-        claim = s.ge(U)
-
-        See also: error.expressions, concept.proofs, concept.exact
+        Full contract: mf.help("api.LinExpr.ge")
         MIPFRAME HELP END
         """
         return self >= other
@@ -407,28 +323,9 @@ class LinExpr:
     def eq(self, other):
         """
         MIPFRAME HELP BEGIN
-        LinExpr.eq [api.LinExpr.eq]
-
         Construct an unproved mathematical == Claim.
 
-        LinExpr.eq(other)
-
-        When to use: Construct an unproved mathematical == Claim.
-
-        Inputs: Exact finite scalar, Var or compatible affine expression from the same snapshot.
-
-        Returns: Claim, or DraftClaim when the other operand contains draft variables.
-
-        Establishes: Mathematical equality; Python == retains expression equality semantics.
-
-        Does not establish: Does not add a row, prove the proposition or permit implicit bool.
-
-        Failures: Inexact scalars, cross-snapshot operands and closed owners are rejected.
-
-        Illustrative example (requires caller-provided inputs):
-        claim = s.eq(U)
-
-        See also: error.expressions, concept.proofs, concept.exact
+        Full contract: mf.help("api.LinExpr.eq")
         MIPFRAME HELP END
         """
         from mipframe.linear.claim import Claim
@@ -457,21 +354,9 @@ class LinExpr:
     def substitute(self, mapping, *, memory_mb=128, disk_mb=None):
         """
         MIPFRAME HELP BEGIN
-        LinExpr.substitute [api.LinExpr.substitute]
-
         Simultaneous one-level affine substitution; right sides are not recursively substituted.
 
-        LinExpr.substitute(mapping, *, memory_mb=128, disk_mb=None)
-
-        When to use: Simultaneous one-level affine substitution; right sides are not recursively substituted.
-
-        Inputs: Exact finite scalars and compatible snapshot identities.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: Expression manipulation alone does not establish a valid model constraint.
-
-        See also: concept.proofs, concept.exact
+        Full contract: mf.help("api.LinExpr.substitute")
         MIPFRAME HELP END
         """
         if not isinstance(mapping, Mapping):
@@ -519,21 +404,9 @@ class LinExpr:
     ):
         """
         MIPFRAME HELP BEGIN
-        LinExpr.evaluate [api.LinExpr.evaluate]
-
         Evaluate an affine expression at exact values without checking feasibility.
 
-        LinExpr.evaluate(values, *, value='value', missing='error', memory_mb=128, disk_mb=None)
-
-        When to use: Evaluate an affine expression at exact values without checking feasibility.
-
-        Inputs: Exact finite scalars and compatible snapshot identities.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: Expression manipulation alone does not establish a valid model constraint.
-
-        See also: concept.proofs, concept.exact
+        Full contract: mf.help("api.LinExpr.evaluate")
         MIPFRAME HELP END
         """
         if missing not in ("error", "zero"):
@@ -556,21 +429,9 @@ class LinExpr:
     def formula(self, *, max_terms=12):
         """
         MIPFRAME HELP BEGIN
-        LinExpr.formula [api.LinExpr.formula]
-
         Bounded Formula display; does not verify the expression.
 
-        LinExpr.formula(*, max_terms=12)
-
-        When to use: Bounded Formula display; does not verify the expression.
-
-        Inputs: Exact finite scalars and compatible snapshot identities.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: Expression manipulation alone does not establish a valid model constraint.
-
-        See also: concept.proofs, concept.exact
+        Full contract: mf.help("api.LinExpr.formula")
         MIPFRAME HELP END
         """
         from mipframe.frame.row import Formula
@@ -591,7 +452,7 @@ class LinExpr:
             if i == max_terms:
                 parts.append(" + ..." if parts else "...")
                 break
-            name = self._owner.vars.by_id(v).name
+            name = self._owner.vars.loc[v].name
             if any(ch.isspace() or ch in '+-*/<=>"' for ch in name):
                 name = json.dumps(name, ensure_ascii=False)
             append(c, name if abs(c) == 1 else f"{abs(c)}*{name}")
@@ -608,21 +469,9 @@ class LinExpr:
     def to_spec(self):
         """
         MIPFRAME HELP BEGIN
-        LinExpr.to_spec [api.LinExpr.to_spec]
-
         Export the versioned exact expression representation.
 
-        LinExpr.to_spec()
-
-        When to use: Export the versioned exact expression representation.
-
-        Inputs: Exact finite scalars and compatible snapshot identities.
-
-        Returns: Live results require all referenced snapshots to remain open. Explicit records are detached.
-
-        Does not establish: Expression manipulation alone does not establish a valid model constraint.
-
-        See also: concept.proofs, concept.exact
+        Full contract: mf.help("api.LinExpr.to_spec")
         MIPFRAME HELP END
         """
         from mipframe.frame.executor import size, MaterializationLimitError

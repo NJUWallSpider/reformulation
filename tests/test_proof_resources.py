@@ -62,7 +62,7 @@ def test_builder_matches_scalar_conditions_directions_and_replay(model, memory):
     ]
     scalar = [model.check.linear(t, using=u, assume=a, residual="bounds", memory_mb=memory)
               for _, t, u, a in cases]
-    with model.check.batch("linear", residual="bounds", memory_mb=memory) as builder:
+    with model.check.linear_batch(residual="bounds", memory_mb=memory) as builder:
         for key, target, using, assume in cases:
             assert builder.add(key=key, target=target, using=using, assume=assume) is builder
         batch = builder.run()
@@ -180,22 +180,22 @@ def test_builder_failure_and_cancellation_leave_sources_valid(model):
     x = model.vars.by_name("x")
     parent = model.check.linear(x <= 4, residual="bounds")
     with pytest.raises(mf.SchemaError, match="Duplicate"):
-        with model.check.batch() as b:
+        with model.check.linear_batch() as b:
             b.add(key="x", target=x <= 5, using=[parent])
             b.add(key="x", target=x <= 5, using=[parent])
     assert parent.ok
     with pytest.raises(KeyboardInterrupt):
-        with model.check.batch() as b:
+        with model.check.linear_batch() as b:
             b.add(key="x", target=x <= 5, using=[parent])
             raise KeyboardInterrupt()
     assert parent.ok
     with pytest.raises(mf.InvalidCertificateError, match="Equality"):
-        with model.check.batch() as b:
+        with model.check.linear_batch() as b:
             b.add(key="valid", target=x <= 5, using=[parent])
             b.add(key="invalid", target=x.eq(4), using=[x.ub_claim])
             b.run()
     assert parent.ok
-    with model.check.batch() as empty:
+    with model.check.linear_batch() as empty:
         assert empty.run().ok
 
 
@@ -251,7 +251,7 @@ def test_constructor_cleanup_preserves_original_error(model, monkeypatch):
         patch.setattr(executor, "TemporaryDirectory", directory)
         patch.setattr(sqlite3, "connect", lambda *a, **kw: (_ for _ in ()).throw(sqlite3.OperationalError("injected connect failure")))
         with pytest.raises(sqlite3.OperationalError, match="injected connect failure") as caught:
-            executor.Context((model,))
+            executor.Context((model,)).execute("SELECT 1")
         assert "cleanup" in " ".join(caught.value.__notes__)
     for temp in created:
         lifecycle._pending.pop(temp.name, None)

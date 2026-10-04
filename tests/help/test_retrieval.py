@@ -67,9 +67,9 @@ AGENT_INTENTS = [
     ('case discharge', 'api.Checker.cases'),
     ('finite domain case discharge', 'api.Checker.cases'),
     ('binary case proof', 'api.Checker.cases'),
-    ('batch linear proof', 'api.Checker.batch'),
-    ('many linear certificates', 'api.Checker.batch'),
-    ('batch checks with assumptions', 'api.Checker.batch'),
+    ('batch linear proof', 'api.Checker.linear_batch'),
+    ('many linear certificates', 'api.Checker.linear_batch'),
+    ('batch checks with assumptions', 'api.Checker.linear_batch'),
     ('Frame native batch certificates', 'api.Checker.linear_many'),
     ('tighten big M', 'concept.big-m'),
     ('claim construction', 'api.Claim'),
@@ -84,8 +84,8 @@ AGENT_INTENTS = [
 
 # Not registered aliases: exercise the compiled index rather than exact lookup.
 AGENT_PARAPHRASES = [
-    ('how can I check many linear certificates at once', 'api.Checker.batch'),
-    ('build a batch of linear proof certificates', 'api.Checker.batch'),
+    ('how can I check many linear certificates at once', 'api.Checker.linear_batch'),
+    ('build a batch of linear proof certificates', 'api.Checker.linear_batch'),
     ('how to tighten a big-M coefficient', 'concept.big-m'),
     ('construct an affine inequality claim', 'api.Claim'),
     ('verify a fractional LP solution', 'limitation.fractional-point'),

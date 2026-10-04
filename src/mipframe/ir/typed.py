@@ -43,14 +43,14 @@ class TypedPattern(tuple):
 
 
 @dataclass(frozen=True)
-class TypedSignature:
+class _TypedKey:
     """
     MIPFRAME HELP BEGIN
-    TypedSignature [api.TypedSignature]
+    _TypedKey [api._TypedKey]
 
     Single-row pattern with variable-domain observations.
 
-    TypedSignature [type]
+    _TypedKey [type]
 
     When to use: Single-row pattern with variable-domain observations.
 
@@ -121,4 +121,4 @@ def typed_signature(owner, row_id):
     for (coef_id, kind, bounds), count in counts.items():
         values[m.num(coef_id), kind, bounds] += count
     sense, pairs, lo, hi, scale = _canonical_form(m, row_id, values)
-    return TypedSignature(sense, stop - start, TypedPattern(pairs), lo, hi, scale=scale)
+    return _TypedKey(sense, stop - start, TypedPattern(pairs), lo, hi, scale=scale)

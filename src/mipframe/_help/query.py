@@ -42,7 +42,7 @@ def object_topic(obj, data):
         names = {'mipframe.ops':'capability.ops','mipframe.ops.sets':'capability.ops',
                  'mipframe.ops.graph':'capability.ops','mipframe.alg':'capability.alg',
                  'mipframe.alg.graph':'capability.alg','mipframe.alg.integer':'capability.alg',
-                 'mipframe.audit':'capability.audit'}
+                 'mipframe.audit':'capability.audit','mipframe.analysis':'api.analysis'}
         if obj.__name__ in names:
             return names[obj.__name__]
         raise TypeError('Module is not a registered public help namespace')

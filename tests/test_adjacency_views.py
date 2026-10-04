@@ -33,19 +33,19 @@ def test_incidence_navigation_families_and_readonly_sets(model, monkeypatch, tmp
         if len(x.rows) == 1
         else x.rows.family_membership().head(1).one().family
     )
-    selected = x.rows.family(label)
+    selected = x.rows.families().where(id=label.split('@')[0]).rows
     assert len(selected) > 0
     assert set(selected.ids) <= set(x.rows.ids)
-    with pytest.raises(ValueError):
-        x.rows.family("V0")
+    with pytest.raises(KeyError):
+        model.family("V0").rows
 
-    members = model.var_families.relations["members"]
+    members = model.var_families.related("members")
     label = members.loc[model.vars.by_name("x0").id].family
-    selected = model.vars.family(label)
+    selected = model.family(label).vars
     assert set(selected.column("name")) == {"x0", "x1"}
     patterns = selected.pattern_counts()
     assert list(patterns.column("count")) == [2]
-    assert set(patterns.relations["members"].column("var").ids) == set(selected.ids)
+    assert set(patterns.related("members").column("var").ids) == set(selected.ids)
     assert len(patterns.relations["items"]) > 0
     row = model.rows.by_name("b0")
     assert {t.var.name: t.coef for t in row.terms} == {
@@ -80,7 +80,7 @@ def test_views_check_closed_model(model):
     for action in (
         lambda: rows.iloc[0],
         lambda: rows.head(),
-        lambda: rows.family("F0"),
+        lambda: rows.families(),
         lambda: terms.head(),
         lambda: iter(terms),
     ):

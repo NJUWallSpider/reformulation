@@ -42,7 +42,7 @@ def test_diagnostic_items_and_details_have_separate_counts(m):
     assert report.evidence['checks'].count()==2
     assert report.evidence['details'].count()==5
     with pytest.raises(mf.ValidationError):report.require()
-    stored=m._diagnostic_store.db.execute('SELECT count(*) FROM diagnostic_records').fetchone()[0]
+    stored=m._diagnostic_store.record_count
     with pytest.raises(ValueError,match='Unknown diagnostic status'):
         diagnostic(m,[dict(status='SUCCESS')],kind='test')
     def broken():
@@ -50,13 +50,15 @@ def test_diagnostic_items_and_details_have_separate_counts(m):
         raise RuntimeError('detail failure')
     with pytest.raises(RuntimeError,match='detail failure'):
         diagnostic(m,[dict(status='REFUTED',diagnostics=broken())],kind='test')
-    assert m._diagnostic_store.db.execute('SELECT count(*) FROM diagnostic_records').fetchone()[0]==stored
+    assert m._diagnostic_store.record_count==stored
     assert report.violations.count()==3
 
 
 def test_failed_indexed_selection_counts_items_and_replays(m):
     indexed=m.indexed();selected=indexed.operators.head(1)
-    indexed._store.db.execute('UPDATE kernel SET value=CAST(value AS INT)+1 WHERE o=?',(selected.one().id,))
+    store=indexed._store;key=selected.one().id
+    old=store.kernels[key]
+    store.kernels[key]=store.make_table(old.fields,((p,k,j,v+1) for p,k,j,v in old.records()),numeric=('value',))
     report=indexed.verify(selected)
     assert report.status=='REFUTED'
     assert report.summary['checked']==report.summary['failures']==1
@@ -67,10 +69,11 @@ def test_failed_indexed_selection_counts_items_and_replays(m):
 
 
 def test_model_close_releases_every_store_after_directory_failure(m):
+    m.row_families
     base=m.model
     refinement=m._refinement_store
     temp=refinement.temp
-    imported=m._temporary
+    imported=m.model.data.temporary
     with patch.object(temp,'cleanup',side_effect=OSError(24,'injected directory failure')):
         with pytest.raises(OSError,match='injected directory failure'):
             m.close()
@@ -84,6 +87,7 @@ def test_model_close_releases_every_store_after_directory_failure(m):
 
 
 def test_close_preserves_active_exception(m):
+    m.row_families
     temp=m._refinement_store.temp
     with patch.object(temp,'cleanup',side_effect=OSError('cleanup failure')):
         with pytest.raises(RuntimeError,match='original') as caught:

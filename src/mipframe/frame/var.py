@@ -163,7 +163,7 @@ class Var(Entity):
         MIPFRAME HELP END
         """
         m = self._owner.model
-        return int(m.col_ptr[self.id + 1] - m.col_ptr[self.id])
+        return m.degree("var",self.id)
 
     @property
     def rows(self):

@@ -15,10 +15,10 @@ proof.require()
 proof.evidence
 with m.check.linear_batch(residual="bounds") as batch:
     batch.add(key="bound", target=target, using=[r.ub_claim])
-    batch.add(key="conditional", target=x <= 0, assume=[x.eq(0)])
     proofs = batch.run()
 proofs.require()
-assert proofs.for_target("conditional").scope["assumptions"] == 1
+conditional = m.check.linear(x <= 0, assume=[x.eq(0)], residual="bounds")
+assert conditional.scope["assumptions"] == 1
 ```
 
 ## What it establishes

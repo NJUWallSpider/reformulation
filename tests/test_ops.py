@@ -130,7 +130,7 @@ def test_validation_reports_and_budgets():
     assert e.value.count == 1
     assert len(mf.ops.sets.pairs(s, relation="equal", max_output_rows=0)) == 0
     with pytest.raises(mf.DiskBudgetExceeded):
-        mf.ops.sets.pairs(s, disk_mb=0.001)
+        mf.ops.sets.pairs(membership({0:set(range(5000))}), memory_mb=0.015625, disk_mb=0.001)
     for bad in [True, -1, 0.1]:
         with pytest.raises((TypeError, ValueError)):
             mf.ops.sets.pairs(s, max_output_rows=bad)
@@ -139,10 +139,10 @@ def test_validation_reports_and_budgets():
 
 
 def test_exact_classes_collisions_multisets_and_empty(monkeypatch):
-    import mipframe.ops.grouping as impl
+    import mipframe.execution.sets as impl
 
     monkeypatch.setattr(
-        impl, "fingerprint", lambda rows: (sum(1 for _ in rows), b"collision")
+        impl, "fingerprint", lambda rows: 0
     )
     s = membership({0: {1, 2}, 1: {2, 1}, 2: {1, 3}})
     assert rec(mf.ops.sets.equal_groups(s, sets=domain(range(5)))) == [
@@ -441,7 +441,7 @@ def test_disk_paths_long_chains_and_output_limits():
     e = edges((i, i + 1) for i in range(n - 1))
     d = domain(range(n + 1))
     a = mf.ops.graph.components(e, vertices=d, memory_mb=0.015625)
-    assert "paged union-find" in str(a.explain())
+    assert "spill backend: mmap" in str(a.explain())
     assert list(a.column("component")) == [0] * n + [n]
     reach = mf.ops.graph.reachability(
         e, sources=domain([0]), targets=domain([n - 1]), memory_mb=0.015625
@@ -461,25 +461,18 @@ def test_disk_paths_long_chains_and_output_limits():
 
 
 def test_no_partial_publish_on_interrupt(monkeypatch):
-    from mipframe.store.algorithm_store import AlgorithmStore
-    import pathlib
-
-    paths = []
-    original = AlgorithmStore.__init__
-
-    def init(self, *a, **kw):
-        original(self, *a, **kw)
-        paths.append(pathlib.Path(self.temp.name))
-
-    monkeypatch.setattr(AlgorithmStore, "__init__", init)
-    import mipframe.ops.grouping as grouping
-
-    def stop(rows):
-        raise KeyboardInterrupt
-
-    monkeypatch.setattr(grouping, "fingerprint", stop)
+    from mipframe.execution.algorithm import ArrayAlgorithmStore
+    from mipframe.data.runtime import WorkContext
+    from pathlib import Path
+    paths=[];original=WorkContext.close
+    def close(self):
+        if self.temp is not None:paths.append(Path(self.temp.name))
+        original(self)
+    def stop(*a,**kw):raise KeyboardInterrupt
+    monkeypatch.setattr(WorkContext,'close',close)
+    monkeypatch.setattr(ArrayAlgorithmStore,'publish',stop)
     with pytest.raises(KeyboardInterrupt):
-        mf.ops.sets.equal_groups(membership({1: {1}}))
+        mf.ops.sets.equal_groups(membership({1:set(range(5000))}),memory_mb=0.015625)
     assert paths and all(not p.exists() for p in paths)
 
 
@@ -504,8 +497,8 @@ def test_random_dag_reduction_oracle_and_scc_fallback():
     a = mf.ops.graph.reachability(e, memory_mb=128, include_self=True)
     b = mf.ops.graph.reachability(e, memory_mb=0.015625, include_self=True)
     assert rec(a) == rec(b)
-    assert "paged visited" in str(b.explain())
-    assert "bitset closure" in str(a.explain())
+    assert "spill backend: mmap" in str(b.explain())
+    assert "spill backend: mmap" in str(a.explain())
 
 
 def test_composition_closure_resource_conflicts_and_network():
@@ -594,35 +587,22 @@ def test_graph_specs_all_operators():
 
 
 def test_materialized_sources_share_cache_allowance(monkeypatch):
-    from mipframe.store.algorithm_store import AlgorithmStore
-
-    f = membership({0: {1}, 1: {1, 2}})
-    ctx = f._query.resource
-    original = ctx.rows
-    cache_limits = []
-
-    def rows(*args, **kwargs):
-        cache_limits.append(ctx.db.execute("PRAGMA cache_size").fetchone()[0])
-        yield from original(*args, **kwargs)
-
-    monkeypatch.setattr(ctx, "rows", rows)
-    mf.ops.sets.pairs(f, memory_mb=0.015625)
-    assert cache_limits and all(-x <= 2 for x in cache_limits)
+    from mipframe.frame.executor import Context
+    f=membership({0:{1},1:{1,2}})
+    monkeypatch.setattr(__import__('sqlite3'),'connect',lambda *a,**kw:pytest.fail('numeric SQL'))
+    result=mf.ops.sets.pairs(f,memory_mb=0.015625)
+    assert [(r.left,r.right,r.intersection) for r in result]==[(0,1,1)]
+    assert f._query.resource.work.ledger.peak_resident <= f._query.resource.memory
 
 
 def test_unlinked_sorter_scratch_is_accounted():
-    from tempfile import TemporaryFile
-    from mipframe.store.algorithm_store import AlgorithmStore
-
-    ctx = AlgorithmStore(disk_mb=0.1)
-    try:
-        with TemporaryFile() as scratch:
-            scratch.write(b"x" * 200000)
-            scratch.flush()
-            with pytest.raises(mf.DiskBudgetExceeded):
-                ctx.disk_check()
-    finally:
-        ctx.close()
+    from mipframe.data.runtime import WorkContext,DiskReservation
+    with WorkContext(memory_mb=.015625,disk_mb=.1) as work:
+        reservation=DiskReservation(work)
+        with pytest.raises(mf.DiskBudgetExceeded):reservation.add(200000)
+        assert work.disk==0
+        with pytest.raises(mf.DiskBudgetExceeded):work.array(200000,'u1',disk=True)
+        assert work.disk==0
 
 
 def test_matrix_extreme_exact_values(model):
@@ -655,5 +635,5 @@ def test_reused_selection_never_opens_an_extra_execution_budget(model, monkeypat
     monkeypatch.setattr(Context, "__init__", init)
     result = mf.ops.sets.equal_groups(terms, memory_mb=0.015625)
     assert len(result) == 3
-    assert len(instances) == 1
+    assert len({id(ctx.work.ledger) for ctx in instances}) == 1
     assert instances[0].memory == 16384

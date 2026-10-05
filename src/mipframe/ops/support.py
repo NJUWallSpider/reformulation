@@ -51,35 +51,34 @@ def set_operation(left, right, operation):
         raise SchemaError("Set operations require the same snapshot")
     axis = left._entity_axis
 
-    def scan(fields, ctx):
-        a, _ = ctx.stage(left, (axis,))
-        if operation in ('intersection', 'difference'):
-            from mipframe.store.incidence import Target
-            from itertools import islice
-            import numpy as np
-
-            selected = Target(left._owner, axis, right)
-            if selected.colors is not None or isinstance(selected.ids, range):
-                # A global family already has a bounded integer membership
-                # lookup. Do not stage all 190,000 members to test 200 IDs.
-                cursor = iter(ctx.execute(f'SELECT c0 FROM {a} ORDER BY c0'))
-                block = max(1, ctx.memory // 256)
-                while batch := list(islice(cursor, block)):
-                    ids = np.array([i for (i,) in batch], dtype=np.int64)
-                    mask = selected.mask(ids)
-                    if operation == 'difference':
-                        mask = ~mask
-                    for ident in ids[mask]:
-                        yield {axis: int(ident)} if fields else {}
-                return
-        b, _ = ctx.stage(right, (axis,))
-        op = {"union": "UNION", "intersection": "INTERSECT", "difference": "EXCEPT"}[
-            operation
-        ]
-        for (ident,) in ctx.execute(
-            f"SELECT c0 FROM {a} {op} SELECT c0 FROM {b} ORDER BY c0"
-        ):
-            yield {axis: ident} if fields else {}
+    def scan_batches(fields,ctx):
+        import numpy as np
+        from mipframe.data.batch import Columns
+        from mipframe.frame.array_source import read_columns
+        from mipframe.data.ids import set_ids,bounded_ids
+        from mipframe.store.incidence import Target
+        a=read_columns(left,(axis,),ctx).columns[axis]
+        selected=Target(left._owner,axis,right)
+        if operation in ('intersection','difference') and (selected.colors is not None or isinstance(selected.ids,range)):
+            ids=bounded_ids(a,ctx.work);block=max(1,min(8192,ctx.memory//256,ctx.work.available//128))
+            for start in range(0,len(ids),block):
+                with ctx.work.reserve(block*64):
+                    values=ids[start:start+block]
+                    if selected.colors is not None:mask=selected.colors[values]==selected.color
+                    else:
+                        index=selected.ids
+                        mask=np.zeros(len(values),dtype=bool) if not len(index) else (values>=min(index[0],index[-1]))&(values<=max(index[0],index[-1]))&((values-min(index[0],index[-1]))%abs(index.step)==0)
+                    values=values[mask if operation=='intersection' else ~mask]
+                    if len(values):yield Columns({axis:values} if axis in fields else {},len(values))
+            return
+        b=read_columns(right,(axis,),ctx).columns[axis]
+        ids=set_ids(a,b,operation,ctx.work)
+        block=max(1,min(8192,ctx.memory//128))
+        for start in range(0,len(ids),block):
+            selected=ids[start:start+block]
+            yield Columns({axis:selected} if axis in fields else {},len(selected))
+    def scan(fields,ctx):
+        for batch in scan_batches(fields,ctx):yield from batch.records(fields)
 
     result = Frame(
         {axis: left.schema[axis]},
@@ -87,6 +86,7 @@ def set_operation(left, right, operation):
         models=merge_models(left, right),
         source=scan,
     )
+    result._column_scan=scan_batches
     result._query.spec = {
         "kind": "entity_set",
         "left": left,

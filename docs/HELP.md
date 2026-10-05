@@ -47,13 +47,15 @@ network connection or writable installation directory is required.
 - [Copyable Skill](agent/SKILL.md): the short workflow and mathematical boundaries.
   It is not automatically installed or added to global agent configuration.
 - [API contracts](agent/API.md): explicit registered paths and real signatures.
+- [Complete first example](agent/recipes/quickstart.md): create a small model,
+  select rows, prove a deletion, commit and export audited MPS using temporary files.
 - [Concepts and limitations](agent/CONCEPTS.md): identity, exactness, scope and errors.
 - [Coordinates](agent/recipes/coordinates.md), [containment](agent/recipes/support.md),
   [directed incidence](agent/recipes/network.md), [conflicts](agent/recipes/conflicts.md),
   [odd cycles](agent/recipes/odd-cycle.md), [closure unions](agent/recipes/closure.md),
   [verified edits](agent/recipes/edits.md).
 
-All 16 recipes state their required inputs. Their exact printed code is executed
+All recipes state their required inputs. Their exact printed code is executed
 against independent small fixtures in `tests/help/conftest.py`. These fixtures are
 development tests, not implicit model assumptions. Help only contains generic
 patterns; no external case narratives, historical scripts or model files ship in
@@ -78,7 +80,8 @@ the package. `fractional point feasibility` explains exact activity/bound checks
 and why `check.solution` is an integer-model checker.
 
 General batch-proof queries lead to `Checker.linear_batch`, whose builder accepts scalar
-Claims, sources and per-target assumptions. `Frame native batch certificates`
+Claims, sources and one shared assumption scope per batch. Different branch assumptions
+require separate scalar checks or batches. `Frame native batch certificates`
 leads to `Checker.linear_many` for inputs already represented as three Frames.
 
 JSON includes package/documentation versions, query/match mode, signatures,
@@ -99,6 +102,13 @@ Edit `_help/content.py`, `_help/recipes.py` and `_help/skill.md`. Add a binding 
 the explicit registry when adding a public API. Do not infer the API surface from
 all non-private names. Update the frozen intent evaluation when deliberately
 changing a user-facing capability, and review the mathematical limitations.
+
+Model, Checker and MatrixAccessor receiver aliases are added by `api()` at
+registration time. Set `constructor=True` only for public value constructors
+such as Targets and CertificateBatch; live result handles retain type-only help.
+Compiled and runtime help share signature rendering and constructor drift checks.
+The Skill embeds the quickstart recipe from `_help/recipes.py` during generation,
+so the displayed example is the same code exercised by the recipe tests.
 
 ```sh
 python scripts/build_help.py

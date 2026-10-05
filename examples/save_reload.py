@@ -16,7 +16,7 @@ def main():
             assert (restored.shape, restored.nnz, restored.objective.sense, restored.objective.constant) == expected
             print("Reloaded:", restored)
             print("Verification:", restored.verify().status)
-            restored.write_lp(directory / "exported.lp")
+            restored.write(directory / "exported.lp")
         with mf.read(directory / "exported.lp") as reread:
             assert (reread.shape, reread.nnz, reread.objective.sense, reread.objective.constant) == expected
             print("LP round trip:", reread.verify().status)

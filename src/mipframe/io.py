@@ -12,15 +12,20 @@ from mipframe.store.numbers import MIPFrameError
 from mipframe.store.model_store import build_numerical
 
 
+from mipframe.data.runtime import resource_scope
+
+
+@resource_scope
 def read(
     path: str | os.PathLike,
     *,
     format: str | None = None,
     memory_mb: float = 128,
+    disk_mb: float | None = None,
     **format_options,
 ) -> "Model":
     """
-    Read a numerical model and prepare its IR and default indexed results.
+    Read a numerical model and cache its cheap numerical scan.
 
     MIPFRAME HELP BEGIN
     Import an LP/MPS file into a new independent exact snapshot.
@@ -44,7 +49,7 @@ def read(
     store = None
     try:
         store = build_numerical(
-            source, Path(temp.name) / "model", memory_mb, format=fmt, **format_options
+            source, Path(temp.name) / "model", memory_mb, format=fmt,disk_mb=disk_mb, **format_options
         )
         # Ownership (including failure cleanup) transfers before eager IR work.
         owned_store, store = store, None
@@ -56,57 +61,26 @@ def read(
         raise
 
 
-def load(directory: str | os.PathLike) -> "Model":
+@resource_scope
+def load(directory: str | os.PathLike, *, memory_mb=128,disk_mb=None) -> "Model":
     """
-    Load a native model, restoring indexed results or computing them if absent.
+    Load validated numerical content and cache its scan; analyses restore lazily.
 
     MIPFRAME HELP BEGIN
-    Load native v3 with retained uid/version and validated saved analyses.
+    Load validated native v7 numerical content and a cheap scan; saved analyses restore on explicit access.
 
     Full contract: mf.help("api.load")
     MIPFRAME HELP END
     """
     from mipframe.model import Model
 
-    return Model(directory)
+    return Model(directory,memory_mb=memory_mb,disk_mb=disk_mb)
 
 
-def save(model: "Model", directory: str | os.PathLike) -> Path:
-    source = model.model.path
-    target = Path(directory).absolute()
-    owned_root = Path(model._temporary.name) if model._temporary is not None else source
-    if target.resolve().is_relative_to(owned_root.resolve()):
-        raise MIPFrameError(
-            "Save outside the source model directory and its managed temporary workspace"
-        )
-    if target.exists() or target.is_symlink():
-        raise FileExistsError(f"Refusing to overwrite {target}")
-    target.parent.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(prefix=".mipframe-save-", dir=target.parent) as staging:
-        dest = Path(staging) / "model"
-        dest.mkdir()
-        artifacts = set(model.model.manifest["base_sha256"]) | {
-            "manifest.json", "refinement.sqlite", "indexing.sqlite",
-        }
-        if "edit_artifact" in model.model.manifest:
-            artifacts.add("lineage.sqlite")
-        for path in source.iterdir():
-            if path.name not in artifacts:
-                continue
-            if not path.is_file() or path.name.endswith(("-wal", "-shm", "-journal")):
-                continue
-            if path.suffix == ".sqlite" and path.name not in ("metadata.sqlite", "lineage.sqlite"):
-                with closing(
-                    sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
-                ) as src:
-                    with closing(sqlite3.connect(dest / path.name)) as dst:
-                        src.backup(dst)
-            else:
-                shutil.copy2(path, dest / path.name)
-        if target.exists() or target.is_symlink():
-            raise FileExistsError(f"Refusing to overwrite {target}")
-        dest.rename(target)
-    return target
+@resource_scope
+def save(model: "Model", directory: str | os.PathLike, *, memory_mb=128,disk_mb=None) -> Path:
+    from mipframe.store.native7 import save as save_native
+    return save_native(model, directory)
 
 
 from typing import TYPE_CHECKING

@@ -35,7 +35,7 @@ def encode_source(frame, node):
         ids = frame._index
         if isinstance(ids, PlanIDs):
             return node(ids.frame)
-        spec['ids'] = {'range':[ids.start,ids.stop,ids.step]} if isinstance(ids,range) else list(map(int,ids))
+        spec['ids'] = {'range':[ids.start,ids.stop,ids.step]} if isinstance(ids,range) else ids
     elif kind == 'terms':
         spec.update(rows=frame._rows, vars=frame._vars)
     elif kind == 'relation':
@@ -107,6 +107,7 @@ def algorithm_relation(n, build, models, relations):
 @source('indexed_directory')
 def indexed_directory(n, build, models, relations):
     model = owner(n,models)
+    model._restore_indexed()
     result = getattr(model,'_indexed_results',{}).get(n['run'])
     if result is None:raise SchemaError('Saved indexed run is not available')
     if n['collection'] not in ('tensors','operators','partitions','evidence'):
@@ -114,7 +115,16 @@ def indexed_directory(n, build, models, relations):
     return result._directory(n['collection'])
 
 
-@source('indexed_relation', 'family_relation')
+@source('scan_directory')
+def scan_directory(n, build, models, relations):
+    model = owner(n,models)
+    if n['directory']=='row_shapes': return model.ir.row_shapes()
+    if n['directory'] in ('names_row','names_var'):
+        return model.ir.name_templates(n['directory'].removeprefix('names_'))
+    raise SchemaError('Invalid scan directory')
+
+
+@source('indexed_relation', 'family_relation', 'scan_relation')
 def related(n, build, models, relations):
     result = build(n['source'])
     if n['kind']=='family_relation' and ('bases' in n or 'numeric_filters' in n):

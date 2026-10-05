@@ -355,14 +355,14 @@ def test_time_stops_atomic_object_and_cleanup(monkeypatch):
 
     def init(self, *a, **kw):
         original(self, *a, **kw)
-        contexts.append((self, pathlib.Path(self.temp.name)))
+        contexts.append(self)
 
     monkeypatch.setattr(store.SearchStore, "__init__", init)
     # Fail during input preparation: this is not a successful empty search.
     monkeypatch.setattr(store, "monotonic", lambda: 0 if not contexts else 2)
     with pytest.raises(mf.SearchBudgetExceeded):
         mf.alg.graph.clique_candidates(edges([(0, 1)]), time_limit=1)
-    assert not contexts[-1][1].exists()
+    assert contexts[-1].work.closed and contexts[-1].work.temp is None
     monkeypatch.setattr(store, "monotonic", lambda: 0)
     original_add = store.Objects._add
 
@@ -386,10 +386,10 @@ def test_time_stops_atomic_object_and_cleanup(monkeypatch):
     monkeypatch.setattr(store.SearchStore, "tick", cancel)
     with pytest.raises(KeyboardInterrupt):
         mf.alg.graph.maximal_cliques(edges([(0, 1)]))
-    assert not contexts[-1][1].exists()
+    assert contexts[-1].work.closed and contexts[-1].work.temp is None
     with pytest.raises(mf.DiskBudgetExceeded):
-        mf.alg.graph.clique_candidates(edges([(0, 1)]), disk_mb=0.001)
-    assert not contexts[-1][1].exists()
+        mf.alg.graph.clique_candidates(edges((i,i+1) for i in range(2000)), memory_mb=.015625,disk_mb=0.001)
+    assert contexts[-1].work.closed and contexts[-1].work.temp is None
 
 
 def test_long_directed_cycle_uses_paged_nonrecursive_stack():
@@ -511,34 +511,20 @@ def test_isomorphism_random_oracle_and_all_specs():
     assert restored.to_records() == r.to_records()
 
 
-def test_candidate_clock_inside_sql_preserves_previous_objects(monkeypatch):
+def test_candidate_clock_during_array_search_preserves_previous_objects(monkeypatch):
     import mipframe.store.search_store as store
-
-    armed, expired = False, False
-    monkeypatch.setattr(store, "monotonic", lambda: 2 if expired else 0)
-    progress, add = store.SearchStore._progress, store.Objects.add
-
-    def callback(self):
+    from mipframe.frame.executor import Context
+    expired=False
+    monkeypatch.setattr(store,'monotonic',lambda:2 if expired else 0)
+    monkeypatch.setattr(__import__('sqlite3'),'connect',lambda *a,**kw:pytest.fail('numeric SQL'))
+    original=store.Objects.add
+    def after_first(self,sequence):
         nonlocal expired
-        if armed:
-            expired = True
-        return progress(self)
-
-    def after_first_object(self, sequence):
-        nonlocal armed
-        add(self, sequence)
-        armed = True
-        # Expire inside a write, which SQLite must finish without a whole-DB rollback.
-        table = self.ctx.raw_table("x INTEGER")
-        self.ctx.execute(
-            f"WITH RECURSIVE n(x) AS (VALUES(0) UNION ALL SELECT x+1 FROM n WHERE x<2000) INSERT INTO {table} SELECT x FROM n"
-        )
-
-    monkeypatch.setattr(store.SearchStore, "_progress", callback)
-    monkeypatch.setattr(store.Objects, "add", after_first_object)
-    r = mf.alg.graph.clique_candidates(edges([(0, 1), (2, 3)]), time_limit=1)
-    assert objects(r, "clique") == [(0, 1)]
-    assert r.relations["search"].one().stop_reason == "time_limit"
+        original(self,sequence);expired=True
+    monkeypatch.setattr(store.Objects,'add',after_first)
+    r=mf.alg.graph.clique_candidates(edges([(0,1),(2,3)]),time_limit=1)
+    assert objects(r,'clique')==[(0,1)]
+    assert r.relations['search'].one().stop_reason=='time_limit'
 
 
 def test_search_scope_provenance_survives_ops():

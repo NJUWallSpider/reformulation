@@ -17,348 +17,140 @@ from mipframe.frame.materialized import stored_frame
 
 def report(ctx, rows, schema, summary, *, relations=None):
     from mipframe.check.report import Report
-
-    table = ctx.table(schema)
-    ctx.append(table, schema, rows)
-    total = ctx.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
-    violations = stored_frame(ctx, table, schema, relations=relations)
-    return Report(
-        ctx, total == 0, dict(summary, violations=total), violations
-    )
+    from mipframe.data.relations import build
+    table=build(ctx.work,schema,rows)
+    violations=stored_frame(ctx,table,schema,relations=relations)
+    return Report(ctx,len(table)==0,dict(summary,violations=len(table)),violations)
 
 
-def join_failure(frame, ctx, lt, ls, rt, rs, pairs, card, require, match):
-    from mipframe.check.report import CardinalityError
-
-    schema = {
-        "side": DType("str"),
-        "reason": DType("str"),
-        "key": DType("str"),
-        "count": DType("int"),
-    }
-
-    def rows():
-        for side, table, s, keys, unique in [
-            ("left", lt, ls, tuple(pairs), card in ("1:1", "1:m")),
-            ("right", rt, rs, tuple(pairs.values()), card in ("1:1", "m:1")),
-        ]:
-            names = tuple(s)
-            columns = ",".join(f"c{names.index(n)}" for n in keys)
-            if unique:
-                for values in ctx.execute(
-                    f"SELECT {columns},count(*) FROM {table} GROUP BY {columns} HAVING count(*)>1"
-                ):
-                    yield dict(
-                        side=side,
-                        reason="duplicate key",
-                        key=json.dumps(values[:-1]),
-                        count=values[-1],
-                    )
-            if require in (side, "both"):
-                alias, other, oa = ("l", rt, "r") if side == "left" else ("r", lt, "l")
-                selected = ",".join(f"{alias}.c{names.index(n)}" for n in keys)
-                for values in ctx.execute(
-                    f"SELECT {selected} FROM {table} {alias} WHERE NOT EXISTS(SELECT 1 FROM {other} {oa} WHERE {match}) ORDER BY {alias}.ordinal"
-                ):
-                    yield dict(
-                        side=side, reason="unmatched", key=json.dumps(values), count=1
-                    )
-
-    checked = report(
-        ctx,
-        rows(),
-        schema,
-        dict(
-            operation="join",
-            scope="full declared inputs",
-            cardinality=card,
-            require=require,
-        ),
-        relations={"left": frame._parents[0], "right": frame._parents[1]},
-    )
-    checked._recipe = dict(kind="execution", frame_object=frame)
-    return CardinalityError("Join cardinality or match requirement failed", checked)
-
-
-def project(source, bindings, *, memory_mb=128):
+def project(source,bindings,*,memory_mb=128,disk_mb=None):
+    from mipframe.core.resources import resource_limits
+    resource_limits(memory_mb,disk_mb)
     from mipframe.store.incidence import Target
-    from mipframe.store.query_store import QueryStore
-    from mipframe.store.query_store import memory_bytes
-    from mipframe.check.report import CardinalityError
-    from mipframe.check.report import Report
-    from mipframe.frame.adapters import sql_frame
-
-    memory_bytes(memory_mb)
-    if not bindings:
-        raise ValueError("Specify at least one projection column")
-    axis = source._entity_axis
-    opposite = "var" if axis == "row" else "row"
-    reserved = {"source", "source_id", axis, "to_record"}
-    if any(
-        not n.isidentifier() or n.startswith("_") or n in reserved for n in bindings
-    ):
-        raise SchemaError(
-            "Projection columns must be distinct public names without identity/method conflicts"
-        )
-    targets = {
-        name: Target(source._owner, opposite, value).frame
-        for name, value in bindings.items()
-    }
-    schema = {
-        axis: ref_type(source._owner, axis),
-        **{n: ref_type(source._owner, opposite) for n in targets},
-    }
-    state = {}
-
+    from mipframe.check.report import CardinalityError,Report
+    from mipframe.data.relations import RelationBuilder
+    from mipframe.data.ids import IDSet
+    if not bindings:raise ValueError('Specify at least one projection column')
+    axis=source._entity_axis;opposite='var' if axis=='row' else 'row'
+    if any(not n.isidentifier() or n.startswith('_') or n in {'source','source_id',axis,'to_record'} for n in bindings):raise SchemaError('Projection columns must be distinct public names without identity/method conflicts')
+    targets={n:Target(source._owner,opposite,value).frame for n,value in bindings.items()}
+    schema={axis:ref_type(source._owner,axis),**{n:ref_type(source._owner,opposite) for n in targets}}
+    models=merge_models(source,*targets.values());state={}
     def prepare():
-        if "error" in state:
-            raise state["error"]
-        if "store" in state:
-            return
-        store = QueryStore(source._owner, memory_mb)
+        if 'error' in state:raise state['error']
+        if 'data' in state:return state['data']
+        ctx=Context(models,memory_mb,disk_mb);state['ctx']=ctx
         try:
-            prepared = {
-                n: Target(source._owner, opposite, f).prepared(store)
-                for n, f in targets.items()
-            }
-            width = len(prepared)
-            if width * 64 > store.memory // 2:
-                raise SchemaError("Projection width exceeds working-memory budget")
-            table = store.table(
-                "ordinal INTEGER PRIMARY KEY, source_id INTEGER UNIQUE,"
-                + ",".join(f"c{i} INTEGER" for i in range(width))
-            )
-            bad = store.table(
-                "ordinal INTEGER PRIMARY KEY, source_id INTEGER, column_name TEXT, count INTEGER"
-            )
-            block = max(1, store.memory // max(256, 64 * width))
-            source_count = 0
-            for ident in source.ids:
-                source_count += 1
-                counts, values = [0] * width, [None] * width
-                for ids, _ in source._owner.model.sparse.blocks(axis, ident, block):
-                    for i, target in enumerate(prepared.values()):
-                        matched = ids[target.mask(ids)]
-                        counts[i] += len(matched)
-                        if len(matched):
-                            values[i] = int(matched[0])
-                for n, count in zip(prepared, counts):
-                    if count != 1:
-                        store.execute(
-                            f"INSERT INTO {bad}(source_id,column_name,count) VALUES(?,?,?)",
-                            (int(ident), n, count),
-                        )
-                store.execute(
-                    f"INSERT INTO {table} VALUES({','.join('?' for _ in range(width + 2))})",
-                    (None, int(ident), *values),
-                )
-            number = store.execute(f"SELECT count(*) FROM {bad}").fetchone()[0]
-            if number:
-                violation_schema = {
-                    "source": ref_type(source._owner, axis),
-                    "column": DType("str"),
-                    "count": DType("int"),
-                }
-                violations = sql_frame(
-                    store,
-                    f"SELECT source_id AS source,column_name AS column,count FROM {bad} ORDER BY ordinal",
-                    violation_schema,
-                    key=("source", "column"),
-                )
-                match_schema = {
-                    "source": ref_type(source._owner, axis),
-                    "column": DType("str"),
-                    "row": ref_type(source._owner, "row"),
-                    "var": ref_type(source._owner, "var"),
-                    "coef": DType("number"),
-                }
-
-                def matches(fields, ctx):
-                    m = source._owner.model
-                    for ident, name in store.execute(
-                        f"SELECT source_id,column_name FROM {bad} ORDER BY ordinal"
-                    ):
-                        target = prepared[name]
-                        for ids, positions in source._owner.model.sparse.blocks(axis, ident, block):
-                            keep = target.mask(ids)
-                            for other, pos in zip(ids[keep], positions[keep]):
-                                values = {
-                                    "source": ident,
-                                    "column": name,
-                                    "row": ident if axis == "row" else int(other),
-                                    "var": int(other) if axis == "row" else ident,
-                                }
-                                if "coef" in fields:
-                                    values["coef"] = m.num(int(m.coeff_id[pos]))
-                                yield {n: values[n] for n in fields}
-
-                match_frame = Frame(
-                    match_schema,
-                    models=merge_models(source, *targets.values()),
-                    source=matches,
-                )
-                match_frame._query.resource = store
-                violations._relations = __import__("types").MappingProxyType(
-                    {"matches": match_frame, "sources": source}
-                )
-                checked = Report(
-                    store,
-                    False,
-                    dict(
-                        operation="exactly_one",
-                        scope="full declared source selection",
-                        checked_sources=source_count,
-                        violations=number,
-                    ),
-                    violations,
-                )
-                checked._recipe = dict(kind="execution", frame_object=result)
-                error = CardinalityError(
-                    f"{number} projection cardinality violations; inspect exception.report.violations",
-                    checked,
-                )
+            import numpy as np
+            m=source._owner.model
+            selections={n:IDSet(ctx.stage(f,(opposite,))[0].columns[opposite],work=ctx.work) for n,f in targets.items()}
+            vs={'source':ref_type(source._owner,axis),'column':DType('str'),'count':DType('int')}
+            bad=RelationBuilder(ctx.work,vs)
+            block=max(1,ctx.memory//max(256,64*len(targets)))
+            ptr=m.row_ptr if axis=='row' else m.col_ptr
+            neighbors=m.col_idx if axis=='row' else m.csc_row_ids
+            if not hasattr(m,'f') and isinstance(ptr,np.ndarray) and isinstance(neighbors,np.ndarray):
+                from mipframe.data.projection import sparse_projection
+                from mipframe.data.relations import Relation
+                sources=ctx.stage(source,(axis,))[0].columns[axis]
+                columns={axis:sources};counts={}
+                for name,selected in selections.items():
+                    counts[name],columns[name]=sparse_projection(ctx.work,ptr,neighbors,sources,selected.array)
+                block=max(1,min(8192,ctx.memory//256,ctx.work.available//128))
+                with ctx.work.reserve(block*64):
+                    for begin in range(0,len(sources),block):
+                        stop=min(len(sources),begin+block);invalid=np.zeros(stop-begin,dtype=bool)
+                        for count in counts.values():invalid |= count[begin:stop]!=1
+                        for offset in np.flatnonzero(invalid):
+                            i=begin+int(offset)
+                            for name,count in counts.items():
+                                if count[i]!=1:bad.append(dict(source=int(sources[i]),column=name,count=int(count[i])))
+                for count in counts.values():ctx.work.release(count)
+                data=Relation(columns,len(sources),ctx.work)
+            else:
+                output=RelationBuilder(ctx.work,schema)
+                for rec in source._raw((axis,),ctx):
+                    ident=rec[axis];counts=dict.fromkeys(targets,0);values=dict.fromkeys(targets)
+                    for ids,_ in m.sparse.blocks(axis,int(ident),block):
+                        for raw in ids:
+                            neighbor=int(raw)
+                            for name,selected in selections.items():
+                                if neighbor in selected:counts[name]+=1;values[name]=neighbor
+                    for name in targets:
+                        if counts[name]!=1:bad.append(dict(source=ident,column=name,count=counts[name]))
+                    output.append({axis:ident,**values})
+                data=output.finish()
+            bad=bad.finish()
+            if len(bad):
+                ms={'source':ref_type(source._owner,axis),'column':DType('str'),'row':ref_type(source._owner,'row'),'var':ref_type(source._owner,'var'),'coef':DType('number')}
+                def matches(fields,execution):
+                    for rec in bad.records():
+                        ident,name=rec['source'],rec['column']
+                        for neighbors,_ in source._owner.model.sparse.blocks(axis,ident,block):
+                            for raw in neighbors:
+                                other=int(raw)
+                                if other not in selections[name]:continue
+                                row=ident if axis=='row' else other;var=other if axis=='row' else ident
+                                values=dict(source=ident,column=name,row=row,var=var)
+                                if 'coef' in fields:values['coef']=source._owner.model.coefficient(row,var)
+                                yield {n:values[n] for n in fields}
+                match_frame=Frame(ms,models=models,source=matches)
+                violations=stored_frame(ctx,bad,vs,key=('source','column'),relations={'matches':match_frame,'sources':source})
+                checked=Report(ctx,False,dict(operation='exactly_one',scope='full declared source selection',checked_sources=len(data),violations=len(bad)),violations)
+                checked._recipe=dict(kind='execution',frame_object=result)
+                error=CardinalityError(f'{len(bad)} projection cardinality violations; inspect exception.report.violations',checked)
                 from mipframe._help.diagnostics import hint
-                hint(error, "recipe.coordinates")
-                state["error"] = error
-                raise error
-            state.update(store=store, table=table)
-        except CardinalityError:
-            raise
+                hint(error,'recipe.coordinates');state['error']=error;raise error
+            state['data']=data;ctx.retained=True;result._query.resource=ctx
+            return data
         except BaseException:
-            store.close()
+            if not ctx.retained:ctx.close()
             raise
-
-    def scan(fields, ctx):
-        prepare()
-        store = state["store"]
-        table = state["table"]
-        expressions = {
-            axis: "source_id",
-            **{n: "c" + str(i) for i, n in enumerate(targets)},
-        }
-        query = f"SELECT {','.join(expressions[n] for n in fields) or '1'} FROM {table} ORDER BY ordinal"
-        for row in store.execute(query):
-            yield dict(zip(fields, row))
-
-    result = Frame(
-        schema,
-        key=(axis,),
-        models=merge_models(source, *targets.values()),
-        source=scan,
-        domains=targets,
-        relations={"sources": source},
-    )
-    result._query.spec = {"kind": "project", "source": source, "bindings": targets}
-    result._params = {"barrier": True}
+    def scan(fields,ctx):yield from prepare().records(fields)
+    result=Frame(schema,key=(axis,),models=models,source=scan,domains=targets,relations={'sources':source})
+    result._query.spec=dict(kind='project',source=source,bindings=targets);result._params={'barrier':True}
     return result
 
 
-def check(frame, kind, columns=None, *, key=None, value=None, memory_mb=None):
-    if kind not in ("unique", "product", "function"):
-        raise ValueError("Unknown check; use unique, product or function")
-
+def check(frame, kind, columns=None, *, key=None, value=None, memory_mb=None, disk_mb=None):
+    if kind not in ('unique','product','function'):raise ValueError('Unknown check; use unique, product or function')
     def names(v):
-        ns = (v,) if isinstance(v, str) else tuple(v or ())
-        if not ns or len(ns) != len(set(ns)) or not set(ns) <= set(frame.schema):
-            raise SchemaError("Check requires distinct existing columns")
+        ns=(v,) if isinstance(v,str) else tuple(v or ())
+        if not ns or len(ns)!=len(set(ns)) or not set(ns)<=set(frame.schema):raise SchemaError('Check requires distinct existing columns')
         return ns
-
-    left = names(key) if kind == "function" else names(columns)
-    right = names(value) if kind == "function" else ()
-    selected = tuple(dict.fromkeys((*left, *right)))
-    if kind == "product" and any(n not in frame.domains for n in left):
-        raise SchemaError("Product checks require declared target domains")
-    ctx = Context(frame._models, memory_mb)
+    left=names(key) if kind=='function' else names(columns)
+    right=names(value) if kind=='function' else ()
+    selected=tuple(dict.fromkeys((*left,*right)))
+    if kind=='product' and any(n not in frame.domains for n in left):raise SchemaError('Product checks require declared target domains')
+    ctx=Context(frame._models,memory_mb,disk_mb)
     try:
-        table, schema = ctx.stage(frame, selected)
-        allnames = tuple(schema)
-        cols = lambda ns: ",".join(f"c{allnames.index(n)}" for n in ns)
-        count = ctx.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
-        lcols = cols(left)
-        unique = ctx.execute(
-            f"SELECT count(*) FROM (SELECT {lcols} FROM {table} GROUP BY {lcols})"
-        ).fetchone()[0]
-        summary = dict(
-            operation=kind,
-            scope="full current Frame selection",
-            checked_records=count,
-            columns=left,
-        )
-        violation_schema = {
-            "reason": DType("str"),
-            "key": DType("str"),
-            "count": DType("int"),
-        }
-
+        table,schema=ctx.stage(frame,selected);count=len(table)
+        summary=dict(operation=kind,scope='full current Frame selection',checked_records=count,columns=left)
+        if kind=='function':
+            summary.update(key=left,value=right,uncovered_targets={n:len(frame.domains[n])-sum(1 for k,_ in table.groups((n,)) if k[0] is not None) for n in selected if n in frame.domains})
         def violations():
-            if kind == "function":
-                both = cols(selected)
-                inner = f"SELECT {both} FROM {table} GROUP BY {both}"
-                q = f"SELECT {lcols},count(*) FROM ({inner}) GROUP BY {lcols} HAVING count(*)>1"
-            else:
-                q = f"SELECT {lcols},count(*) FROM {table} GROUP BY {lcols} HAVING count(*)>1"
-            for row in ctx.execute(q):
-                yield {
-                    "reason": "function violation"
-                    if kind == "function"
-                    else "duplicate coordinate",
-                    "key": json.dumps(row[:-1]),
-                    "count": row[-1],
-                }
-            if kind == "product":
-                expected = prod(len(frame.domains[n]) for n in left)
-                # Ref domains remain authoritative after filtering and renaming.
-                foreign = 0
-                valid_schema = {n: schema[n] for n in left}
-                valid = ctx.table(valid_schema)
-                for row in ctx.rows(
-                    f"SELECT {lcols} FROM {table}", {n: schema[n] for n in left}
-                ):
-                    if any(
-                        row[n] is None or not ctx.contains(frame.domains[n], row[n])
-                        for n in left
-                    ):
-                        foreign += 1
-                    else:
-                        ctx.append(valid, valid_schema, (row,))
-                keys = ",".join("c" + str(i) for i in range(len(left)))
-                covered = ctx.execute(
-                    f"SELECT count(*) FROM (SELECT {keys} FROM {valid} GROUP BY {keys})"
-                ).fetchone()[0]
-                missing = expected - covered
-                summary.update(
-                    expected_coordinates=expected,
-                    missing_coordinates=missing,
-                    outside_domain_records=foreign,
-                )
-                if foreign:
-                    yield dict(reason="outside declared domain", key="", count=foreign)
-                if missing:
-                    yield dict(reason="missing coordinates", key="", count=missing)
-
-        if kind != "function":
-            summary.update(unique_coordinates=unique, duplicate_records=count - unique)
-        else:
-            summary.update(
-                key=left,
-                value=right,
-                uncovered_targets={
-                    n: len(frame.domains[n])
-                    - ctx.execute(
-                        f"SELECT count(DISTINCT c{allnames.index(n)}) FROM {table}"
-                    ).fetchone()[0]
-                    for n in selected
-                    if n in frame.domains
-                },
-            )
-        result = report(
-            ctx, violations(), violation_schema, summary, relations={"records": frame}
-        )
-        result._recipe = {"kind": "frame", "check": kind, "columns": columns, "key": key, "value": value, "frame_object": frame}
-        if result.ok and kind in ("unique", "product"):
-            frame._verified_unique.add(left)
+            unique=covered=foreign=0
+            for k,ids in table.groups(left):
+                unique+=1;amount=len(ids)
+                if kind=='function':
+                    from mipframe.data.relations import build
+                    with ctx.work.fork() as scratch:
+                        values=build(scratch,{n:schema[n] for n in right},table.records(right,ids))
+                        amount=sum(1 for _ in values.groups(right))
+                if amount>1:yield dict(reason='function violation' if kind=='function' else 'duplicate coordinate',key=json.dumps([pack(v,schema[n]) for n,v in zip(left,k)]),count=amount)
+                if kind=='product':
+                    if any(v is None or not ctx.contains(frame.domains[n],v) for n,v in zip(left,k)):foreign+=len(ids)
+                    else:covered+=1
+            if kind!='function':summary.update(unique_coordinates=unique,duplicate_records=count-unique)
+            if kind=='product':
+                expected=prod(len(frame.domains[n]) for n in left);missing=expected-covered
+                summary.update(expected_coordinates=expected,missing_coordinates=missing,outside_domain_records=foreign)
+                if foreign:yield dict(reason='outside declared domain',key='',count=foreign)
+                if missing:yield dict(reason='missing coordinates',key='',count=missing)
+        result=report(ctx,violations(),{'reason':DType('str'),'key':DType('str'),'count':DType('int')},summary,relations={'records':frame})
+        result._recipe=dict(kind='frame',check=kind,columns=columns,key=key,value=value,frame_object=frame)
+        if result.ok and kind in ('unique','product'):frame._verified_unique.add(left)
         return result
     except BaseException:
-        if not ctx.retained:
-            ctx.close()
+        if not ctx.retained:ctx.close()
         raise

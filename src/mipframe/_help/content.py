@@ -18,12 +18,20 @@ def topic(ident, title, summary, *, kind='concept', aliases=(), keywords=(), whe
 
 
 def api(symbol, binding, summary, *, inputs='', returns='', guarantees='',
-        non_guarantees='', failures='', example='', related=(), resources='', aliases=(), keywords=(), body=''):
-    return topic('api.' + symbol, symbol, summary, kind='api', aliases=aliases, keywords=keywords,
+        non_guarantees='', failures='', example='', related=(), resources='', aliases=(), keywords=(), body='', constructor=False):
+    receiver = ('m.check.' + symbol.split('.', 1)[1] if symbol.startswith('Checker.') else
+                'm.matrix.' + symbol.split('.', 1)[1] if symbol.startswith('MatrixAccessor.') else
+                'm.' + symbol.split('.', 1)[1] if symbol.startswith('Model.') else None)
+    if receiver and receiver not in aliases:
+        aliases = (*aliases, receiver)
+    item = topic('api.' + symbol, symbol, summary, kind='api', aliases=aliases, keywords=keywords,
                  when=summary, inputs=inputs, returns=returns, guarantees=guarantees,
                  non_guarantees=non_guarantees or 'No model change or additional mathematical conclusion is implied.',
                  failures=failures, resources=resources, example=example, related=related,
                  bindings={symbol: binding}, body=body)
+    if constructor:
+        item['constructor'] = True
+    return item
 
 
 LIVE = 'Live results require all referenced snapshots to remain open. Explicit records are detached.'
@@ -40,9 +48,10 @@ Relate: Frame.where/select/join/group_by; VarFrame.project.
 Compare: mf.ops.sets, mf.ops.graph, mf.ops.equal_groups.
 Compute: m.matrix.nnz/activity/transpose_activity; sparse MatrixView.
 Search: mf.alg.graph and mf.alg.integer; distinguish candidates from exhaustive results.
-Verify: LinExpr, Claim, m.check, Report.
-Modify: m.edit(), build(), diff(), native save, exact LP audit.
+Verify: LinExpr, Claim, m.check; ProofRef/BatchProof for implications, PointReport for points.
+Modify: m.edit(), commit() for verified changes, build() for experiments, diff(), save(), write().
 
+Run mf.help("recipe.quickstart", detail="full") for a complete temporary-file example.
 Start with mf.help("coordinates"), mf.help("support containment"),
 mf.help("linear certificate"), or mf.help("edit model").
 Use detail="full" on a topic ID to read its complete instructions.
@@ -73,8 +82,8 @@ Exported records contain detached Ref identity values. Bind them explicitly to t
 Use m.rows.loc[ref] or m.vars.loc[ref] for same-snapshot, same-axis references; selections still enforce membership.
 ref.bind(m) uses the full matching model. loc[ref.id] discards the Ref snapshot and axis checks.
 Same uid with conflicting versions is rejected. New Edit snapshots have new uid and explicit parent/lineage.
-read/load prepare default IR and indexed results synchronously. Help and repr do not start an additional discovery run.
-Only native v3 is accepted; reimport LP/MPS for older native formats.''',
+read/load prepare only a cheap numerical scan. Families, topology and indexed discovery require explicit access; help, repr and default IR exports never start them.
+Only native v7 is accepted; reimport LP/MPS for native v3/v4/v5/v6.''',
       related=('api.Ref.bind','api.Model.save','recipe.edits'))
 
 topic('concept.proofs', 'Claims, reports and proof scope', 'A Claim states a proposition; only the matching completed checker establishes its stated conclusion.',
@@ -165,9 +174,9 @@ topic('concept.report-resources', 'Report resource lifecycle',
       keywords=('report resources file descriptor exhaustion cleanup close memory batch certificates',),
       guarantees='Scalar mathematical checkers release their temporary workspace after publication and share retained evidence per live model owner. Batch targets share one store; for_target does not open another database.',
       non_guarantees='Report and LinExpr have no public close() method. Retained evidence still uses memory and disk. Unrelated queries and separately retained batches have their own storage; memory_mb is not a global process budget.',
-      body='''Use check.linear_batch() for a loop of explicit claims, sources and per-target assumptions. Use check.linear_many when the inputs already exist as Frames.
-Retaining thousands of scalar mathematical Reports does not allocate one persistent SQLite connection per Report. Releasing the last Report, Claim, evidence Frame and dependent proof for a node makes its stored rows reclaimable; free database pages can be reused.
-Small expressions use bounded exact in-memory terms; larger materialized expressions share spill storage. Temporary SQLite callbacks do not keep discarded workspaces alive; manual garbage collection is not part of the API contract.
+      body='''Use check.linear_batch() for a loop of explicit claims, sources and one shared assumption scope. Use check.linear_many when the inputs already exist as Frames.
+A BatchProof retains compact arrays and dependency leases; scalar ProofRef views do not own separate stores. Diagnostic Reports retain lazy presentation artifacts. Releasing the last expression/result view releases its owned scratch artifacts.
+Small expressions use exact in-memory terms; large materialized expressions use typed outputs and bounded sorted-run spill. Scratch lifetime follows retained views; manual garbage collection is not part of the API contract.
 Keep source models and proof dependencies alive until verification and any Edit that consumes them are complete.
 Export needed audit data with Report.to_spec or Report.write; exported status alone is not a live proof and must be replayed before reuse.
 Release unneeded reports, evidence Frames, expressions and containers holding them. Dependent reports and staged edits may still retain references, so deleting one name need not free storage immediately.
@@ -193,7 +202,9 @@ topic('concept.resources', 'Execution budgets and bounded display', 'Preview siz
       guarantees='Complete ops finish or raise; no truncated mathematical result is returned.',
       non_guarantees='head() cannot bypass a join validation barrier, sort or aggregation. repr does not promise constant-time upstream work.',
       body=BUDGET+''' Parsing has a separate 32 MiB minimum.
-to_records explicitly materialize and can raise MaterializationLimitError; use iter_batches/write for large outputs.
+memory_mb controls working buffers; disk_mb limits temporary spill (None is unlimited). Child operations share a ledger.
+to_records and to_spec use a separate materialize_mb limit, default 128 MiB, and can raise MaterializationLimitError; use iter_batches/write for large outputs.
+Frame input, relation execution and diagnostics use typed arrays and mmap; there is no SQLite numerical fallback.
 Most ops default to 1,000,000 output records. Set max_output_rows=None only when full output is intended.
 alg *_candidates may stop early and record scope/stop reason. Exhaustive algorithms raise SearchBudgetExceeded when incomplete.
 check.enumerate returns INCONCLUSIVE when its enumeration budget is exhausted; this is different from alg.integer.enumerate.
@@ -258,9 +269,9 @@ for ident,title,summary,keys,body,related in [
   'Frame queries can validate the one-hot rows and assemble branch data. check.cases combines same-target proofs over one finite model-integer variable, retaining other assumptions. There is no general continuous disjunction merger or infeasible-branch elimination rule. Do not fabricate a PROVED Report.',('recipe.epigraph','concept.conditions','api.Checker.cases')),
  ('optimization','Optimization and presolve are external','mipframe inspects and verifies snapshots; it does not solve or provide a presolve/postsolve mapping.',('solver','optimality','solve','presolve','postsolve'),
   'Use an external solver for candidate points, multipliers and optimization. Bind any returned data to the actual snapshot. check.solution establishes feasibility and an objective value, not optimality. Solver statuses and tolerances are external evidence.',('concept.exact','api.Checker.solution')),
- ('export','Exact native and LP output','Native save is lossless; LP output has explicit representability restrictions.',('MPS write','write_mps','export mps','free row','roundtrip'),
-  'There is no MPS writer. LP export rejects nonterminating decimal rationals and unrepresentable free rows rather than changing mathematics. Use native save for lossless persistence and audit.roundtrip for supported LP files.',('api.Model.write_lp','api.audit.roundtrip')),
- ('elimination','Dropping a variable is not elimination','Edit.drop_vars only removes variables absent from all final rows and the final objective.',('elimination','substitution','quotient','reformulation'),
+ ('export','Exact native, LP and MPS output','Native save is lossless; LP and MPS output have explicit representability restrictions.',('MPS write','write','export mps','free row','roundtrip'),
+  'MPS supports stream patching and canonical output. Both LP and MPS reject nonterminating decimal rationals and unrepresentable free rows rather than changing mathematics. Use native save for lossless persistence and audit.roundtrip for supported LP files.',('api.Model.write','api.audit.roundtrip')),
+ ('elimination','Fixed-variable elimination and lifting','Edit.drop_vars only removes variables absent from all final rows and the final objective.',('elimination','substitution','quotient','reformulation'),
   'LinExpr.substitute is algebra without proof. Edit does not provide automatic variable elimination, quotient reformulation, Model.from_frames or projection equivalence for changed coordinates.',('api.Edit.drop_vars','api.LinExpr.substitute')),
 ]:
     topic('limitation.'+ident,title,summary,kind='limitation',keywords=keys,
@@ -279,7 +290,7 @@ for symbol,binding,summary,related in [
  ('ColumnView','mipframe.frame.column:ColumnView','One requested field with exact reductions and aligned comparisons.',('api.ColumnView.argmax','concept.exact')),
  ('QueryExpr','mipframe.frame.expr:QueryExpr','Serializable table expression, not a model-variable affine function.',('error.expressions',)),
  ('LinExpr','mipframe.linear.expr:LinExpr','Immutable sparse affine expression; use variable arithmetic, row.expr or m.linexpr.',('concept.proofs','concept.exact')),
- ('Report','mipframe.check.report:Report','Immutable checker outcome with scope, dependencies and complete pageable evidence.',('concept.proofs',)),
+ ('Report','mipframe.check.report:Report','Structural and integrity diagnostic result; mathematical checkers return ProofRef, BatchProof or PointReport.',('concept.proofs',)),
  ('Edit','mipframe.edit.plan:Edit','Source-relative simultaneous modifications producing a new independent snapshot.',('recipe.edits',)),
  ('MatrixView','mipframe.ops.matrix:MatrixView','Logical sparse slice with explicit preview and float64 export.',('api.MatrixView.preview',)),
  ('MatrixAccessor','mipframe.ops.matrix:MatrixAccessor','Model matrix operations accessed through m.matrix.',('api.MatrixAccessor.nnz',)),
@@ -295,8 +306,8 @@ for symbol,binding,summary,related in [
 ]:
     api(symbol,binding,summary,returns='A public domain type. Obtain live handles through their owning Model or query.',related=related)
 
-api('read','mipframe.io:read','Import an LP/MPS file into a new independent exact snapshot.',inputs='Path; optional explicit format and parser options. MPS accepts mps_format="auto" (default), "fixed" or "free", and explicit rhs/bounds/ranges vector names.',returns='Model with default IR and indexed prepared.',guarantees='Independent read calls receive independent uid. MPS auto checks complete record boundaries; padded free-format names and exact numbers are not truncated into fixed-width fields.',resources='memory_mb defaults to 128; parser minimum is 32 MiB.',related=('concept.identity',),example='m = mf.read("model.mps")')
-api('load','mipframe.io:load','Load native v3 with retained uid/version and validated saved analyses.',inputs='Native directory.',returns='Model.',failures='Old or corrupt formats are rejected; reimport old models from LP/MPS.',related=('concept.identity',))
+api('read','mipframe.io:read','Import an LP/MPS file into a new independent exact snapshot.',inputs='Path; optional explicit format and parser options. MPS accepts mps_format="auto" (default), "fixed" or "free", and explicit rhs/bounds/ranges vector names.',returns='Model with a cached level-0 scan; structural analyses are explicit.',guarantees='Independent read calls receive independent uid. MPS auto checks complete record boundaries; padded free-format names and exact numbers are not truncated into fixed-width fields.',resources='memory_mb defaults to 128; parser minimum is 32 MiB.',related=('concept.identity',),example='m = mf.read("model.mps")')
+api('load','mipframe.io:load','Load validated native v7 numerical content and a cheap scan; saved analyses restore on explicit access.',inputs='Native directory.',returns='Model.',failures='Old or corrupt numerical formats are rejected; reimport old models from LP/MPS. Saved analysis caches are validated on explicit analysis access.',related=('concept.identity',))
 api('q','mipframe.linear.scalar:q','Parse an exact finite rational scalar.',inputs='int, Fraction, finite Decimal or decimal/scientific/fraction string.',returns='Fraction.',failures='Float, bool, NaN and infinite algebraic scalars raise ExactArithmeticError.',example='mf.q("43/39")',related=('concept.exact',))
 api('col','mipframe.frame.expr:col','Reference a named Frame column in a query expression.',inputs='Existing column name when bound to a Frame.',returns='QueryExpr.',example='mf.col("coef") < 0',related=('error.expressions',))
 api('count','mipframe.frame.expr:count','Construct a group aggregation counting records.',returns='Aggregate for Grouped.agg; unlike column count it counts rows.',related=('api.Grouped.agg',))
@@ -305,13 +316,13 @@ for name,summary,ret in [
  ('terms','Select original nonzero matrix terms on optional row/variable axes.','TermFrame(row,var,coef); includes no objective or boundary terms.'),
  ('linexpr','Construct a canonical affine expression from a term Frame or selected variables.','LinExpr with duplicate variables summed and zero terms removed.'),
  ('edit','Create a source-relative Edit transaction.','Edit; no snapshot is built yet.'),
- ('diff','Compare the current snapshot with its direct parent or identical snapshot.','ModelDiff; unrelated snapshots are rejected.'),
- ('save','Atomically save a new native v3 directory.','Saved path; existing destinations are rejected.'),
- ('write_lp','Atomically export exact LP where decimal representation is lossless.','Output path; unsupported coefficients/free rows fail without publishing a partial file.'),
+ ('diff','Compare ancestor deltas or unrelated numerical snapshots.','ModelDiff for an ancestor (including self); NumericDiff for unrelated snapshots, with equivalence UNKNOWN.'),
+ ('save','Atomically save a new native v7 directory.','Saved path; existing destinations are rejected.'),
+ ('write','Atomically serialize an exact snapshot to MPS or LP.','WriteReceipt; unsupported representations fail without publishing a partial file.'),
  ('close','Close owned resources and invalidate live dependent queries.','None; independently built snapshots and detached exports remain usable.'),
  ('verify','Validate numerical storage and replay prepared indexed results.','Report scoped to model integrity and prepared indexed runs; not MIP feasibility or optimality.'),
 ]:
-    api('Model.'+name,'mipframe.model:Model.'+name,summary,returns=ret,related=('concept.identity',),body=(LIVE + (' verify="auto" reuses a process-local verified source/target receipt when available, otherwise replays lineage and checks target facts. verify="replay" always performs that independent verification. Diff Frames and degree statistics are materialized on access; native files never grant a live receipt.' if name=='diff' else '')))
+    api('Model.'+name,'mipframe.model:Model.'+name,summary,returns=ret,related=('concept.identity',),body=LIVE)
 
 for name,summary in {
  'uid':'Snapshot UUID; independent imports differ.', 'version':'Ordered canonical mathematical content fingerprint.',
@@ -319,7 +330,7 @@ for name,summary in {
  'source':'Import or Edit provenance; not a second numerical model.', 'parent':'Parent snapshot identity or None.',
  'stage':'Explicit snapshot stage such as imported or edited.', 'shape':'Number of rows and variables.',
  'nnz':'Number of original nonzero constraint terms.', 'rows':'RowFrame of all rows.', 'vars':'VarFrame of all variables.',
- 'ir':'Factual compressed IR; prepared by read/load, or lazily on first access after a logical Edit build.',
+ 'ir':'Cheap numerical scan; prepared by read/load, or lazily after a logical Edit build. Structural properties compute on explicit access.',
  'matrix':'MatrixAccessor; exact sparse counts/activity and explicit SciPy export.',
  'check':'Checker for exact certificate verification.',
  'row_families':'Template row-family Frame at depth 2.', 'var_families':'Template variable-family Frame at depth 2.',
@@ -343,8 +354,8 @@ FRAME_METHODS = [
  ('column','Read only one column and its dependencies.','Column name.','ColumnView with exact reductions and aligned comparisons.'),
  ('nunique','Count distinct combinations of selected columns.','Column name or tuple.','Exact integer count.'),
  ('check','Verify a declared relational property.','unique/product with columns; function with key/value.','Report; product includes all declared domains, never a materialized Cartesian product.'),
- ('to_records','Export independent records within the materialization budget.','Optional memory_mb.','Detached Ref identities and exact scalar values.'),
- ('iter_batches','Stream complete schema-carrying detached batches.','Positive batch_size and optional memory_mb.','Iterator; interrupted/closed live queries raise instead of silently ending.'),
+ ('to_records','Export independent records within the materialization budget.','Optional memory_mb, disk_mb and materialize_mb (independent output limit).','Detached Ref identities and exact scalar values.'),
+ ('iter_batches','Stream complete schema-carrying detached batches.','Positive batch_size and optional memory_mb/disk_mb.','Iterator; interrupted/closed live queries raise instead of silently ending.'),
  ('write','Atomically write a complete relation.','Path; JSONL or optional Parquet.','Exact rational and Ref identity encoding; Parquet needs mipframe[parquet].'),
  ('to_spec','Serialize a versioned query AST.','No implicit execution or trusted proof flags.','Independent spec; restoration requires explicit model/relation bindings.'),
  ('explain','Inspect a query plan without executing it.','No arguments.','Schema, keys, dependencies, paths and blocking/validation stages.'),
@@ -356,7 +367,7 @@ for name,summary,inp,ret in FRAME_METHODS:
         guarantees=LIVE,related=('concept.frame','error.join') if name=='join' else ('concept.frame',),
         resources=BUDGET, body='Use explicit declared domains for coverage checks. A subset check never proves an ancestor query correct.')
 api('Grouped.agg','mipframe.frame.base:Grouped.agg','Compute exact grouped aggregates.',inputs='Named mf.count() or col(...).count/sum/min/max/nunique expressions.',returns='Ordinary Frame keyed by the grouping columns.',guarantees='Only observed groups are emitted. Missing values ignored; empty group extrema are None.',example='G = T.group_by("row").agg(n=mf.count(), total=mf.col("coef").sum())',related=('api.Frame.group_by',))
-api('Frame.from_records','mipframe.frame.serialization:from_records','Create a typed relation from explicit records.',inputs='Records plus declared schema; optional key/models and memory_mb.',returns='Ordinary Frame. Ref identity must be valid; this does not create a Model.',
+api('Frame.from_records','mipframe.frame.serialization:from_records','Create a typed relation from explicit records.',inputs='Records plus declared schema; optional key/models and memory_mb/disk_mb.',returns='Ordinary Frame. Ref identity must be valid; this does not create a Model.',
     aliases=('construct a typed frame','create a table with schema'), keywords=('schema construction records column types typed references',),
     related=('api.Frame.schema','concept.frame'))
 api('Frame.schema','mipframe.frame.base:Frame.schema','Read the mapping from column names to DType metadata.',
@@ -513,7 +524,7 @@ api('Claim','mipframe.linear.claim:Claim','Construct an unproved affine proposit
     body='''Build expressions from variable arithmetic, row.expr or m.linexpr. Use mf.q("1/2") for fractional scalars.
 Create target inequalities with <= or >= and equalities with .eq(); Claim and Report have no implicit truth value.
 LinExpr.le(U) and LinExpr.ge(L) are equivalent method forms of <= and >=.
-For trusted sources use row.lb_claim, row.ub_claim, var.lb_claim or var.ub_claim, or a compatible proved Report.
+For trusted sources use row.lb_claim, row.ub_claim, var.lb_claim or var.ub_claim, or a compatible proved ProofRef.
 Verify a target with m.check before passing its proof to an Edit. Direct Claim constructor arguments are not the expression-building interface.''',
     related=('api.LinExpr','api.Model.linexpr','api.Checker.linear','concept.proofs','error.expressions'))
 
@@ -559,8 +570,8 @@ for n,summary,guarantees in [
  ('linear_many','Batch explicit linear certificates in shared paged working storage.','Targets keyed by strings; for_target returns one checked conclusion. Overall PROVED requires all targets proved.'),
 ]:
     api('Checker.'+n,'mipframe.check.accessor:Checker.'+n,summary,
-        inputs=('Exact Frame(var,value) or Var/VarRef mapping from this snapshot. missing="error" requires every variable; missing="zero" explicitly fills absent values.' if n=='solution' else 'Exact claims, original source sides or previously verified Reports; see signature.'),
-        returns='Report with complete scope, dependencies and evidence.',guarantees=guarantees,
+        inputs=('Exact Frame(var,value) or Var/VarRef mapping from this snapshot. missing="error" requires every variable; missing="zero" explicitly fills absent values.' if n=='solution' else 'Exact claims, original source sides or previously verified ProofRefs; see signature.'),
+        returns=('PointReport with feasibility status, objective summary and violation evidence; not an implication proof.' if n=='solution' else 'BatchProof.' if n=='linear_many' else 'ProofRef with status, conclusion, scope, dependencies and evidence; not a diagnostic Report.'),guarantees=guarantees,
         non_guarantees='No solver call, multiplier search, automatic condition discharge or model edit.',
         failures='Invalid sources, missing input, bad multipliers, cross-snapshot input or unsupported domains raise; they are not INCONCLUSIVE.',
         resources=BUDGET,
@@ -575,10 +586,10 @@ for n,summary,guarantees in [
             'solution':('limitation.fractional-point',),
         }.get(n,()),
         body={
-            'cases':'''var is a same-snapshot Var or VarRef with integer kind and finite model bounds. cases maps exact integer values to verified exact PROVED Reports with the same target relation, constant and coefficients.
+            'cases':'''var is a same-snapshot Var or VarRef with integer kind and finite model bounds. cases maps exact integer values to verified exact PROVED ProofRefs with the same target relation, constant and coefficients.
 Keys must exactly cover ceil(lb)..floor(ub); duplicates after normalization, empty domains, floats and booleans are rejected. Coverage never uses branch assumptions.
 Each branch must assume a*y+b==0 for this variable and value. Remove matching equalities only; preserve the union of every other explicit or inherited assumption. Nested calls can discharge multiple variables.
-domain="auto" and "integer" produce integer proofs; "relaxation" is rejected. Missing/invalid branches raise, not REFUTED. Infeasible Reports cannot substitute for target proofs.
+domain="auto" and "integer" produce integer proofs; "relaxation" is rejected. Missing/invalid branches raise, not REFUTED. Contradiction proofs cannot substitute for proofs of the requested target.
 Use ordinary linear checks to align stronger or differently scaled conclusions first. Branches may contain continuous variables. Results support Edit.because only when no assumptions remain; all model fact dependencies and integer-domain coverage bounds remain auditable.
 The cases and discharged evidence Frames record branch parent indices and removed assumptions. Replay rechecks all branches and coverage.''',
             'identity':'Without premises, compare the exact affine expressions. With using, verify the supplied equality combination.',
@@ -591,12 +602,12 @@ domain="auto" and domain="integer" both enforce the original integer domains; do
             'linear_many':'''targets has target/relation/rhs, with unique string target IDs; terms has target/var/coef.
 using has target and exactly one source field row/var/proof per record, plus side and multiplier (direction for equality target sides).
 Reference columns use m.rows.schema["row"] or m.vars.schema["var"]. A proof source is a string key in the explicit reports mapping.
-Use residual="bounds" for bound compensation. This Frame-native entry point has no assume parameter; use check.linear_batch().add(..., assume=...) for per-target assumptions and ordinary Claim/Report inputs.
+Use residual="bounds" for bound compensation. This Frame-native entry point has no assume parameter; use check.linear_batch().add(..., assume=...) for one shared assumption scope and ordinary Claim/Report inputs.
 The result shares paged storage across targets; inspect evidence and use for_target(target_id) for one conclusion. require() on the batch requires every target to be PROVED.''',
         }[n])
 
 api('Checker.linear_batch','mipframe.check.accessor:Checker.linear_batch',
-    'Build a batch of linear certificates with scalar arguments and per-target assumptions.',
+    'Build a batch of linear certificates with scalar arguments and one shared assumption scope.',
     inputs='residual="exact" or "bounds"; domain="auto", "relaxation" or "integer"; memory_mb and disk_mb apply to the whole batch.',
     returns='LinearBatch context manager. add stages each check; run verifies all targets and returns a Report.',
     guarantees='Consumes inputs incrementally in shared storage. No caller-authored schemas or reports mapping are required.',
@@ -621,7 +632,7 @@ api('LinearBatch.add','mipframe.check.batch:LinearBatch.add',
     inputs='A unique nonempty string key, Claim target, original source Claims or verified Reports, optional exact multipliers and assumptions. Equality certificates also accept using={"le": ..., "ge": ...}.',
     returns='The builder for chaining. No proof is published by add.',
     guarantees='Consumes generators and copies mathematical inputs into shared paged staging now; does not retain a list of target expressions. Parent proof dependencies remain live.',
-    failures='Duplicate keys, invalid sources and staging failures abort and close the builder. A closed or already-run builder rejects further additions.',
+    failures='Duplicate keys and differing assumptions raise. On a staging error, leave the context or close the builder and start a fresh batch. A closed or already-run builder rejects further additions.',
     related=('api.Checker.linear_batch','api.Checker.linear','api.LinearBatch.run','concept.conditions'))
 api('LinearBatch.run','mipframe.check.batch:LinearBatch.run',
     'Verify every staged linear target and seal the builder.',
@@ -629,10 +640,10 @@ api('LinearBatch.run','mipframe.check.batch:LinearBatch.run',
     guarantees='Overall PROVED requires every target proved. Insufficient certificates yield per-target INCONCLUSIVE. All assumptions and domains remain attached to their own conclusions.',
     failures='Errors or cancellation publish no partial result. run may be called only once.',
     body='Successful run transfers result storage to the Report. The result, subreports and evidence views survive builder.close() or context exit while their source models remain open.',
-    related=('api.Report.for_target','api.Report.require','api.Report.replay','concept.report-resources'))
+    related=('api.BatchProof.for_target','api.BatchProof.require','api.BatchProof.replay','concept.report-resources'))
 api('LinearBatch.close','mipframe.check.batch:LinearBatch.close',
     'Release unpublished batch work and close the builder.',
-    returns='None.', guarantees='Idempotent. Reports already returned by run remain valid.',
+    returns='None.', guarantees='Idempotent. BatchProof results already returned by run remain valid.',
     related=('api.Checker.linear_batch','api.LinearBatch.run','concept.report-resources'))
 for n in ('status','ok','summary','scope','conclusion','method','dependencies','evidence','counterexample','violations','require','explain','to_spec','write','replay','for_target'):
     api('Report.'+n,'mipframe.check.report:Report.'+n,{
@@ -651,7 +662,7 @@ for n,summary,inp in [
  ('set_row_bounds','Change source row bounds without changing its expression.','Source rows; scalar or exactly key-aligned Frame(row,value) per side.'),
  ('set_var_bounds','Change source variable bounds.','Source variables; scalar or exactly key-aligned Frame(var,value) per side.'),
  ('fix','Set both source variable bounds to one exact value.','Source variables, value and optional verified evidence.'),
- ('set_domains','Set the canonical variable domain.','Source variables; kind C/I or key-aligned value Frame.'),
+ ('set_domains','Set the canonical variable domain.','Source variables or IDs; kind is the scalar string C or I. Split selections into separate calls for different domains; a value Frame is not accepted.'),
  ('set_objective','Replace the entire objective independent of staging order.','Affine source/draft expression and min/max sense; includes its constant.'),
  ('replace_rows','Stage explicit row replacement relationships.','old source rows, new rows/terms and correspondence(old_row,new_label).'),
  ('summary','Validate and summarize the staged plan without building a Model.','No arguments; reports whether build is possible.'),
@@ -671,14 +682,23 @@ api('audit.roundtrip','mipframe.audit:roundtrip','Numerically reparse an LP and 
 
 for name, summary, returns, guarantees in [
     ('show', 'Render a bounded factual model overview.', 'Notebook-friendly Formula text; does not print.', 'Rendering uses completed summaries and does not run discovery.'),
-    ('to_dict', 'Export the complete factual IR summary with exact numbers.', 'Independent dict; rational values remain Fractions.', 'The exported data outlives the model and is not truncated by display limits.'),
-    ('to_json', 'Export the complete factual IR summary as JSON.', 'JSON string; rational values are encoded as strings.', 'The exported data outlives the model and is not truncated by display limits.'),
+    ('to_dict', 'Export a detached scan; include_analysis=True explicitly computes analyses.', 'Independent dict; rational values remain Fractions.', 'The exported data outlives the model and is not truncated by display limits.'),
+    ('to_json', 'Export scan JSON; include_analysis=True explicitly computes analyses.', 'JSON string; rational values are encoded as strings.', 'The exported data outlives the model and is not truncated by display limits.'),
 ]:
     api('CompressedIR.'+name, 'mipframe.ir.compressed:CompressedIR.'+name, summary,
         returns=returns, guarantees=guarantees,
         non_guarantees='The summary does not embed the full numerical model, member lists or parameter histograms. Structural groups do not prove mathematical equivalence.',
-        body='IR schema 0.3 retains IDs, depths, scopes and configurations. Access detailed objects through m.rows, m.vars, m.matrix and m.families(). For a family use m.family(id, depth=depth); for indexed tensors and operators use m.indexed().tensor(id) or .operator(id).',
+        body='IR schema 0.4 defaults to level-0 scan only. Counts, degrees, bounds and numeric extrema are exact; bounded high-cardinality histograms carry error bounds. Wide-row fingerprints are candidates, and lexical templates are hypotheses. Default Mapping iteration and exports do not traverse lazy fields. structure/topology/indexed and objective role_support retain lazy lookup compatibility. Use row_shapes() and name_templates() for exact full directories with selected members. Display limits do not rescan or truncate cached machine summaries; scan computation itself has a separate budget.',
         related=('api.Model.ir', 'api.Model.family', 'api.Model.indexed'))
+
+for name,summary,body in [
+ ('row_shapes','Compute a full exact local row-shape Frame.','Group raw sense, exact bounds, nnz and coefficient multiset, without normalization or adjacent roles. Filter with where; rows returns original members and related("coefficients") returns full multiplicities. Directory IDs are model-local and independent of scan preview positions. Keep group_key for navigation.'),
+ ('name_templates','Compute a full exact lexical-template Frame.','kind is row or var. Tokenize integer slots preserving delimiters. Filter templates; rows/vars returns original members and related("slots") gives exact minimum, maximum and distinct counts. Names are lexical hypotheses, not structural evidence. Keep group_key for navigation.'),
+]:
+    api('CompressedIR.'+name,'mipframe.ir.compressed:CompressedIR.'+name,summary,
+        returns='A cached navigable Frame requiring an open model.',body=body,
+        resources='Explicit exact analysis may use disk-backed working storage.',
+        related=('api.Model.ir','api.Frame.related'))
 
 for cls,module,names in [
  ('IndexedResult','ir.indexing.views',('tensors','partitions','operators','evidence','tensor','operator','partition','evidence_item','verify','validate','to_record')),
@@ -718,15 +738,9 @@ for cls,module,names in [
             non_guarantees='Family labels are run/configuration-local. Canonical coefficients are not raw matrix values. Historical proof status cannot authorize a new Edit.',
             related=('concept.identity','recipe.roles'))
 
-# Public access-path aliases, including bound Model facades.
+# Finalize contracts for the entity APIs declared above. Receiver aliases are
+# registered by api(), including APIs declared later in this file.
 for item in TOPICS:
-    for symbol in item['symbols']:
-        if symbol.startswith('Checker.'):
-            item['aliases'].append('m.check.' + symbol.split('.',1)[1])
-        if symbol.startswith('MatrixAccessor.'):
-            item['aliases'].append('m.matrix.' + symbol.split('.',1)[1])
-        if symbol.startswith('Model.'):
-            item['aliases'].append('m.' + symbol.split('.',1)[1])
     # Avoid projecting an unrelated failure/limitation onto entity lookup methods.
     if item['id'].startswith(('api.RowFrame.', 'api.VarFrame.')) and not item['id'].endswith('.project'):
         item['failures'] = 'Invalid selections, unknown labels/names and closed owners raise explicit errors.'
@@ -783,7 +797,7 @@ topic('capability.ops','Exact structural operations','Use sets, graphs and group
 topic('capability.alg','Discrete searches','Find graph candidates or run explicit exhaustive searches over a declared domain.',kind='capability',aliases=('alg','alg.graph','alg.integer'),
     guarantees='Candidate and exhaustive APIs have distinct completeness contracts.',non_guarantees='Search results do not grant proof or Edit authority.',related=('concept.search','recipe.enumeration'))
 topic('capability.audit','Serialization audit','Use audit.roundtrip to reparse supported LP output and compare exact facts.',kind='capability',aliases=('audit',),
-    non_guarantees='No MPS export, solver postsolve map or linear implication certificate is provided.',related=('api.audit.roundtrip','limitation.export'))
+    non_guarantees='An I/O audit grants no solver postsolve map or linear implication certificate. Model.write supports MPS and LP readback.',related=('api.audit.roundtrip','limitation.export'))
 
 
 for symbol, binding, summary, returns in [
@@ -834,3 +848,176 @@ topic('concept.indexed', 'Indexed directories and related Frames',
       'Use ordinary Frames for indexed coordinates, partitions, operators and evidence.',
       aliases=('indexed frames','indexed kernel','indexed axes','indexed AST'),
       body='I = m.indexed() binds a snapshot, configuration and declared scope.\nI.tensors, I.operators, I.partitions and I.evidence are ordinary Frames.\nI.tensor(id), I.operator(id), I.partition(id), I.evidence_item(id) return exactly one-row Frames; unknown IDs raise KeyError.\nUse O.one().row_count for metadata, O.rows for original rows, and O.related("kernel"), "bindings", "alignment", "ast", "statistics" or "dimensions" for complete data.\nUse T.vars, T.related("coordinates"), and T.related("axes").where(axis=0).rows. Coordinates retain the complete declared axis domains.\nFrame.shape always means table dimensions. Indexed dimensions live in related("dimensions") as component,axis,size.\nAST, origins and diagnostics use path,node_type,text,number,boolean node tables; empty containers and array order are preserved. Statistics retain exact numeric values.\nFiltering, sorting, slicing and key-preserving projection restrict related results. Keep indexed_key for navigation; axes additionally require axis. Members are deduplicated.\nI.verify(selection=None) checks prepared tensors/operators by default; an explicit directory selection can also verify partitions. Empty selection checks zero items. Discovery evidence is not a proposition.\nI.validate(spec) checks independently supplied hypotheses, including Frame relations. Neither directory identity nor saved status grants proof authority.\nm.verify() returns Report for storage integrity and prepared indexed runs. Inconsistency returns REFUTED; require() raises. Corrupt base data skips dependent checks; execution and input errors still raise.\nThese reports cannot be used as linear certificates or Edit justifications. Live views share stores; detached records remain usable after close.',related=('api.Model.indexed','api.IndexedResult.verify','api.IndexedResult.validate','api.Frame.related','api.Model.verify'))
+
+# Proof-carrying v2 replaces the former SQL certificate/Edit execution contracts.
+for item in TOPICS:
+    item['bindings']={k:v.replace('mipframe.check.accessor:Checker','mipframe.check.compiler:Checker')
+                       .replace('mipframe.check.batch:LinearBatch','mipframe.check.compiler:LinearBatch')
+                       .replace('mipframe.edit.plan:Edit.','mipframe.edit.delta:DeltaEdit.')
+                       .replace('mipframe.edit.plan:Edit','mipframe.edit.delta:DeltaEdit')
+                       .replace('mipframe.edit.lineage:Lineage','mipframe.edit.compact_lineage:Lineage')
+                       for k,v in item['bindings'].items()}
+    if item['id'].startswith(('api.Checker.','api.LinearBatch.','api.Edit.')):
+        item['resources']='Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.'
+    if item['id']=='concept.proofs':
+        item.update(summary='Discover witnesses, check compact certificates, then commit a proof-carrying delta.',
+                    body='''The checker executes explicit witnesses; it does not search for proofs. Existing row targets use integer IDs and CertificateBatch offsets/sources. Custom targets use Targets sparse arrays. Scalar Claims and optional Frames compile into the same exact kernel. A BatchProof stores statuses and dependencies without materializing target Reports. for_target returns a lazy ProofRef; select returns a compact selection. Edits accept these objects directly.
+Proofs bind an immutable snapshot and domain. Unproved/conditional/foreign evidence cannot authorize commit. Serialized status is never trusted: replay re-executes the certificate. Public Frame assertion Reports are separate from mathematical proofs.''')
+    if item['id']=='concept.report-resources':
+        item.update(summary='BatchProof owns immutable certificate arrays; ProofRef is a lightweight view.',body='''Successful batch execution creates no target Report, evidence Frame or symbolic Claim. for_target and evidence access are explicit lazy presentation. Mathematical values use Python integers or exact Fraction only when needed. Closing a source Model does not release data still shared by a child overlay. Entity/Frame navigation still requires its owner to be open.''')
+    if item['id']=='api.Checker.linear_many':
+        item.update(summary='Check compact custom targets and ragged explicit witnesses.',inputs='targets=mf.Targets(...), witnesses=mf.CertificateBatch(...), residual="exact" or "bounds".',returns='BatchProof.',
+                    guarantees='All targets must be proved for overall PROVED. Compact Targets use distinct nonnegative integer IDs; Frame adapters retain their external target keys for for_target(key).',
+                    related=['api.Targets','api.CertificateBatch','api.BatchProof.for_target','api.Checker.linear_rows','api.Checker.linear_batch'],
+                    body='''Targets(ids, kind="row", sides="ub") reads existing rows. kind="var" additionally needs rhs. kind="affine" needs rhs, offsets, variables and coefficients. IDs are distinct nonnegative integers. CertificateBatch(offsets,sources,multipliers=1,sides="ub",kinds="row") describes one source slice per target; kinds may be row or var. Finite equality sources use side="eq" and allow signed multipliers. Inequality multipliers must be nonnegative. Unit path witnesses can use CertificateBatch.paths(paths).
+The positional certificate form accepts a snapshot-bound LinearCertificate from graph witnesses; do not mix it with separate targets/witnesses/terms/using.
+For the Frame adapter, targets has target/relation/rhs with unique string keys, terms has target/var/coef, and using has target, exactly one row/var/proof source, side and multiplier. Row/var columns retain same-snapshot Ref types; proof keys refer to ProofRefs in reports. Frame direction must be main; use scalar linear for directional equalities. There is no assume argument here: use linear_batch with a common assumption scope or scalar linear for separate branches.
+Frames compile once at the boundary; prefer linear_rows for existing row targets. No SQL runs in the checker.''')
+    if item['id']=='api.Checker.linear_batch':
+        item.update(summary='Compile scalar Claim inputs into one compact batch.',inputs='residual="exact"/"bounds", domain="auto"/"integer"/"relaxation", memory_mb/disk_mb. All targets require one shared assumption scope.',returns='LinearBatch; run returns BatchProof.',body='All targets in a builder must have the same explicit assumption scope. For different case branches, use scalar checks and cases(). Existing-row workloads should use linear_rows to avoid target expression duplication.')
+    if item['id']=='api.LinearBatch.add':
+        item.update(inputs='Unique key, Claim target, explicit using sources and optional assumptions shared by the batch.',guarantees='Copies canonical sparse target data. No per-target Report is constructed.',body='Directional equality is available in the scalar linear API. Use separate batches for separate assumption scopes.')
+    if item['id']=='api.LinearBatch.run':
+        item.update(returns='BatchProof; empty batches are PROVED.',guarantees='All successes are stored as status bytes; for_target creates a lazy ProofRef.',body='Results survive builder context exit. Conditions remain attached and cannot authorize edits until explicitly discharged.')
+    if item['id']=='api.Edit.build':
+        item.update(summary='Build a cheap overlay, including experimental unproved changes.',inputs='prepare="logical" by default; "indexed" explicitly computes structural analyses.',returns='Model overlay.',body='Missing or ungrounded evidence yields UNKNOWN semantic preservation. Build never silently performs proof search. Use commit() when equivalence is required. Parent closure does not invalidate a child snapshot.')
+    if item['id']=='api.Edit.summary':
+        item.update(summary='Read edit counts and certificate-derived semantics without global analysis.',returns='dict with counts and semantic relationships.',body='Does not flatten the matrix, run semantic SQL, materialize Reports or replay certificates. Complete model statistics are explicit requests.')
+    if item['id'].startswith('api.Edit.'):
+        item['failures']='Malformed or foreign evidence and structural conflicts raise. build permits missing evidence and marks preservation UNKNOWN; commit rejects uncovered or ungrounded operations.'
+    if item['id']=='api.Model.diff':
+        item.update(summary='Read an ancestor delta directly, or explicitly compare unrelated numerical models.',related=['api.ModelDiff','api.NumericDiff','concept.identity'],body='Direct-parent and multi-generation diff use retained deltas. Unrelated snapshots are compared numerically with mathematical equivalence UNKNOWN. No certificate replay occurs; the compatibility verify argument does not trigger an audit. Use Model.audit for explicit replay.')
+    if item['id']=='limitation.elimination':
+        item.update(summary='Fixed-variable elimination carries an explicit lifting map.',related=['api.Edit.substitute_fixed','api.Model.lift','api.Edit.drop_vars','api.LinExpr.substitute'],body='Use substitute_fixed after proving finite equal bounds. Nonzero fixed values shift row bounds and the objective constant exactly. General variable substitution and arbitrary dimension-changing reformulations require additional mapping rules.')
+    if item['id']=='concept.identity':
+        item['body']='Snapshot uid/revision identify immutable facts; content_hash computes an exact numerical hash only on explicit access. Entity IDs remain stable across overlays; iloc is a position and loc is identity. Native v7 restores numerical arrays, deltas and historical certificate data. Native v3/v4/v5/v6 are rejected; reimport the original LP/MPS. Reloaded historical verdicts are UNKNOWN until an explicit audit; they cannot authorize a new edit.'
+
+api('CertificateBatch','mipframe.check.kernel:CertificateBatch','Immutable ragged source arrays for exact certificate execution.',
+    inputs='offsets has target_count+1 entries, starts at 0, is nondecreasing and ends at len(sources). sources contains nonnegative entity IDs. multipliers, sides and kinds are scalars or source-aligned arrays.',
+    returns='Compact certificate input; not a proof.', constructor=True,
+    body='Public original-fact sources use kinds="row"/"var" and sides="lb"/"ub"/"eq". Inequality multipliers must be nonnegative; equality multipliers may be signed. Slice offsets[i]:offsets[i+1] supplies target i. Use scalar/Frame adapters for proof or assumption sources; their indices require adapter-managed bindings.',
+    example='witnesses = mf.CertificateBatch(offsets=[0, 2], sources=[a.id, b.id])',
+    related=('api.CertificateBatch.paths','api.Checker.linear_many',))
+api('CertificateBatch.paths','mipframe.check.kernel:CertificateBatch.paths','Compile source row-ID paths with unit multipliers and upper sides.',
+    inputs='One iterable of source row IDs per target, in target order. Empty paths are allowed.',
+    returns='CertificateBatch with multipliers=1, sides="ub", kinds="row".',
+    non_guarantees='A path is an unchecked witness. The linear checker must verify the original coefficients and bounds.',
+    example='witnesses = mf.CertificateBatch.paths([[a.id, b.id]])',
+    related=('api.Checker.linear_rows','api.CertificateBatch'))
+api('Targets','mipframe.check.kernel:Targets','Existing entity targets or custom CSR affine targets.',
+    inputs='Distinct nonnegative integer ids in target order. kind="row" uses existing rows and their selected sides. kind="var" uses variable IDs and explicit rhs. kind="affine" uses target labels plus rhs and CSR arrays.',
+    constructor=True, returns='Compact target data; constructing it does not prove the claims.',
+    body='sides is lb/ub/eq, scalar or target-aligned. rhs is exact and scalar or target-aligned. For affine targets, offsets starts at 0, has len(ids)+1 entries and ends at len(variables)==len(coefficients); each slice contains its variable IDs and exact coefficients. kind="integrality" is used by specialized integrality proofs, not the linear certificate API.',
+    example='targets = mf.Targets([r.id], kind="row", sides="ub")',
+    related=('api.Checker.linear_many','api.Checker.linear_rows'))
+api('BatchProof','mipframe.check.compact:BatchProof','Immutable checked batch with lazy target presentation.',related=('concept.proofs',))
+api('ProofRef','mipframe.check.compact:ProofRef','A checked result position in a BatchProof.',
+    body='Scalar mathematical checkers and BatchProof.for_target return this view. Inspect status, conclusion, scope, dependencies and evidence; there is no explain() or instance replay() method. Replay its to_spec()/write() output with mf.Report.replay(spec_or_path, models=[m]); use BatchProof.replay only for whole-batch artifacts.',
+    related=('concept.proofs','api.Report.replay','api.BatchProof'))
+api('ProofSelection','mipframe.check.compact:ProofSelection','Immutable selected positions in a BatchProof.',related=('concept.proofs',))
+for name, summary, returns in [
+    ('target_ids','Read compact integer target IDs in batch order.','Immutable integer array; scalar/Frame adapters use positional internal IDs. Use the supplied external keys with for_target/select.'),
+    ('ok','Test whether every target is PROVED.','bool; an empty batch is successful.'),
+    ('status','Read the aggregate proof status.','PROVED if all pass; otherwise REFUTED if any refutation exists, or INCONCLUSIVE.'),
+    ('summary','Read batch operation, target count and failure count.','dict; enumeration results add scope-specific statistics.'),
+    ('scope','Read the snapshot, exact arithmetic, domain and assumption count.','dict; assumptions remain conditional and cannot authorize an edit.'),
+    ('require','Require every target to be proved.','The same BatchProof, or ValidationError carrying this batch.'),
+    ('for_target','Select one conclusion by its target key.','Lazy ProofRef; integer ID for compact inputs, supplied external key for scalar/Frame adapters.'),
+    ('select','Select several conclusions by their target keys.','ProofSelection usable directly as Edit because evidence; key rules match for_target.'),
+    ('round_many','Round proved variable bounds using model integrality.','A new integer-domain BatchProof; source assumptions and dependencies are retained.'),
+    ('to_spec','Materialize an exact certificate graph for replay.','Detached dictionary within materialize_mb; use write for large certificates.'),
+    ('write','Export an exact certificate graph to an artifact directory.','Saved path; serialized status does not grant live proof authority.'),
+    ('replay','Bind a saved batch certificate to a model and rerun its checks.','Fresh BatchProof. For ProofRef or PointReport artifacts use Report.replay(spec_or_path, models=[m]); never trusts stored status.'),
+]:
+    api('BatchProof.'+name,'mipframe.check.compact:BatchProof.'+name,summary,returns=returns,
+        related=('concept.proofs','api.ProofRef'))
+next(t for t in TOPICS if t['id']=='api.BatchProof.round_many').update(
+    inputs='A batch with kind="var" targets. vars optionally selects variable IDs; exactly one of ub or lb supplies requested exact bounds, scalar or aligned with vars.',
+    guarantees='Requires model-integer variables and matching source/target sides. Floors source upper bounds or ceils lower bounds. A requested bound is PROVED only if the source was PROVED and its rounded bound implies the request.',
+    non_guarantees='No model mutation. Integer-only evidence does not establish a relaxation bound.',
+    failures='Affine/row targets, continuous variables, mismatched directions or specifying both/neither side raise. An unsupported stronger requested bound is INCONCLUSIVE.',
+    example='# Requires an integer variable x with a finite model upper bound.\nbounds = m.check.bound(vars=[x.id], values=[x.ub], side="ub").require()\nrounded = bounds.round_many(ub=x.ub // 1).require()')
+for name in ('ok','status','scope','conclusion','require','method','summary','dependencies','evidence','counterexample','to_spec','write'):
+    api('ProofRef.'+name,'mipframe.check.compact:ProofRef.'+name,'Read a selected checked result: '+name+'.',related=('concept.proofs',))
+api('Checker.linear_rows','mipframe.check.compiler:Checker.linear_rows','Check existing row IDs directly from ragged source witnesses.',
+    inputs='targets=row IDs, witnesses=CertificateBatch or paths, side="ub"/"lb"/"eq", residual="exact"/"bounds".',returns='BatchProof.',
+    example='proof = m.check.linear_rows(targets=dropped_ids, witnesses=retained_paths).require()\nfinal = m.edit().drop_rows(dropped_ids, because=proof).commit()',related=('api.CertificateBatch','api.Edit.commit'))
+api('Checker.bound','mipframe.check.compiler:Checker.bound','Check direct variable-bound implications in a batch.',inputs='vars=integer IDs, values=exact bounds, side="ub" or "lb".',returns='BatchProof.',related=('api.BatchProof.round_many',))
+api('Checker.affine_integrality','mipframe.check.compiler:Checker.affine_integrality','Check integer affine definitions independently of the target integer declaration.',
+    inputs='vars=defined variable IDs, rows=matching equality definition IDs.',returns='BatchProof usable for set_domains(...,kind="C",because=proof).',
+    guarantees='After normalization, constant and coefficients must be integers; all other variables must be integer. Dependencies survive into commit.',related=('api.Edit.set_domains',))
+api('Checker.one_hot_affine','mipframe.check.compiler:Checker.one_hot_affine','Validate shared one-hot affine structure once, then check bound exclusions.',
+    inputs='groups=[(onehot_row_id, [(definition_row_id, defined_var_id), ...]), ...].',
+    returns='Shared checker with bound_exclusions() -> BatchProof and expand_exclusions() -> reference expansion.',
+    guarantees='Checks complete disjoint one-hot groups, binary domains, normalized affine definitions and coverage. Does not assume business-specific names.',
+    example='shared = m.check.one_hot_affine(groups=groups)\nzero = shared.bound_exclusions().require()\ntightened = m.edit().set_var_bounds(zero.target_ids, ub=0, because=zero).commit()',related=('api.Edit.substitute_fixed',))
+api('Edit.commit','mipframe.edit.delta:DeltaEdit.commit','Require grounded MIP equivalence and objective-value preservation before building an overlay.',
+    guarantees='Checks target coverage and dependency closure rooted in final retained facts. Cyclic row deletion and cyclic integrality relaxation fail.',related=('api.Edit.build','api.Edit.summary'))
+api('Edit.substitute_fixed','mipframe.edit.delta:DeltaEdit.substitute_fixed','Substitute finite fixed values and retain an exact lifting map.',
+    inputs='vars=IDs or a variable selection; equal finite bounds, possibly set by a proved preceding edit.',
+    guarantees='Shifts all retained row bounds and objective constant; removes columns. A child diff exposes lifting.',related=('api.Edit.commit',))
+api('Model.audit','mipframe.model:Model.audit','Explicitly replay a persisted proof-carrying delta and compare numerical output.',
+    inputs='source=bound root Model; optional bundle path and artifact MPS path.',returns='Fresh audit receipt; historical status fields are ignored.',related=('api.Model.write',))
+api('Model.content_hash','mipframe.model:Model.content_hash','Explicitly compute a numerical fingerprint; snapshot construction does not compute it.',related=('concept.identity',))
+
+# Exception classes retain their diagnostic import paths.
+for item in TOPICS:
+    item['bindings']={k:v.replace('mipframe.edit.delta:DeltaEditConflictError','mipframe.edit.plan:EditConflictError').replace('mipframe.edit.delta:DeltaEditValidationError','mipframe.edit.plan:EditValidationError') for k,v in item['bindings'].items()}
+
+for item in TOPICS:
+    if item['id']=='concept.report-resources':item['keywords'].extend('release retained report evidence storage'.split())
+
+
+api('LinearCertificate','mipframe.ops.reduction:LinearCertificate','Snapshot-bound typed input to the exact linear checker; never a proof.',related=('api.Checker.linear_many',))
+api('TransitiveReductionResult','mipframe.ops.reduction:TransitiveReductionResult','Complete retained and removed edge views, ragged retained-edge witnesses and execution statistics.',resources=OPS,related=('api.ops.graph.transitive_reduction',))
+api('PatchPlan','mipframe.store.patch:PatchPlan','Immutable MPS serialization plan with support reasons and physical record actions.',related=('api.Model.write',))
+api('PatchNotSupportedError','mipframe.store.patch:PatchNotSupportedError','Strict patch output cannot represent this edit or source format.',related=('api.Model.write',))
+api('SubstitutionInfeasibleError','mipframe.edit.substitution:SubstitutionInfeasibleError','An affected empty row excludes activity zero.',related=('api.Edit.substitute_fixed',))
+for owner,binding in [('Model','mipframe.model:Model'),('Edit','mipframe.edit.delta:DeltaEdit')]:
+    api(owner+'.patch_plan',binding+'.patch_plan','Plan source patch support without sealing an edit or replaying proofs.',returns='PatchPlan: STREAM_PATCH or CANONICAL_REQUIRED.',resources=BUDGET,related=('api.Model.write',))
+    api(owner+'.lift',binding+'.lift','Restore fixed variables to the direct parent or a requested ancestor.',inputs='Complete snapshot-qualified exact solution values.',returns='Frame(var,value). Does not check feasibility.',related=('api.Edit.substitute_fixed',))
+api('Edit.write','mipframe.edit.delta:DeltaEdit.write','Validate the final edit, write and audit atomically, then seal on success.',inputs='Fresh path; strategy auto/patch/canonical; audit readback or None.',returns='Write receipt.',related=('api.Edit.commit','api.Model.write'))
+for item in TOPICS:
+    if item['id']=='api.Model.write':
+        item.update(summary='Atomically serialize an exact snapshot to MPS or LP.',inputs='Fresh path, format inferred from suffix, strategy auto/patch/canonical, audit readback or None.',returns='Receipt with actual writer, digest and phase timings.',body='Patch supports row deletion, fixed substitution, row/variable bounds and integrality relaxation when an indexed MPS source is retained. Strict patch rejects unsupported edits. Auto falls back to canonical. Readback verifies numerical output and grants no proof authority. Both writers reject nonterminating decimal rationals. Existing output files are never overwritten.')
+    if item['id']=='api.Edit.substitute_fixed':
+        item.update(inputs='vars=None freezes source variables with equal finite effective bounds; explicit selections are validated atomically. because supplements bound lineage. drop_trivial_rows defaults True.',body='Compiles selected CSC incidence once. Zero values do not decode coefficients. Affected empty rows are checked exactly; contradictions reject build/commit/write unless build(allow_infeasible=True). Coordinates are PROJECTED. Proved MIP fixedness grants EQUIVALENT_UNDER_EXTENSION, while LP scope follows its evidence. Objective representation gains constant_delta, with value offset zero after lifting. Edits remain source-relative; new rows cannot mention substituted variables.')
+    if item['id']=='api.ops.graph.transitive_reduction':
+        item.update(inputs='DAG edge Frame; witnesses=False retains Frame return. witnesses=True adds edge_id, memory_mb, disk_mb, max_output_rows and max_witness_edges controls.',returns='Frame or TransitiveReductionResult(kept, removed, witnesses, stats).',body='Parallel retained endpoint pairs preserve every original record. Every removed record receives a complete path using only retained representatives. Components choose packed bitsets or bounded traversal; witness fallback shares BFS by endpoint. Total witness output is bounded separately. witnesses.as_linear_certificate(target="row",source="row",side="ub") gathers typed row IDs and shares offsets; m.check.linear_many(cert) verifies actual mathematics.',resources=OPS+' Complete path output requires work proportional to its total length.')
+
+api('WriteReceipt','mipframe.store.output:WriteReceipt','Immutable numerical artifact readback receipt with writer, digest and phase timings.',related=('api.Model.write',))
+
+api('PointReport','mipframe.check.finite:PointReport','Exact point-feasibility result returned by m.check.solution().',
+    returns='A result handle; obtain it through Checker.solution, not its constructor.',
+    body='status is PROVED or REFUTED; ok is a bool. summary includes the exact objective and violations; scope records integer-model feasibility. require() raises ValidationError on failure. evidence contains violating_rows and violating_vars Frames. This type has no implication conclusion or explain() method and cannot authorize Edit because. close() releases its point and diagnostic storage; finish consuming evidence before closing.',
+    related=('api.Checker.solution','api.PointReport.evidence','api.PointReport.close'))
+for name, summary, returns in [
+    ('require','Require exact integer-model point feasibility.','The same PointReport, or ValidationError carrying it.'),
+    ('evidence','Inspect every violated row side, variable bound and integrality condition.','Mapping with violating_rows and violating_vars Frames; requires an open model and point result.'),
+    ('to_spec','Materialize the exact point for later validation.','Detached dictionary within materialize_mb; no saved verdict is trusted.'),
+    ('write','Write the exact point as a portable artifact.','Saved path; replay with Report.replay(path, models=[m]) reruns the point checker.'),
+    ('close','Release retained point and violation storage.','None; consume or detach needed evidence first.'),
+]:
+    api('PointReport.'+name,'mipframe.check.finite:PointReport.'+name,summary,returns=returns,
+        related=('api.PointReport','api.Checker.solution'))
+api('NumericDiff','mipframe.edit.numeric_diff:NumericDiff','Numerical comparison of unrelated model snapshots returned by Model.diff().',
+    returns='A comparison handle; obtain it from target.diff(source).',
+    body='Matches rows and variables by name for numerical comparison. rows_added/rows_changed and vars_added/vars_changed contain target IDs; rows_dropped and vars_dropped contain source IDs. numerically_equal also checks objective sense and constant. semantic stays UNKNOWN even when numerical values match. This is distinct from the ancestor ModelDiff and has no nnz_before/nnz_after or degree-statistics interface.',
+    non_guarantees='Names are a comparison alignment, not cross-snapshot Ref identity or a mathematical equivalence proof.',
+    related=('api.Model.diff','api.ModelDiff'))
+api('OneHotAffine','mipframe.check.compact:OneHotAffine','Validated shared one-hot affine structure returned by Checker.one_hot_affine().',
+    returns='Shared checker; obtain it through m.check.one_hot_affine(groups=...).',
+    related=('api.Checker.one_hot_affine','api.OneHotAffine.bound_exclusions','api.OneHotAffine.expand_exclusions'))
+api('OneHotAffine.bound_exclusions','mipframe.check.compact:OneHotAffine.bound_exclusions','Prove that options violating a defined variable bound are zero.',
+    returns='Integer-domain BatchProof of option upper bounds equal to zero; may be empty.',
+    related=('api.Checker.one_hot_affine','api.Edit.set_var_bounds'))
+api('OneHotAffine.expand_exclusions','mipframe.check.compact:OneHotAffine.expand_exclusions','Expand exclusions into explicit linear certificates and rounding.',
+    returns='Integer-domain BatchProof; an explicit reference calculation that can be more expensive than bound_exclusions.',
+    failures='A degenerate inconsistent affine range requires a separate contradiction certificate.',
+    related=('api.OneHotAffine.bound_exclusions','api.BatchProof.round_many'))
+
+# api() derives "when" from the summary. Keep it in sync after the contract
+# refinements above so brief help never exposes an obsolete capability claim.
+for item in TOPICS:
+    if item['kind'] == 'api':
+        item['when'] = item['summary']

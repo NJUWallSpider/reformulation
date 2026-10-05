@@ -141,6 +141,7 @@ def test_isomorphic_permutations_and_whole_row_sign(tmp_path, mode):
                     assert (ca[names[x]] == ca[names[y]]) == (cb[other[x.upper()]] == cb[other[y.upper()]])
 
 def test_invalid_parameters_do_not_change_eager_cache(model):
+    model.row_families
     for kwargs in [{'depth': -1}, {'depth': True}, {'depth': 1.0}, {'rhs': 'exact'}, {'coefficient': 'raw'}, {'objective': 'exact'}, {'memory_mb': 0}, {'memory_mb': True}, {'memory_mb': float('nan')}]:
         before = tuple(model._refinement_store.db.iterdump())
         with pytest.raises(ValueError):
@@ -161,7 +162,7 @@ def test_failed_round_preserves_checkpoint(model, monkeypatch):
         with pytest.raises(RuntimeError, match='injected'):
             refinement_probe(model, mode='exact', depth=2)
     assert store.db.execute('SELECT depth FROM configs WHERE id=?', (s._config,)).fetchone()[0] == 1
-    assert store.db.execute('SELECT count(*) FROM definitions WHERE config=? AND depth=2', (s._config,)).fetchone()[0] == 0
+    assert store.db.execute('SELECT count(*) FROM array_artifacts WHERE config=? AND depth=2', (s._config,)).fetchone()[0] == 0
     assert np.array_equal(np.asarray(s.row_color[1]), previous)
     recovered = refinement_probe(model, mode='exact', depth=2)
     expected, _ = reference(model.model, 2)
@@ -186,11 +187,11 @@ def test_version_mismatch(tmp_path):
     with read_text(tmp_path) as m:
         refinement_probe(m, mode='exact', depth=0)
         target = m.save(tmp_path / 'snapshot')
-    db = sqlite3.connect(target / 'refinement.sqlite')
+    db = sqlite3.connect(target / 'base' / 'refinement.sqlite')
     db.execute('UPDATE meta SET value=\'["wrong","0"]\' WHERE key=\'source\'')
     db.commit()
     db.close()
-    with pytest.raises(mf.MIPFrameError, match='mismatch'):
+    with pytest.raises(mf.MIPFrameError,match='Corrupt native artifact'):
         mf.load(target)
 
 @pytest.mark.parametrize('mode', ['exact', 'template'])
@@ -210,9 +211,11 @@ def test_dual_states_preserve_strict_variable_hop_depth(tmp_path, mode):
             assert list(sa.var_color[d]) == list(sb.var_color[d])
 
 def test_base_failure_can_retry_and_does_not_leak_work_files(model, monkeypatch):
+    model.row_families
     store = model._refinement_store
     maps = [id(a) for a in store.maps]
     files = set(Path(store.temp.name).iterdir())
+    derived_files = set((store.owner.model.path/'derived').iterdir())
     before = tuple(store.db.iterdump())
     original = engine.RefinementStore._prepare
 
@@ -226,6 +229,7 @@ def test_base_failure_can_retry_and_does_not_leak_work_files(model, monkeypatch)
     store = model._refinement_store
     assert [id(a) for a in store.maps] == maps
     assert set(Path(store.temp.name).iterdir()) == files
+    assert set((store.owner.model.path/'derived').iterdir()) == derived_files
     assert tuple(store.db.iterdump()) == before
     s = refinement_probe(model, mode='exact', depth=1)
     rc, vc = reference(model.model, 1)

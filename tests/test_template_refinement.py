@@ -123,6 +123,7 @@ def test_count_modes_boundaries_and_chaining(tmp_path):
 def test_validation_before_cache_changes(tmp_path):
     for kwargs in [{'mode': 'other'}, {'coefficient': 'scale_normalized'}, {'mode': 'exact', 'coefficient': 'sign'}, {'multiplicity_ratio': 1}, {'multiplicity_ratio': True}, {'multiplicity_ratio': float('inf')}, {'multiplicity_ratio': float('nan')}, {'mode': 'exact', 'multiplicity_ratio': 3}]:
         with read_text(tmp_path) as m:
+            m.row_families
             before = tuple(m._refinement_store.db.iterdump())
             with pytest.raises(ValueError):
                 refinement_probe(m, **kwargs)
@@ -139,6 +140,7 @@ def test_template_collision_and_prepare_failure(tmp_path, monkeypatch):
             return b'collision'
     monkeypatch.setattr(engine, '_new_hash', Collision)
     with read_text(tmp_path) as m:
+        m.row_families
         maps = [id(a) for a in m._refinement_store.maps]
         before = tuple(m._refinement_store.db.iterdump())
         original = engine.RefinementStore._prepare
@@ -163,8 +165,8 @@ def test_older_cache_without_template_tables(tmp_path):
     with read_text(tmp_path) as m:
         refinement_probe(m, mode='exact', depth=1)
         path = m.save(tmp_path / 'older-cache')
-    db = sqlite3.connect(path / 'refinement.sqlite')
-    db.execute('DROP TABLE template_ranges')
+    db = sqlite3.connect(path / 'base' / 'refinement.sqlite')
+    db.execute('DROP TABLE array_artifacts')
     for config, key in db.execute('SELECT id,key FROM configs').fetchall():
         old = json.loads(key)
         old.pop('mode')
@@ -173,15 +175,8 @@ def test_older_cache_without_template_tables(tmp_path):
         db.execute('UPDATE configs SET key=? WHERE id=?', (json.dumps(old), config))
     db.commit()
     db.close()
-    with mf.load(path) as m:
-        template = refinement_probe(m, depth=2)
-        exact = refinement_probe(m, mode='exact', depth=2)
-        assert template._config != exact._config
-        assert m._refinement_store.db.execute('SELECT count(*) FROM configs').fetchone()[0] == 4
-        rows, variables = template_reference(m.model, 2)
-        assert_partition(template.row_color[2], rows[2])
-        assert_partition(template.var_color[2], variables[2])
-
+    with pytest.raises(mf.MIPFrameError,match='Corrupt native artifact'):
+        mf.load(path)
 
 def test_assign_family_numeric_baseline_as_relations():
     """Preserve the pre-refactor real-model coefficient and multiplicity oracle."""

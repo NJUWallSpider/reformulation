@@ -63,11 +63,8 @@ class Record(Mapping):
             from mipframe.edit.draft import DraftRef
             return DraftRef(typ.uid, typ.axis, value).bind()
         if typ.kind == "ref" and value is not None:
-            return (
-                self._frame._owner_for(typ).rows.loc[value]
-                if typ.axis == "row"
-                else self._frame._owner_for(typ).vars.loc[value]
-            )
+            from mipframe.entity import bind_identity
+            return bind_identity(self._frame._owner_for(typ),typ.axis,int(value))
         return value
 
     def __getattr__(self, n):
@@ -491,10 +488,10 @@ class Frame:
             return owner.model.name(typ.axis, value)
         return str(value)
 
-    def _iterate(self, fields=None, memory_mb=None):
+    def _iterate(self, fields=None, memory_mb=None, disk_mb=None):
         self._guard()
         fields = tuple(self.schema if fields is None else fields)
-        ctx = Context(self._models, memory_mb)
+        ctx = Context(self._models, memory_mb, disk_mb)
         iterator = None
         try:
             iterator = iter(self._raw(fields, ctx))
@@ -503,7 +500,9 @@ class Frame:
                 # may have unmapped arrays while this iterator was suspended.
                 self._guard()
                 try:
-                    row = next(iterator)
+                    token=ctx.work.activate()
+                    try:row = next(iterator)
+                    finally:ctx.work.deactivate(token)
                 except StopIteration:
                     break
                 ctx.check_size(row)
@@ -513,6 +512,9 @@ class Frame:
                 if iterator is not None and hasattr(iterator, "close"):
                     iterator.close()
             finally:
+                ledger=ctx.work.ledger
+                self._last_execution_stats=dict(peak_working_bytes=ledger.peak_resident,peak_temporary_disk_bytes=ledger.peak_disk,
+                                               memory_limit_bytes=ledger.memory,disk_limit_bytes=ledger.disk_limit)
                 if not ctx.retained:
                     ctx.close()
 
@@ -520,6 +522,11 @@ class Frame:
         self._guard()
         ctx = ctx.query_context
         op, p = self._op, self._params
+        from mipframe.frame.stream import batches
+        stream=batches(self,fields,ctx)
+        if stream is not None:
+            for batch in stream:yield from batch.records(fields)
+            return
         if op == "source":
             yield from self._query.scan(fields, ctx)
             return
@@ -563,9 +570,9 @@ class Frame:
         self._guard()
         if self._known_count is not None:
             return self._known_count
-        return sum(1 for _ in self._iterate(()))
+        return self.count()
 
-    def count(self):
+    def count(self, *, memory_mb=None, disk_mb=None):
         """
         MIPFRAME HELP BEGIN
         Compute an exact record count.
@@ -573,7 +580,20 @@ class Frame:
         Full contract: mf.help("api.Frame.count")
         MIPFRAME HELP END
         """
-        return len(self)
+        self._guard()
+        if self._known_count is not None:return self._known_count
+        from mipframe.frame.stream import batches
+        with Context(self._models,memory_mb,disk_mb) as ctx:
+            token=ctx.work.activate()
+            try:
+                stream=batches(self,(),ctx)
+                if stream is not None:return sum(batch.size for batch in stream)
+            finally:
+                ctx.work.deactivate(token)
+                ledger=ctx.work.ledger
+                self._last_execution_stats=dict(peak_working_bytes=ledger.peak_resident,peak_temporary_disk_bytes=ledger.peak_disk,
+                                               memory_limit_bytes=ledger.memory,disk_limit_bytes=ledger.disk_limit)
+        return sum(1 for _ in self._iterate((),memory_mb,disk_mb))
 
     def _derive(
         self,
@@ -938,7 +958,7 @@ class Frame:
 
         return check(self, kind, columns, **kwargs)
 
-    def to_records(self, *, memory_mb=None):
+    def to_records(self, *, memory_mb=None, disk_mb=None, materialize_mb=None):
         """
         MIPFRAME HELP BEGIN
         Export independent records within the materialization budget.
@@ -947,14 +967,14 @@ class Frame:
         MIPFRAME HELP END
         """
         from mipframe.options import options
-        from mipframe.store.query_store import memory_bytes
+        from mipframe.core.resources import memory_bytes
 
         budget = memory_bytes(
-            options.query.materialize_mb if memory_mb is None else memory_mb
+            options.query.materialize_mb if materialize_mb is None else materialize_mb
         )
         result = []
         used = size(result)
-        for raw in self._iterate():
+        for raw in self._iterate(memory_mb=memory_mb, disk_mb=disk_mb):
             row = {n: self._detach(n, v) for n, v in raw.items()}
             used += size(row) + 16
             if used > budget:
@@ -965,7 +985,7 @@ class Frame:
         return result
 
 
-    def iter_batches(self, batch_size=65536, *, memory_mb=None):
+    def iter_batches(self, batch_size=65536, *, memory_mb=None, disk_mb=None):
         """
         MIPFRAME HELP BEGIN
         Stream complete schema-carrying detached batches.
@@ -974,29 +994,37 @@ class Frame:
         MIPFRAME HELP END
         """
         from mipframe.options import options
-        from mipframe.store.query_store import memory_bytes
+        from mipframe.core.resources import memory_bytes
 
         if self._size(batch_size) == 0:
             raise ValueError("Batch size must be positive")
         budget = memory_bytes(
             options.query.memory_mb if memory_mb is None else memory_mb
         )
-        batch = []
-        used = 0
-        for raw in self._iterate(memory_mb=memory_mb):
-            cost = size(raw)
-            if cost > budget:
-                raise MaterializationLimitError("One record exceeds the batch budget")
-            if batch and (len(batch) >= batch_size or used + cost > budget):
-                yield RecordBatch(self.schema, batch)
-                batch = []
-                used = 0
-            batch.append(raw)
-            used += cost
-        if batch:
-            yield RecordBatch(self.schema, batch)
+        from mipframe.data.runtime import WorkContext
+        from mipframe.data.relations import RelationBuilder
+        root=WorkContext(budget/1024**2,options.query.disk_mb if disk_mb is None else disk_mb)
+        iterator=self._iterate(memory_mb=memory_mb,disk_mb=disk_mb);builder=None
+        try:
+            while True:
+                token=root.activate()
+                try:
+                    try:raw=next(iterator)
+                    except StopIteration:break
+                    if builder is None:builder=RelationBuilder(root.fork(),self.schema)
+                    builder.append(raw)
+                    if builder.count>=batch_size:
+                        batch=RecordBatch._from_relation(self.schema,builder.finish());builder=None
+                    else:batch=None
+                finally:root.deactivate(token)
+                if batch is not None:yield batch
+            if builder is not None:yield RecordBatch._from_relation(self.schema,builder.finish());builder=None
+        finally:
+            iterator.close()
+            if builder is not None:builder.work.close()
+            root.close()
 
-    def to_spec(self):
+    def to_spec(self, *, memory_mb=None, disk_mb=None, materialize_mb=None):
         """
         MIPFRAME HELP BEGIN
         Serialize a versioned query AST.
@@ -1006,9 +1034,11 @@ class Frame:
         """
         from mipframe.frame.serialization import to_spec
 
-        return to_spec(self)
+        from mipframe.check.artifact import materialize
+        from mipframe.data.runtime import WorkContext
+        with WorkContext(memory_mb or 128,disk_mb):return materialize(to_spec(self),materialize_mb)
 
-    def write(self, path, *, format=None):
+    def write(self, path, *, format=None, memory_mb=None, disk_mb=None):
         """
         MIPFRAME HELP BEGIN
         Atomically write a complete relation.
@@ -1018,7 +1048,7 @@ class Frame:
         """
         from mipframe.frame.serialization import write
 
-        return write(self, path, format=format)
+        return write(self, path, format=format,memory_mb=memory_mb,disk_mb=disk_mb)
 
     def explain(self):
         """
@@ -1074,7 +1104,7 @@ class Frame:
         names = tuple(self._query.display_columns or self.schema)[
             : options.display.max_cols
         ]
-        records = list(islice(self._iterate(names), max_rows + 1))
+        records = list(self.head(max_rows + 1)._iterate(names))
         total = self._known_count
         header = (
             f"<{type(self).__name__} key={self.key} · "
@@ -1150,14 +1180,23 @@ class RecordBatch:
     Full contract: mf.help("api.RecordBatch")
     MIPFRAME HELP END
     """
-    def __init__(self, schema, rows):
-        object.__setattr__(self, "schema", frozen_schema(schema))
-        object.__setattr__(
-            self,
-            "columns",
-            MappingProxyType({n: tuple(r[n] for r in rows) for n in schema}),
-        )
-        object.__setattr__(self, "_size", len(rows))
+    def __init__(self, schema, rows, *, memory_mb=None, disk_mb=None):
+        frame=Frame.from_records(rows,schema=schema,memory_mb=memory_mb,disk_mb=disk_mb)
+        table=frame._typed_relation
+        object.__setattr__(self,'schema',frame.schema)
+        object.__setattr__(self,'columns',MappingProxyType(table.columns))
+        object.__setattr__(self,'_size',len(table))
+        object.__setattr__(self,'_work',table.work)
+        object.__setattr__(self,'_resource',frame._query.resource)
+
+    @classmethod
+    def _from_relation(cls,schema,relation):
+        result=object.__new__(cls)
+        object.__setattr__(result,'schema',frozen_schema(schema))
+        object.__setattr__(result,'columns',MappingProxyType(relation.columns))
+        object.__setattr__(result,'_size',len(relation))
+        object.__setattr__(result,'_work',relation.work)
+        return result
 
     def __setattr__(self, name, value):
         raise AttributeError("Record batches are read-only")
@@ -1165,16 +1204,24 @@ class RecordBatch:
     def __len__(self):
         return self._size
 
-    def to_records(self):
+    def _records(self):
         from mipframe.edit.draft import DraftRef
-        return [
-            {
-                n: (
-                    Ref(t.uid, t.version, t.axis, self.columns[n][i])
-                    if t.kind == "ref" and self.columns[n][i] is not None
-                    else DraftRef(t.uid,t.axis,self.columns[n][i]) if t.kind == "draft_ref" and self.columns[n][i] is not None else self.columns[n][i]
-                )
-                for n, t in self.schema.items()
-            }
-            for i in range(self._size)
-        ]
+        from mipframe.data.relations import scalar
+        for i in range(self._size):
+            row={}
+            for n,t in self.schema.items():
+                value=scalar(self.columns[n][i])
+                row[n]=(Ref(t.uid,t.version,t.axis,value) if t.kind=='ref' and value is not None
+                        else DraftRef(t.uid,t.axis,value) if t.kind=='draft_ref' and value is not None else value)
+            yield row
+
+    def to_records(self, *, materialize_mb=None):
+        from mipframe.options import options
+        from mipframe.core.resources import memory_bytes
+        budget=memory_bytes(options.query.materialize_mb if materialize_mb is None else materialize_mb)
+        result=[];used=64
+        for row in self._records():
+            used+=size(row)+16
+            if used>budget:raise MaterializationLimitError('Batch exceeds materialize_mb')
+            result.append(row)
+        return result

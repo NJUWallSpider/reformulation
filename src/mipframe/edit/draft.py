@@ -57,9 +57,7 @@ class DraftVar:
     @property
     def name(self):
         self._edit._guard()
-        return self._edit._store.execute(
-            "SELECT name FROM new_vars WHERE id=?", (self._id,)
-        ).fetchone()[0]
+        return self._edit._add_vars[self._id][0]
 
     @property
     def expr(self):
@@ -112,30 +110,17 @@ class DraftExpr:
     @classmethod
     def create(cls, edit, items, constant):
         edit._guard()
-        s = edit._store
-        t = s.raw_table("ns INTEGER,v INTEGER,c TEXT,PRIMARY KEY(ns,v)")
-        for (ns, v), c in items:
-            c = q(c)
-            s.check_size(c)
-            old = s.execute(f"SELECT c FROM {t} WHERE ns=? AND v=?", (ns, v)).fetchone()
-            c += Fraction(old[0]) if old else 0
-            if c:
-                s.execute(f"INSERT OR REPLACE INTO {t} VALUES(?,?,?)", (ns, v, str(c)))
-            else:
-                s.execute(f"DELETE FROM {t} WHERE ns=? AND v=?", (ns, v))
-        x = cls()
-        x._edit = edit
-        x._table = t
-        x._constant = q(constant)
+        terms={}
+        for key,c in items:
+            terms[key]=terms.get(key,0)+q(c)
+        x=cls();x._edit=edit
+        x._terms=tuple(sorted((key,c) for key,c in terms.items() if c))
+        x._constant=q(constant)
         return x
 
     def _items(self):
         self._edit._guard()
-        for ns, v, c in self._edit._store.execute(
-            f"SELECT ns,v,c FROM {self._table} ORDER BY ns,v"
-        ):
-            self._edit._guard()
-            yield (ns, v), Fraction(c)
+        return iter(self._terms)
 
     @property
     def constant(self):

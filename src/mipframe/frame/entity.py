@@ -84,7 +84,7 @@ class _IdentityFrame(Frame):
         self._owner = owner
         self._entity_axis = "row" if self._kind == "row" else "var"
         if index is None:
-            index = range(
+            index = owner.model.entity_ids(self._entity_axis) if hasattr(owner.model, 'entity_ids') else range(
                 len(
                     owner.model.rows
                     if self._entity_axis == "row"
@@ -95,7 +95,7 @@ class _IdentityFrame(Frame):
             from numbers import Integral
 
             original = index
-            maximum = len(
+            maximum = owner.model.capacity(self._entity_axis) if hasattr(owner.model, 'capacity') else len(
                 owner.model.rows
                 if self._entity_axis == "row"
                 else owner.model.variables
@@ -112,7 +112,7 @@ class _IdentityFrame(Frame):
                     yield int(ident)
 
             index = stored_index(owner, validated(), unique=True)
-        maximum = len(
+        maximum = owner.model.capacity(self._entity_axis) if hasattr(owner.model, 'capacity') else len(
             owner.model.rows if self._entity_axis == "row" else owner.model.variables
         )
         if (
@@ -238,7 +238,7 @@ class _IdentityFrame(Frame):
 
         return pattern_counts(self, depth=depth, memory_mb=memory_mb)
 
-    def project(self, *, memory_mb=128, **bindings):
+    def project(self, *, memory_mb=128, disk_mb=None, **bindings):
         """
         MIPFRAME HELP BEGIN
         Map each source to exactly one neighbor in every named target domain.
@@ -248,7 +248,7 @@ class _IdentityFrame(Frame):
         """
         from mipframe.check.frame import project
 
-        return project(self, bindings, memory_mb=memory_mb)
+        return project(self, bindings, memory_mb=memory_mb, disk_mb=disk_mb)
 
     @property
     def iloc(self):
@@ -261,7 +261,7 @@ class _IdentityFrame(Frame):
         self._owner.model
         if type(ident) is not int:
             raise TypeError("Model IDs must be integers")
-        if not 0 <= ident < len(self._metadata) or ident not in self.ids:
+        if ident not in self.ids:
             raise KeyError(ident)
         return self._entity(ident)
 

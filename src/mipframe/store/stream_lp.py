@@ -1,4 +1,4 @@
-"""Bounded-lookahead LP reader; expressions and objectives spill directly to SQLite."""
+"""Bounded-lookahead LP reader; expressions and objectives stream into typed buffers."""
 
 from collections import deque
 from fractions import Fraction as F
@@ -333,10 +333,7 @@ def parse(path, w, **options):
                     ec, en = expr(s, w, r, 1, True)
                     if en:
                         fail(op2, "ranged endpoints must be constants")
-                    w.db.execute(
-                        "UPDATE stage SET value=CASE WHEN substr(value,1,1)='-' THEN substr(value,2) ELSE '-'||value END WHERE r=?",
-                        (r,),
-                    )
+                    w.negate_row(r)
                     lo, hi = (
                         (lc - rc, ec - rc) if op.text == "<=" else (ec - rc, lc - rc)
                     )

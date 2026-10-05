@@ -78,18 +78,17 @@ class _Families:
         return 'family:' + sha256(json.dumps(payload, separators=(',', ':')).encode()).hexdigest()
 
     def entries(self, ctx, label=None):
-        structural = self.result is not None
-        query = 'SELECT fid,position,n,first_row,' + ('color' if structural else 'signature') + ' FROM families'
-        args = ()
+        records = self.store.entries()
         if label is not None:
             from mipframe.store.incidence import _FAMILY
             match = _FAMILY.fullmatch(label)
             if match is None or match[3] is not None or match[1] != ('F' if self.kind == 'row' else 'V'):
                 return
-            query += ' WHERE ' + ('position' if self.kind == 'row' else 'color') + '=?'
-            args = (int(match[2]),)
-        query += ' ORDER BY position'
-        for fid, position, total, first, identity in self.store.db.execute(query, args):
+            try:
+                records = (self.store.find('position' if self.kind=='row' else 'color',int(match[2])),)
+            except (KeyError, IndexError):
+                return
+        for fid, position, total, first, identity in records:
             ids = _MemberIndex(self.store, fid, range(total))
             count = total if self.full else sum(ctx.contains(self.entities, i) for i in ids)
             if count:
@@ -142,16 +141,15 @@ class _Families:
         raw = {n: e[n] for n in ('id', 'family_key', 'count', 'total_count')}
         raw.update(kind=self.kind, method=self.method, depth=self.depth,
             signature_id=sha256(sig.key().encode()).hexdigest(), parent=None, parent_key=None, parent_depth=None)
-        ptr = self.owner.model.row_ptr if self.kind == 'row' else self.owner.model.col_ptr
         if {'nnz_min', 'nnz_max'} & set(fields):
-            degrees = (int(ptr[i+1]-ptr[i]) for i in self.members(e).ids)
+            degrees = (self.owner.model.degree(self.kind,int(i)) for i in self.members(e).ids)
             lo = hi = next(degrees)
             for n in degrees: lo, hi = min(lo, n), max(hi, n)
             raw.update(nnz_min=lo, nnz_max=hi)
         if self.result is not None:
             if self.depth:
                 previous = self.result.partition(self.kind, self.depth-1)
-                row = previous.db.execute('SELECT position FROM families WHERE color=?', (sig.parent_color,)).fetchone()
+                row = (previous.find('color',sig.parent_color)[1],)
                 raw.update(parent=f'F{row[0]}' if self.kind == 'row' else f'V{sig.parent_color}', parent_depth=self.depth-1)
                 payload = [self.owner.uid, self.owner.version, self.config_key, self.kind, self.depth-1, sig.parent_color]
                 raw['parent_key'] = 'family:' + sha256(json.dumps(payload, separators=(',', ':')).encode()).hexdigest()
@@ -197,7 +195,7 @@ class _Families:
             direct = getattr(view, '_family_label', None)
             if direct is not None and self.full:
                 field = 'position' if self.kind == 'row' else 'color'
-                fid, total = self.store.db.execute(f'SELECT fid,n FROM families WHERE {field}=?',(int(direct[1:]),)).fetchone()
+                fid, _, total, _, _ = self.store.find(field,int(direct[1:]))
                 cls = RowFrame if self.kind == 'row' else VarFrame
                 return cls(self.owner,_MemberIndex(self.store,fid,range(total)))
             member = self.related(view, 'members', keys).select(self.kind).distinct()
@@ -281,23 +279,23 @@ class _Families:
         filters = filters or {}
         for basis in (('canonical','raw','scale_normalized') if bases is None else bases):
             if 'basis' in filters and basis not in filters['basis']: continue
-            with observations(self.result,self.kind,self.depth,self.members(e),basis) as db:
+            with observations(self.result,self.kind,self.depth,self.members(e),basis) as data:
                 base = dict(family_key=e['family_key'],basis=basis)
                 if name == 'sources':
-                    for o,member,row,factor,scale in db.execute('SELECT orientation,member,row,factor,scale FROM sources ORDER BY orientation,member,row'):
+                    for (o,member,row),(factor,scale) in data.source_records():
                         if 'orientation' in filters and o not in filters['orientation']: continue
                         yield dict(base,orientation=o,member=member,row=row,factor=Fraction(factor),scale=Fraction(scale))
                     continue
-                for o, in db.execute('SELECT DISTINCT orientation FROM populations ORDER BY orientation'):
+                for o in sorted(data.populations):
                     if 'orientation' in filters and o not in filters['orientation']: continue
-                    for role,quantity,coefficient,query,args in _distributions(db,o,self.kind,filters):
+                    for role,quantity,coefficient,histogram in data.distributions(o,self.kind,filters):
                         prefix = dict(base,orientation=o,role=role,quantity=quantity,coefficient=coefficient)
                         if name == 'histogram':
-                            for value,n in db.execute(query,args):
+                            for value,n in histogram:
                                 yield dict(prefix,value=_number(value),count=n)
                         else:
                             count=distinct=0; lo=hi=None
-                            for value,n in db.execute(query,args):
+                            for value,n in histogram:
                                 v=_number(value);lo=v if lo is None else min(lo,v);hi=v if hi is None else max(hi,v)
                                 count+=n;distinct+=1
                             if count: yield dict(prefix,minimum=lo,maximum=hi,distinct=distinct,count=count,varying=distinct>1)
@@ -313,35 +311,10 @@ def _number(value):
     return float(value) if str(value) in ('inf','-inf') else Fraction(value)
 
 
-def _distributions(db, orientation, kind, filters=None):
-    filters=filters or {}
-    def include(name,value): return name not in filters or value in filters[name]
-    for column,label in (('lo','lb'),('hi','ub'),('objective','objective')):
-        if not (include('quantity','value') and include('role',label) and include('coefficient',None)): continue
-        yield label,'value',None,f'SELECT {column},count(*) FROM bounds WHERE orientation=? AND {column} IS NOT NULL GROUP BY {column}',(orientation,)
-    for sign,neighbor in db.execute('SELECT DISTINCT sign,neighbor FROM terms WHERE orientation=? ORDER BY sign,neighbor',(orientation,)):
-        role=f'{"+" if sign>0 else "-"}{"V" if kind=="row" else "Rstate"}{neighbor}'
-        if not include('role',role): continue
-        where='orientation=? AND sign=? AND neighbor=?';args=(orientation,sign,neighbor)
-        if include('quantity','coefficient') and include('coefficient',None):
-            yield role,'coefficient',None,f'SELECT value,sum(n) FROM terms WHERE {where} GROUP BY value',args
-        def mult(value=None):
-            restriction = where + (' AND value=?' if value is not None else '')
-            params=args+((value,) if value is not None else ())
-            return f'''WITH present AS (SELECT member,sum(n) AS amount FROM terms WHERE {restriction} GROUP BY member),
-                counts AS (SELECT CAST(amount AS TEXT) AS value,count(*) AS n FROM present GROUP BY amount
-                    UNION ALL SELECT '0',(SELECT count(*) FROM populations WHERE orientation=?) - count(*) FROM present)
-                SELECT value,n FROM counts WHERE n>0''',(*params,orientation)
-        if include('quantity','multiplicity') and include('coefficient',None):
-            query,params=mult();yield role,'multiplicity',None,query,params
-        if not include('quantity','coefficient_multiplicity'): continue
-        for value, in db.execute(f'SELECT DISTINCT value FROM terms WHERE {where}',args):
-            if not include('coefficient',Fraction(value)): continue
-            query,params=mult(value);yield role,'coefficient_multiplicity',Fraction(value),query,params
-
-
 def _frame(owner,schema,scan,key=None):
-    return Frame({n:DType(t) if isinstance(t,str) else t for n,t in schema.items()},key=key,models=(owner,),source=scan)
+    result=Frame({n:DType(t) if isinstance(t,str) else t for n,t in schema.items()},key=key,models=(owner,),source=scan)
+    result._array_scan=scan
+    return result
 
 
 def signatures(entities, *, method, depth=None, **options):
@@ -411,13 +384,11 @@ def _transitions(owner, start=1, stop=2, *, kind='row', entities=None, method='t
     old=before._query.navigation[0];new=after._query.navigation[0]
     def scan(fields,ctx):
         colors=new.result._store.array(new.result._config,kind,start)
-        counts=ctx.table({'parent':DType('int')})
-        ctx.db.executemany(f'INSERT INTO {counts}(c0) VALUES(?)',
-            ((int(colors[i]),) for i, in new.store.db.execute('SELECT first_row FROM families')))
-        ctx.db.execute(f'CREATE INDEX {counts}_parent ON {counts}(c0)')
+        from collections import Counter
+        counts=Counter(int(colors[int(i)]) for i in new.store.first)
         for e in new.entries(ctx):
-            parent_color=int(colors[e['first']]);row=old.store.db.execute('SELECT position,n FROM families WHERE color=?',(parent_color,)).fetchone()
-            children=ctx.db.execute(f'SELECT count(*) FROM {counts} WHERE c0=?',(parent_color,)).fetchone()[0]
+            parent_color=int(colors[e['first']]);record=old.store.find('color',parent_color)
+            row=(record[1],record[2]);children=counts[parent_color]
             raw=dict(parent=f'F{row[0]}' if kind=='row' else f'V{parent_color}',parent_key=old.identity(parent_color),
                 child=e['id'],child_key=e['family_key'],from_depth=start,to_depth=stop,count=e['count'],total_count=e['total_count'],unchanged=children==1)
             yield {n:raw[n] for n in fields}
@@ -464,7 +435,7 @@ def _neighbor_base(result, source_kind, depth, color):
             matches=np.flatnonzero(colors[start:start+store.block]==color)
             if len(matches):
                 ident=start+int(matches[0]);table='var_data' if source_kind=='row' else 'row_data'
-                base=json.loads(store.db.execute(f'SELECT base FROM {table} WHERE config=? AND id=?',(result._config,ident)).fetchone()[0])
+                base=store.base(result._config,'var' if source_kind=='row' else 'row',ident)
                 names=('type','bounds_class','objective_class') if source_kind=='row' else ('relation','rhs_class')
                 value=dict(zip(names,base))
                 cache[key]=value

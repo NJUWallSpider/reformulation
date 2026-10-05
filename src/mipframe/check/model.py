@@ -14,7 +14,7 @@ def verify(owner, *, runs=None):
             valid &= check['status'] == 'PROVED'
             yield check
         if valid:
-            summary.update(rows_verified=len(m.rows),nonzeros_verified=len(m.col_idx))
+            summary.update(rows_verified=len(m.rows),nonzeros_verified=m.nnz)
         for run in runs:
             if not valid:
                 yield dict(component='indexed',item=run,status='SKIPPED',reason='Base storage integrity failed')

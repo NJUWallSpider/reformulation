@@ -44,7 +44,7 @@ def records(values, key=None):
 
 
 def test_canonical_identity_and_roundtrip(m, tmp_path):
-    assert m.storage_version == 3 and m.stage == "imported"
+    assert m.storage_version == 7 and m.stage == "imported"
     assert set(m.vars.column("kind")) <= {"C", "I"}
     assert m.vars.by_name("a").kind == "I" and m.vars.by_name("a").is_binary
     with mf.read(m.source["path"]) as other:
@@ -216,10 +216,10 @@ def test_spec_and_exact_exports(m, tmp_path):
     with pytest.raises(mf.SchemaError):
         mf.frame_from_spec(q.to_spec(), models={})
     with pytest.raises(mf.MaterializationLimitError):
-        m.terms().to_records(memory_mb=0.015625) if m.nnz > 100 else Frame.from_records(
+        m.terms().to_records(materialize_mb=0.015625) if m.nnz > 100 else Frame.from_records(
             (dict(k=n, v=Q(n, 3)) for n in range(1000)),
             schema={"k": "int", "v": "number"},
-        ).to_records(memory_mb=0.015625)
+        ).to_records(materialize_mb=0.015625)
 
 
 def test_detached_and_live_lifecycle(m):

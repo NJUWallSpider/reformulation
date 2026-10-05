@@ -64,39 +64,31 @@ def test_batch_reuses_blocking_certificate_without_losing_rows(model):
         for i in range(3):
             batch.add(key=str(i), target=x >= 0, using=using)
         result = batch.run()
-    assert [r['status'] for r in result.evidence['results'].to_records()] == ['PROVED'] * 3
+    assert result.ok and [result.for_target(str(i)).status for i in range(3)] == ['PROVED'] * 3
 
 
 def test_workspace_reset_invalidates_staging_and_membership():
-    from mipframe.check.workspace import ProofWorkspace
-    domain = records([{'x': 1}], key=('x',))
-    s = ProofWorkspace()
-    try:
-        for _ in range(3):
-            s.begin()
-            assert s.contains(domain, 1)
-            assert not s.contains(domain, 2)
-            s.reset()
-            assert not s.staged and not s.members
-            assert not getattr(s, '_staged_frames', {})
-        assert s.execute("SELECT count(*) FROM sqlite_master WHERE type='table'").fetchone()[0] == 1
-    finally:
-        s.close()
+    from mipframe.frame.executor import Context
+    domain=records([{'x':1}],key=('x',))
+    for _ in range(3):
+        ctx=Context()
+        assert ctx.contains(domain,1) and not ctx.contains(domain,2)
+        ctx.close()
+        assert not ctx.staged and not ctx.members and not ctx._staged_frames
+        assert ctx.work.resident==ctx.work.disk==0
 
 
 def test_bound_updates_do_not_accumulate_scratch_tables(model):
     edit = model.edit()
-    def tables():
-        return edit._store.execute("SELECT count(*) FROM sqlite_master WHERE type='table'").fetchone()[0]
-    before = tables()
     var = model.vars.head(1)
     aligned = var.select('var', value=0)
     for value in [0, aligned] * 10:
         edit.set_var_bounds(var, lb=value)
-        assert tables() == before
-    with pytest.raises(mf.SchemaError):
+        assert len(edit._var_bounds)==1
+        assert not hasattr(edit,'_store')
+    with pytest.raises(ValueError):
         edit.set_var_bounds(var, lb=aligned.head(0))
-    assert tables() == before
+    assert len(edit._var_bounds)==1
     with edit.build() as built:
         assert built.vars.head(1).to_records()[0]['lb'] == 0
 
@@ -115,23 +107,14 @@ def test_build_forwards_memory_budget(tmp_path, monkeypatch):
     assert budgets == [32 * 1024**2]
 
 
-def test_streaming_does_not_open_spill_storage(model, monkeypatch):
+def test_streaming_does_not_open_spill_storage(model,monkeypatch):
+    import sqlite3
+    monkeypatch.setattr(sqlite3,'connect',lambda *a,**k:pytest.fail('SQL opened'))
     from mipframe.frame.executor import Context
-    original = Context._open
-    opened = []
-    def track(context):
-        opened.append(context)
-        return original(context)
-    monkeypatch.setattr(Context, '_open', track)
     assert model.rows.head(1).select('name').to_records()
-    assert opened == []
-    assert model.rows.group_by().agg(n=mf.count()).to_records() == [{'n': model.shape[0]}]
-    assert len(opened) == 1
-    context = Context()
-    context.close()
-    with pytest.raises(mf.MIPFrameError):
-        context.execute('SELECT 1')
-    assert len(opened) == 1
+    assert model.rows.group_by().agg(n=mf.count()).to_records()==[{'n':model.shape[0]}]
+    ctx=Context();ctx.close()
+    with pytest.raises(mf.MIPFrameError):ctx.guard()
 
 
 def test_shared_plan_serialization_and_explain_are_linear(model):

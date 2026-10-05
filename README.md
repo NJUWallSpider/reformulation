@@ -2,10 +2,11 @@
 
 MIPFrame is a Python package for reading, inspecting and analyzing linear LP/MPS
 optimization models. It preserves exact coefficients, variable domains and source
-locations, and exposes them as Python objects. Reading a file also builds a
-factual compressed model map (`model.ir`, template depth 2) without requiring an
-output directory, including verified indexed coordinates and operators. Native loading
-restores saved indexed results or computes them if absent. Structural operations, discrete searches, certificates and edits are explicit.
+locations, and exposes them as Python objects. Reading a file prepares a cheap
+numerical scan (`model.ir`): sparse shape, domains, bounds, numeric fingerprints,
+local row shapes and lexical name hints. Families, components and indexed
+coordinates are computed only when requested. Native loading validates numerical
+content and defers saved structural-cache restoration until explicit access.
 
 ## Install
 
@@ -15,9 +16,9 @@ From this repository (Python 3.11 or later):
 python -m pip install .
 ```
 
-Version 1.0.0 is an internal release, not a public PyPI release. NumPy is the
+Version 1.2.0 is an internal release, not a public PyPI release. NumPy is the
 only runtime dependency. For a distributed wheel, install with
-`python -m pip install /path/to/mipframe-1.0.0-py3-none-any.whl`.
+`python -m pip install /path/to/mipframe-1.2.0-py3-none-any.whl`.
 Install `.[scipy]` from this repository for sparse CSR exports, or `.[parquet]`
 for Parquet exports. Offline help is available through
 `python -m mipframe help "support containment"`.
@@ -26,54 +27,69 @@ optional model regressions, and release boundaries.
 
 ## Compressed model map
 
-`read()`, `load()` and `Model(path)` generate `model.ir` before returning. It is a
-structured `CompressedIR` object with exact facts and model-local structural IDs:
+`read()`, `load()` and `Model(path)` cache a level-0 scan before returning.
+Default display, Mapping iteration and exports never run structural analysis,
+even after other analyses have been computed:
 
 ```python
 with mf.read("model.mps") as m:
-    m.ir.show()                       # bounded notebook-friendly text; no printing
-    facts = m.ir.to_dict()            # complete, independent exact schema 0.3
-    json_text = m.ir.to_json()        # rational values encoded as strings
+    m.ir.show()                       # bounded text, no printing or discovery
+    facts = m.ir.to_dict()            # detached scan, schema 0.4
+    json_text = m.ir.to_json()        # exact rational values encoded as strings
     m.ir.size, m.ir.matrix, m.ir.domains
-    m.ir.numerics, m.ir.objective, m.ir.topology
-    record = m.ir.structure["row_families"][0]
-    family = m.family(record["id"], depth=record["depth"])
-    R = family.rows
-    params = family.related("parameters").where(basis="canonical")
-    S = m.matrix.view(rows=R, vars=R.vars)
+    m.ir.numerics, m.ir.objective, m.ir.local_row_shapes, m.ir.names
+
+    shapes = m.ir.row_shapes()        # explicit full exact local grouping
+    R = shapes.where(sense="<=", nnz=2).rows
+    R.terms.head()
+    names = m.ir.name_templates("var")
+    names.related("slots")           # exact minimum/maximum/distinct per slot
+    names.vars
+
+    m.ir.structure                   # legacy depth-2 structural summary, lazy
+    m.ir.topology                    # lazy bipartite components
+    m.ir.objective["role_support"]   # lazy objective support by roles
+    m.indexed()                      # explicit coordinate/operator discovery
+    full = m.ir.to_dict(include_analysis=True)  # explicitly compute all analyses
 ```
 
-The map includes exact degree/numeric summaries, objective support by variable
-role, bipartite components (including isolated nodes), template refinement levels
-0–2, variable roles at depth 1, row families at depth 2, and both axes' refinement
-lineage. Signed role multisets use `|`; they are structural abstractions, not
-algebraic formulas. Machine data retains model-scoped stable signature IDs,
-family IDs, depths and configurations, but no full member-name lists, coefficient
-histograms or raw neighbor lists. Facts and structural abstractions are separated from semantic
-conclusions: the IR does not label a model as flow/assignment or prescribe a
-reformulation.
+The scan distinguishes constraint-matrix `A-nnz` from objective nonzeros. Counts,
+degrees, signs, bounds and numeric extrema are exact. Local shapes use raw sense,
+row bounds and coefficient multiplicities, without normalization or neighboring
+roles. Representative row IDs lead back to original terms. Shape labels in text
+are preview positions; use fields or original row IDs to query, not those labels
+as portable identities. Names preserve delimiters (`x[12,3]` becomes
+`x[{int},{int}]`) and are lexical hypotheses, not structural evidence.
+
+Scan working storage targets `min(8 MiB, memory_mb / 8)`, excluding the core store,
+degree-array workspace and exported result. A compact coefficient-ID frequency
+vector spills to scratch mmap when it exceeds its memory allowance. Numeric
+common-value summaries retain at most 32 candidates. Low-cardinality histograms are exact.
+Bounded Space-Saving summaries expose `count_lower <= true count <= count`,
+`error`, `exact`, `ranking_exact` and unknown group totals when necessary. Wide-row
+fingerprints are explicitly marked candidates; they never establish exact row
+equality. Slot distinct counts can be lower bounds; incomplete slot ranges are
+marked observed. Names longer than 512 characters are counted as unprofiled.
+Use the explicit exact directories for complete groups, members, coefficients
+and slots. Exact directory relations follow filtering and key-preserving projection.
 
 ```python
-mf.options.ir.max_var_roles = 12
-mf.options.ir.max_row_families = 15
-mf.options.ir.max_attention = 6
-mf.options.ir.max_splits = 8
+mf.options.ir.max_local_shapes = 8
+mf.options.ir.max_name_templates = 8  # per axis
+mf.options.ir.max_histogram = 8
+mf.options.ir.max_values = 8
+mf.options.ir.max_chars = 6000
 ```
 
-These independent display budgets never truncate the machine schema. Family
-previews are ordered by coverage and report omitted counts, covered population
-and singleton counts. Numeric profiles use exact fractions; near-zero means
-`0 < abs(coef) <= 1e-9`, an explicit observation threshold, not a numerical
-correctness verdict. Rendering is cached-data-only and never creates a dense
-matrix or imports SciPy.
-
-Creation now includes sparse scans and refinement work. Numeric distributions
-spill to SQLite; topology uses storage proportional to vertices, not matrix
-area. `memory_mb` also configures refinement working buffers, not a process-wide
-memory cap. Native saves retain the refinement cache; loading reuses it and
-rebuilds the map. Model directories must be writable for these derived caches.
-Live IR access and detailed queries require an open model; `to_dict()` and `to_json()` exports
-remain usable after close. See the [schema and typed navigation guide](docs/USER_GUIDE.md#compressed-ir模型地图).
+These are display limits; changing them does not rescan or change machine data.
+Native v6 stores shared base arrays and typed deltas; v3/v4 require re-import.
+Core parsing merges terms using an external sort;
+the scan adds no global sort, graph traversal or family-table materialization.
+The normal import/load scan shares the required canonical-content traversal.
+Logical Edit snapshots scan lazily on first `ir` access. Lazy analysis failures
+leave numerical facts and scan data usable and can be retried. Live views require
+an open model; detached dictionaries, JSON and records outlive it. See the
+[schema and navigation guide](docs/USER_GUIDE.md#compressed-ir模型地图).
 
 ## Read a model
 
@@ -355,7 +371,7 @@ import mipframe as mf
 
 with mf.read("model.lp") as model:
     model.save("saved_model")       # New directory; existing targets are rejected
-    model.write_lp("exported.lp")   # Exact LP export
+    model.write("exported.lp")   # Exact LP export
 
 with mf.load("saved_model") as model:
     print(model.verify()["status"])
@@ -409,7 +425,7 @@ entry points. Numeric storage formats are versioned independently from the packa
 ### Signature-assisted indexed discovery
 
 ```python
-I = m.indexed()  # already prepared by read/load; saved with the model
+I = m.indexed()  # explicit discovery; completed results are saved with the model
 I.tensors                 # verified 2D coordinate views, including sparse grids
 I.operators               # exact reduction / broadcast operators
 I.verify().require()
@@ -431,16 +447,16 @@ report = m.check.linear(claim, using=certificate, residual="bounds")
 report.require()
 ```
 
-`LinExpr`, `Claim`, and the unified `Report` support exact identities, explicit
+`LinExpr`, `Claim`, `BatchProof` and scalar `ProofRef` views support exact identities, explicit
 linear certificates, conditional infeasibility, integer rounding, local integer
 enumeration, and full-point feasibility. Conditions and integer-only scope persist
-through dependent reports. [API and replay guide](docs/CHECK.md) ·
+through dependent proofs. Diagnostic checks still return `Report`; full-point checks return `PointReport`. [API migration](docs/API_MIGRATION.md) ·
 [runnable example](examples/exact_certificates.py).
 
 ### Immutable model edits
 
 `m.edit()` stages exact source-relative changes and builds an independent snapshot.
-Attach a verified Report with `because=` to establish preserving changes; omitted
+Attach a verified `BatchProof` or `ProofRef` with `because=` to establish preserving changes; omitted
 evidence remains explicitly unverified. Draft auxiliary variables, bulk Frame
 inputs, grounded deletion certificates, native lineage and exact LP audits share
 the same path. See [the Edit guide](docs/EDIT.md) and the runnable
@@ -462,3 +478,9 @@ installed-version contracts. Help does not read model data or execute analysis.
 See the [help guide](docs/HELP.md), [copyable agent skill](docs/agent/SKILL.md),
 and [generated API reference](docs/agent/API.md). All examples state the scope of
 their conclusions; candidate discovery does not grant proof or edit authority.
+
+## Runtime v5 migration
+
+See [architecture](docs/ARCHITECTURE.md), [implementation status and remaining work](docs/RUNTIME_V5_STATUS.md), and the deterministic replay scripts under `scripts/benchmark_runtime*.py`.
+
+Measured test32/test33 results and reproducible commands: [runtime performance report](docs/PERFORMANCE_RUNTIME_20261005.md).

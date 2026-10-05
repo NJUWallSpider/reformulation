@@ -23,6 +23,19 @@ compute exact structural facts. `mf.alg` searches graph or finite integer object
 `LinExpr`, `Claim` and `m.check` express and verify mathematical propositions.
 An `Edit` builds a different snapshot; it never mutates its source.
 
+## Run one complete example
+
+This self-contained example creates temporary files and removes them when done.
+It selects two known rows, verifies a supplied witness, commits the deletion and
+checks the exported MPS. For a real model, choose target rows and retained witnesses
+from the actual model; no checker discovers them automatically.
+
+```python
+{{quickstart}}
+```
+
+The same executable example is in `mf.help("recipe.quickstart", detail="full")`.
+
 ## Find the capability before inventing syntax
 
 Query `mf.help("recover coordinates")`, `mf.help("linear certificate")`, or another
@@ -41,9 +54,10 @@ Start from these six actions:
 - Verify: an explicit Claim and the appropriate checker, including its scope.
 - Modify: stage an Edit, inspect its summary, build and audit the new snapshot.
 
-Do not guess methods such as `detect_network`, `find_symmetry`, `auto_reformulate`
-or `write_mps`. Search the intended capability; a limitation topic may be the
-correct answer. Inspect a public signature or docstring when the argument contract
+Do not guess methods such as `detect_network`, `find_symmetry` or `auto_reformulate`.
+Use `Model.write` or `Edit.write` for supported LP/MPS output. Search the intended
+capability; a limitation topic may be the correct answer. Inspect a public signature
+or docstring when the argument contract
 is uncertain. Avoid rebuilding parsers or sparse indexing already supplied by the
 library, while keeping ordinary Python available for small custom calculations.
 
@@ -76,10 +90,15 @@ changes their comparison rules. See `mf.help("concept.indexed", detail="full")`.
 
 ## Observe, hypothesize, query, verify, act, audit
 
-Read the IR after importing a model. `read()` and `load()` prepare default IR and
-indexed results before returning, so loading is real work. Displaying IR does not
-start a second search. Use samples to choose hypotheses and full declared scopes
-to establish them. A small example is not a proof about every family member.
+Read the IR after importing a model. `read()` and `load()` cache a cheap scan:
+size, domains, bounds, degrees, numeric fingerprints, local row shapes and lexical
+name hypotheses. Display and default exports never start structural analysis.
+High-cardinality counts may carry error bounds; candidate fingerprints and name
+patterns are not exact structural evidence. Use `m.ir.row_shapes()` or
+`m.ir.name_templates("row")` for full exact navigable directories. Families,
+`m.ir.topology`, role support and `m.indexed()` compute only on explicit access.
+Use samples to choose hypotheses and full declared scopes to establish them.
+A small example is not a proof about every family member.
 
 ```python
 m = mf.read("model.mps")
@@ -151,7 +170,7 @@ Independent imports have different snapshot identities. Save/load preserves uid
 and version. Same spelling does not authorize cross-model joins. Presolved names
 do not supply a postsolve map. Keep every model referenced by a live result open;
 export detached records if data must outlive it. New Edit snapshots are independent
-but Diff and proof navigation can still depend on the parent remaining open.
+and child snapshots remain usable after the parent closes.
 
 ## Compose relations with explicit contracts
 
@@ -201,6 +220,14 @@ For inequalities use `s <= U` or `s >= L`; `LinExpr.le(U)` and `LinExpr.ge(L)`
 are equivalent method forms. Constructing a Claim neither proves it nor adds a row.
 Claims and Reports have no implicit bool. Check `status` or call `require()`.
 
+Scalar mathematical checkers return `ProofRef`; bulk checkers return `BatchProof`.
+`check.solution` returns `PointReport`, with point violations rather than an
+implication certificate. Frame/integrity checks return diagnostic `Report`.
+These types have different methods: use their own help, not the Report API by
+analogy. In particular, ProofRef has no `explain()`; inspect its conclusion,
+scope and evidence. Finish consuming PointReport evidence before calling its
+`close()` to release retained point storage.
+
 Use `mf.q("9.6")` or `mf.q("43/39")`, not a Python float. Converting approximate
 solver multipliers to rationals is only a proposal; replay the full certificate
 with residual bound compensation. Exactness is relative to this saved snapshot,
@@ -216,23 +243,31 @@ variable coverage, including variables absent from all rows; activity alone only
 requires participating variables. See `mf.help("fractional point feasibility")`.
 No checker searches for multipliers.
 
-For many linear checks, use the scalar-style batch builder. It accepts the same
-`using` and `assume` arguments as `linear`, without constructing schemas:
+For many checks against existing model rows, pass integer IDs and compact witnesses:
 
 ```python
-with m.check.linear_batch(residual="bounds") as batch:
-    for key, claim, sources, assumptions in checks:
-        batch.add(key=key, target=claim, using=sources, assume=assumptions)
-    report = batch.run()
-report.require()
-proof = report.for_target(key)
+proof = m.check.linear_rows(targets=target_ids, witnesses=retained_paths).require()
+final = m.edit().drop_rows(target_ids, because=proof).commit()
+receipt = final.write('output/model.mps', audit='readback')
 ```
 
-Keys are unique nonempty strings. `add` consumes each input immediately; `run`
-verifies and publishes the complete batch. Results survive the builder's context
-exit. Every target retains its own explicit and inherited assumptions; a batch
-does not merge branches or discharge conditions. If targets, terms and sources
-already exist as Frames, use `linear_many`. See `mf.help("Checker.linear_batch")`.
+`retained_paths` is a list of source row-ID lists with unit multipliers. General
+certificates use `mf.CertificateBatch(offsets, sources, multipliers, sides, kinds)`.
+Sides are `lb`, `ub`, or `eq`; source kinds are `row` or `var`. For custom sparse
+claims use `mf.Targets` and `m.check.linear_many`. The scalar builder remains useful
+for small Claim inputs, with one common assumption scope per batch. Frame adapters
+are optional and do not run inside the proof kernel.
+
+`BatchProof` stores statuses and arrays; do not call `for_target()` in a large loop.
+Bind the batch or `proof.select(ids)` directly to an edit. `round_many(ub=0)` or
+`round_many(lb=...)` rounds a whole batch of variable bounds.
+
+For shared one-hot affine structure use `m.check.one_hot_affine(groups=...)`, where
+each group is `(onehot_row_id, [(definition_row_id, defined_variable_id), ...])`.
+`bound_exclusions()` verifies option exclusions after checking all common structure.
+`affine_integrality(vars=..., rows=...)` checks normalized integer definitions; its
+proof supports relaxing those variables to continuous without relying on their own
+integer declarations. These APIs require discovered structure, not name conventions.
 
 An insufficient certificate is INCONCLUSIVE, not a proof that the target is false.
 A local enumeration counterexample need not extend to a full-model feasible point.
@@ -249,24 +284,36 @@ MIP symmetry certification are not implemented.
 
 ## Modify and audit deliberately
 
-Stage edits against one source snapshot. Setters use exact scalars or key-aligned
-Frames, not positional arrays. Omitted bounds preserve the old side; None is not
-infinity. Changing coefficients requires a new row identity. Dropping a variable
-requires no final row or objective references; it is not variable elimination.
+An Edit records a source-relative delta. `summary()` reports counts and known
+semantics without global matrix analysis. `build()` allows experimental unproved
+changes and marks semantic preservation UNKNOWN. `commit()` strictly requires
+MIP equivalence, preserved objective values, covered operations and grounded
+certificate dependencies. Conditional, foreign and unproved evidence is rejected.
+Deletion witnesses must ultimately use retained facts; cycles cannot justify edits.
 
-An omitted because permits an unverified modification without asserting equivalence.
-A supplied because is strict: proved, exact, unconditional, matching source and
-covering the modification. Deletion proofs must close to retained facts; self-proof
-and ungrounded cycles fail. New rows become usable premises only after an
-intermediate build and a new check on that snapshot.
-For a case-proved replacement, first add the new row with `because`, build,
-then prove and delete the old row on the new snapshot. Check both direct-parent
-Diffs; comparing across multiple edits is not supported.
+Use cheap intermediate snapshots when a later proof needs newly established facts.
+For example, prove bounds, commit the tightening, eliminate fixed variables with
+`substitute_fixed(vars=...)`, then check implications on the reduced snapshot.
+Nonzero fixed values shift row bounds and the objective constant exactly. The delta
+retains a lifting map. `set_domains(...,kind="C",because=integrality_proof)` supports
+proved integrality relaxation. General unproved replacements remain UNKNOWN.
 
-Inspect separate LP/MIP semantics and objective relations in Diff. A valid cut need
-not improve an LP objective or solver time. Native save is lossless; LP export rejects
-unrepresentable exact data. `mf.audit.roundtrip` checks supported LP serialization,
-not mathematical implication. There is no MPS writer or automatic elimination.
+Snapshots share numerical storage with their parent. Stable entity IDs may have
+gaps; use `.iloc` for positions and `.loc` for IDs. Closing the parent does not
+invalidate a child. `child.diff(ancestor)` composes stored deltas; unrelated models
+receive a numerical comparison with no inferred mathematical equivalence.
+
+Write one final artifact with `write(path,audit="readback")`. It writes a
+temporary file, checks the actual numerical output once, then publishes it. It does
+not rerun mathematical proofs. With an indexed MPS source whose hash still matches,
+patch output supports row deletion, fixed substitution, row/variable bounds and
+integrality relaxation. `strategy="auto"` falls back to canonical output when
+patching is unsupported; `strategy="patch"` requires patch support. Inspect
+`patch_plan()` for the selected mode and reasons. Native v7 `save()`
+stores flattened numerical facts plus historical delta/certificates. Loading never
+turns saved PROVED flags into live trust. `loaded.audit(source=original)` explicitly
+rechecks saved evidence and numerical output. Independent external verifiers remain
+useful for final research audits; ordinary summary/diff/save do not invoke them.
 
 ## Recover and control output
 
@@ -281,15 +328,10 @@ Use iter_batches/write for large exports. Output limits fail complete ops rather
 than silently truncating them. Search and enumeration budget statuses have different
 contracts; consult their exact topics.
 
-Scalar mathematical Reports share retained certificate storage; keeping thousands
-does not require one persistent database connection per proof. Small expressions
-use bounded exact memory and larger expressions share spill storage. Evidence
-Frames, Claims, dependent Reports and Edits keep the data they still need alive.
-Release unneeded containers to reclaim that data; routine `gc.collect()` is not
-required. Export replayable certificates with `Report.write` or `to_spec` when
-they must outlive the model. `Model.close` invalidates live dependent results.
-There is no public `Report.close` or `LinExpr.close`; see
-`mf.help("concept.report-resources")` for ownership and resource scope.
+Mathematical BatchProof results use immutable exact arrays and lightweight ProofRefs.
+Only explicit evidence access builds Frames or symbolic claims. Keep model owners
+open for entity/Frame navigation. Export certificates with `write()` or `to_spec()`;
+replay always runs the checker again. Never treat a status copied from disk as proof.
 
 Use an external solver for optimization and an explicit mapping for solver data.
 Use source text when provenance or serialization itself is the question. The goal

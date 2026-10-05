@@ -1,6 +1,6 @@
-# Internal release: 1.0.0
+# Internal release: 1.2.0
 
-This is the 1.0.0 internal release for Python 3.11 or later. It is not intended
+This is the 1.2.0 internal release for Python 3.11 or later. It is not intended
 for PyPI. Package metadata includes
 `Private :: Do Not Upload`. This release does not assign an open-source license.
 
@@ -11,14 +11,14 @@ Use an isolated environment and a wheel supplied by the project:
 ```sh
 python -m venv .venv
 . .venv/bin/activate
-python -m pip install /path/to/mipframe-1.0.0-py3-none-any.whl
+python -m pip install /path/to/mipframe-1.2.0-py3-none-any.whl
 python -m mipframe help
 python -m mipframe help "recover coordinates" --detail full
 ```
 
 NumPy is the only core dependency. For optional exports, install the same wheel
 with extras, for example
-`python -m pip install '/path/to/mipframe-1.0.0-py3-none-any.whl[scipy]'`.
+`python -m pip install '/path/to/mipframe-1.2.0-py3-none-any.whl[scipy]'`.
 The `parquet` extra provides PyArrow. For offline installation, prepare a wheel
 folder containing NumPy and any required optional dependencies, then pass
 `--no-index --find-links /path/to/wheels` to pip. The mipframe wheel alone does
@@ -34,8 +34,8 @@ python scripts/build_help.py --check
 python -m pytest -q -rs
 python -m build
 python scripts/verify_release.py \
-  --wheel dist/mipframe-1.0.0-py3-none-any.whl \
-  --sdist dist/mipframe-1.0.0.tar.gz
+  --wheel dist/mipframe-1.2.0-py3-none-any.whl \
+  --sdist dist/mipframe-1.2.0.tar.gz
 ```
 
 The verifier checks wheel contents and private-release metadata, exercises
@@ -73,14 +73,15 @@ completion of subsequent IR/indexed analysis are separate checks.
 ## Compatibility and limits
 
 - Exact rational values are the default; floating-point export is explicit.
-- Native storage uses v3. Older native formats must be reimported from LP/MPS.
-- Read/load prepare default IR and indexed analysis before returning. Large
-  models may require substantial time and disk space.
+- Native storage uses v7. Older native formats must be reimported from LP/MPS.
+- Read/load prepare a cheap numerical scan. Structural families, topology and
+  indexed analysis run only on explicit access.
 - APIs are evolving; use installed `mf.help()` for the matching contracts.
 - Candidate searches and structural observations do not establish valid cuts,
   model symmetry or safe edits. Mathematical certificates retain their scope.
-- LP export can reject values or row forms that cannot be represented exactly;
-  native storage is the lossless alternative. MPS export is not provided.
+- LP/MPS export can reject values or row forms that cannot be represented exactly;
+  native storage is the lossless alternative. Model.write supports audited
+  canonical output and supported MPS source patches.
 - No solver, online Agent evaluation, public upload or automatic update is part
   of this internal distribution.
 

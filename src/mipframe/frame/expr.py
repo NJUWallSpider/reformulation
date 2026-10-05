@@ -243,8 +243,14 @@ class QueryExpr:
         if op == "isin":
             if a is None:
                 return None
-            values = [x.evaluate(row, context) for x in args[1]]
-            return True if a in values else None if None in values else False
+            if id(self) in context.literal_members or all(x.op=='literal' for x in args[1]):
+                return context.contains_literals(self,a)
+            nullable=False
+            for x in args[1]:
+                value=x.evaluate(row,context)
+                if a==value:return True
+                nullable=nullable or value is None
+            return None if nullable else False
         if op in ("not", "neg", "abs"):
             return (
                 None

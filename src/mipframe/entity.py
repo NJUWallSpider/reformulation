@@ -69,3 +69,16 @@ class Entity(Mapping):
         return not self == other
 
     __hash__ = None
+
+
+def bind_identity(owner,axis,ident):
+    """Wrap one validated ID without constructing an entity Frame and schema."""
+    model=owner.model
+    if type(ident) is not int or ident<0:raise KeyError(ident)
+    if hasattr(model,'f'):
+        try:model.f.validate(axis,ident)
+        except ValueError:raise KeyError(ident) from None
+    elif ident>=model.capacity(axis):raise KeyError(ident)
+    from mipframe.frame.row import Row
+    from mipframe.frame.var import Var
+    return (Row if axis=='row' else Var)(owner,ident)

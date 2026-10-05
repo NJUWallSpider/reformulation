@@ -117,7 +117,7 @@ def main():
                 indent=2,
             )
         )
-        ir.write_lp(
+        ir.write(
             out / entry["name"] / "reconstructed.lp",
             rename_vars=names,
             rename_rows=rows,

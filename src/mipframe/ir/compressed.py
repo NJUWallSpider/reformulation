@@ -1,7 +1,7 @@
 """Factual, traceable model maps over exact numerical snapshots.
 
-Exact numeric histograms spill to SQLite. Graph work is linear in vertices and
-sparse entries, never in the matrix area. The machine schema is not a rendering.
+The default map is a bounded numerical scan. Structural summaries are explicit
+and lazy; default rendering and serialization never run analyses.
 """
 
 from collections import Counter
@@ -13,126 +13,21 @@ from fractions import Fraction
 import hashlib
 import json
 from pathlib import Path
-import sqlite3
 
 import numpy as np
 
-from mipframe.frame.entity import _sense
 from mipframe.frame.entity import _text
 from mipframe.ops._kernels.union_find import DSU
 from mipframe.options import options
 from mipframe.frame.row import Formula
 from mipframe.ir.display import canonical_pattern_index
-from mipframe.ir.typed import bound_class
-from mipframe.store.numbers import compare_numeric_text
 
-SCHEMA_VERSION = "0.3"
-NEAR_ZERO = Fraction(1, 10**9)
+SCHEMA_VERSION = "0.4"
+from mipframe.store.scan import NEAR_ZERO, weighted_profile as _profile
 
 
 def _fraction(n, total):
     return Fraction(n, total) if total else Fraction(0)
-
-
-def _profile(pairs):
-    """Exact weighted linear quantiles; pairs are sorted (value, frequency)."""
-    pairs = list(pairs)
-    n = sum(count for _, count in pairs)
-    if not n:
-        return dict(
-            kind="empty", count=0, min=None, median=None, p90=None, max=None, mode=None
-        )
-
-    def at(rank):
-        seen = 0
-        for value, count in pairs:
-            seen += count
-            if seen > rank:
-                return value
-
-    def quantile(q):
-        position = (n - 1) * q
-        lo = position.numerator // position.denominator
-        a = at(lo)
-        return a + (position - lo) * (at(min(lo + 1, n - 1)) - a)
-
-    result = dict(
-        kind="constant" if len(pairs) == 1 else "varying",
-        count=n,
-        min=pairs[0][0],
-        median=quantile(Fraction(1, 2)),
-        p90=quantile(Fraction(9, 10)),
-        max=pairs[-1][0],
-        mode=max(pairs, key=lambda pair: pair[1])[0],
-    )
-    if len(pairs) == 1:
-        result["value"] = pairs[0][0]
-    return result
-
-
-class _NumericProfiles:
-    """Exact external histograms, including high-cardinality coefficients."""
-
-    def __init__(self):
-        self.db = sqlite3.connect("")
-        self.db.execute("PRAGMA cache_size=-1024")
-        self.db.execute("PRAGMA temp_store=FILE")
-        self.db.create_collation(
-            "rational",
-            compare_numeric_text,
-        )
-        self.db.execute(
-            # Values are canonical Fraction strings: byte equality is already
-            # exact equality. Numeric ordering is needed only for quantiles.
-            "CREATE TABLE hist(kind TEXT,value TEXT,n INTEGER,PRIMARY KEY(kind,value))"
-        )
-
-    def add(self, kind, value, count=1):
-        self.db.execute(
-            "INSERT INTO hist VALUES(?,?,?) ON CONFLICT(kind,value) DO UPDATE SET n=n+excluded.n",
-            (kind, str(value), count),
-        )
-
-    def profile(self, kind):
-        n, distinct = self.db.execute(
-            "SELECT coalesce(sum(n),0),count(*) FROM hist WHERE kind=?", (kind,)
-        ).fetchone()
-        if not n:
-            return _profile([])
-        ranks = {0, n - 1}
-        positions = [(n - 1) * q for q in (Fraction(1, 2), Fraction(9, 10))]
-        for p in positions:
-            lo = p.numerator // p.denominator
-            ranks.update((lo, min(lo + 1, n - 1)))
-        found, seen, mode, frequency = {}, 0, None, -1
-        for text, count in self.db.execute(
-            "SELECT value,n FROM hist WHERE kind=? ORDER BY value COLLATE rational", (kind,)
-        ):
-            value = Fraction(text)
-            for rank in ranks:
-                if seen <= rank < seen + count:
-                    found[rank] = value
-            if count > frequency:
-                mode, frequency = value, count
-            seen += count
-        quantiles = []
-        for p in positions:
-            lo = p.numerator // p.denominator
-            quantiles.append(
-                found[lo] + (p - lo) * (found[min(lo + 1, n - 1)] - found[lo])
-            )
-        result = dict(
-            kind="constant" if distinct == 1 else "varying",
-            count=n,
-            min=found[0],
-            median=quantiles[0],
-            p90=quantiles[1],
-            max=found[n - 1],
-            mode=mode,
-        )
-        if distinct == 1:
-            result["value"] = found[0]
-        return result
 
 
 def _degree_profile(ptr, members):
@@ -187,7 +82,7 @@ def _varying_roles(provider, entry, primary):
                 if r['basis']=='canonical' and r['orientation']==canonical_pattern_index(signature)
                 and r['quantity']=='coefficient' and r['varying']]
 
-    if (signature.mode != 'template' or not provider.depth
+    if (hasattr(m,"f") or signature.mode != 'template' or not provider.depth
             or len(primary) > min(32, store.memory // 1024)):
         return histogram()
     pos, neg = (store.array(config, kind, provider.depth) for kind in ('pos', 'neg'))
@@ -224,12 +119,34 @@ def _varying_roles(provider, entry, primary):
     return [f"{'+' if sign > 0 else '-'}V{neighbor}" for sign, neighbor in sorted(varying)]
 
 
+class _Objective(Mapping):
+    """Cheap objective mapping; legacy role fields require an explicit lookup."""
+    def __init__(self, ir): self.ir = ir
+    def __getitem__(self, key):
+        self.ir._guard()
+        if key in ('role_support', 'role_depth'):
+            return deepcopy(self.ir._objective_roles()[key])
+        return deepcopy(self.ir._data['objective'][key])
+    def __iter__(self):
+        self.ir._guard()
+        for key in tuple(self.ir._data['objective']):
+            self.ir._guard()
+            yield key
+    def __len__(self):
+        self.ir._guard()
+        return len(self.ir._data['objective'])
+    def __contains__(self, key):
+        self.ir._guard()
+        return key in self.ir._data['objective']
+    def __repr__(self): return repr(dict(self))
+
+
 class CompressedIR(Mapping):
     """
-    Eager schema 0.3 summary with model-local IDs and bounded display.
+    Cached level-0 scan with explicit, independently cached analyses.
 
-            ``to_dict()`` returns an independent exact snapshot. ``to_json()`` represents
-            Fractions as rational strings. Only these detached exports outlive the model.
+    Default iteration and exports contain only schema 0.4 scan data. Legacy
+    structure/topology/indexed lookups are supported but are not default keys.
 
     MIPFRAME HELP BEGIN
     Bounded factual model map prepared by read/load.
@@ -237,33 +154,44 @@ class CompressedIR(Mapping):
     Full contract: mf.help("api.CompressedIR")
     MIPFRAME HELP END
     """
-
     def __init__(self, owner, *, depth=2, memory_mb=128):
         if type(depth) is not int or depth < 0:
-            raise ValueError("depth must be a nonnegative integer")
-        self._owner = owner
-        from mipframe.ir.signatures import refinement
-        self._result = refinement(owner,
-            depth=depth, mode="template", memory_mb=memory_mb
-        )
-        self._depth = depth
-        self._family_frames = {}
+            raise ValueError('depth must be a nonnegative integer')
+        self._owner, self._depth, self._memory_mb = owner, depth, memory_mb
+        self._family_frames, self._analyses, self._directories = {}, {}, {}
+        self._signature_result = None
         self._data = self._build()
 
-    def _guard(self):
-        self._owner.model
+    def _guard(self): self._owner.model
+
+    @property
+    def _result(self):
+        self._guard()
+        if self._signature_result is None:
+            from mipframe.ir.signatures import refinement
+            self._signature_result = refinement(self._owner, depth=self._depth,
+                mode='template', memory_mb=self._memory_mb)
+        return self._signature_result
 
     def _release(self):
-        """Release the eager map's memory on owner close; exports are detached."""
         self._data.clear()
         self._family_frames.clear()
-        self._result = None
+        self._analyses.clear()
+        self._directories.clear()
+        self._signature_result = None
 
     def __getitem__(self, key):
         self._guard()
-        if key == "indexed":
+        if key == 'objective': return _Objective(self)
+        if key == 'structure':
+            if key not in self._analyses: self._analyses[key] = self._build_structure()
+            return deepcopy(self._analyses[key])
+        if key == 'topology':
+            if key not in self._analyses: self._analyses[key] = self._topology()
+            return deepcopy(self._analyses[key])
+        if key == 'indexed':
+            self._owner.indexed(memory_mb=self._memory_mb)
             from mipframe.ir.indexing.views import ir_summary
-
             return ir_summary(self._owner)
         return deepcopy(self._data[key])
 
@@ -277,231 +205,124 @@ class CompressedIR(Mapping):
         self._guard()
         return len(self._data)
 
+    def __contains__(self, key):
+        self._guard()
+        return key in self._data
+
     def __getattr__(self, key):
-        if key in {
-            "schema_version",
-            "model",
-            "size",
-            "matrix",
-            "domains",
-            "numerics",
-            "objective",
-            "topology",
-            "structure",
-            "attention",
-            "indexed",
-        }:
+        if key in {'schema_version','model','size','matrix','domains','numerics',
+                   'objective','topology','structure','attention','indexed',
+                   'local_row_shapes','names','presolve_cues','scan'}:
             return self[key]
         raise AttributeError(key)
 
-    def to_dict(self):
+    def to_dict(self, *, include_analysis=False):
         """
+        Export a detached scan; explicitly opt into expensive analyses.
+
         MIPFRAME HELP BEGIN
-        Export the complete factual IR summary with exact numbers.
+        Export a detached scan; include_analysis=True explicitly computes analyses.
 
         Full contract: mf.help("api.CompressedIR.to_dict")
         MIPFRAME HELP END
         """
         self._guard()
-        return {**deepcopy(self._data), "indexed": self["indexed"]}
+        if type(include_analysis) is not bool: raise TypeError('include_analysis must be bool')
+        data = deepcopy(self._data)
+        if include_analysis:
+            data.update(structure=self['structure'],topology=self['topology'],indexed=self['indexed'])
+            data['objective'].update(self._objective_roles())
+        return data
 
-    def to_json(self, *, indent=2):
+    def to_json(self, *, indent=2, include_analysis=False):
         """
+        Export scan JSON; exact rational values are strings.
+
         MIPFRAME HELP BEGIN
-        Export the complete factual IR summary as JSON.
+        Export scan JSON; include_analysis=True explicitly computes analyses.
 
         Full contract: mf.help("api.CompressedIR.to_json")
         MIPFRAME HELP END
         """
-        self._guard()
-        return json.dumps(
-            self.to_dict(),
-            default=lambda x: str(x) if isinstance(x, Fraction) else x,
-            ensure_ascii=False,
-            indent=indent,
-            allow_nan=False,
-        )
+        return json.dumps(self.to_dict(include_analysis=include_analysis),
+            default=lambda x:_rational_text(x) if isinstance(x,Fraction) else x,
+            ensure_ascii=False,indent=indent,allow_nan=False)
 
     def _build(self):
-        m, result, depth = self._owner.model, self._result, self._depth
-        nr, nv = self._owner.shape
-        nz = self._owner.nnz
-        role_depth = max(0, depth - 1)
-        colors = result._store.array(result._config, "var", role_depth)
-        types = Counter({"B": 0, "I": 0, "C": 0})
-        senses = Counter({"<=": 0, "=": 0, ">=": 0})
-        bounds, support = Counter(), Counter()
-        positive = negative = near_zero = 0
-        numeric = _NumericProfiles()
-        try:
-            for row in m.rows:
-                lo, hi = m.num(row[2]), m.num(row[3])
-                sense = _sense(lo, hi)
-                senses[sense] += 1
-                # Equality once, ranges both endpoints, free rows no endpoints.
-                values = (
-                    (lo, hi) if sense == "range" else (lo if sense == ">=" else hi,)
-                )
-                for value in values:
-                    if value is not None and value != 0:
-                        numeric.add("rhs", value)
-            for v in m.variables:
-                types[m.variable_type(v)] += 1
-                bounds[bound_class(m.num(v[3]), m.num(v[4]))] += 1
-                cost = m.num(v[5])
-                if cost:
-                    numeric.add("objective", cost)
-                    support[int(colors[v[0]])] += 1
-                    positive += cost > 0
-                    negative += cost < 0
-            # Number IDs are interned; aggregate occurrences externally before
-            # decoding, without keeping a Python object for every nonzero.
-            numeric.db.execute(
-                "CREATE TABLE coefficient_ids(id INTEGER PRIMARY KEY,n INTEGER)"
-            )
-            numeric.db.executemany(
-                "INSERT INTO coefficient_ids VALUES(?,1) ON CONFLICT(id) DO UPDATE SET n=n+1",
-                ((int(i),) for i in m.coeff_id),
-            )
-            for ident, count in numeric.db.execute("SELECT id,n FROM coefficient_ids"):
-                value = abs(m.num(ident))
-                numeric.add("matrix", value, count)
-                near_zero += count if 0 < value <= NEAR_ZERO else 0
-            coefficients, rhs, costs = (
-                numeric.profile(kind) for kind in ("matrix", "rhs", "objective")
-            )
-        finally:
-            numeric.db.close()
-        objective_nnz = positive + negative
-        objective = dict(
-            sense=m.manifest["sense"],
-            constant=m.num(m.manifest["objective_constant"]),
-            nonzeros=objective_nnz,
-            variables=nv,
-            sign_counts={
-                "positive": positive,
-                "negative": negative,
-                "zero": nv - objective_nnz,
-            },
-            kind="constant"
-            if not objective_nnz
-            else "uniform"
-            if costs["kind"] == "constant"
-            else "varying",
-            coefficient_profile=costs,
-            role_depth=role_depth,
-            role_support=[
-                dict(
-                    id=f"V{color}",
-                    depth=role_depth,
-                    count=count,
-                    fraction=_fraction(count, objective_nnz),
-                )
-                for color, count in sorted(
-                    support.items(), key=lambda item: (-item[1], item[0])
-                )
-            ],
-        )
-        topology = self._topology()
-        overview = []
-        for d in range(depth + 1):
-            row_roles, var_roles = (
-                len(self._family_frame("row", d)),
-                len(self._family_frame("var", d)),
-            )
-            overview.append(
-                dict(
-                    depth=d,
-                    row_roles=row_roles,
-                    var_roles=var_roles,
-                    delta_rows=None if not d else row_roles - overview[-1]["row_roles"],
-                    delta_vars=None if not d else var_roles - overview[-1]["var_roles"],
-                )
-            )
-        variables = self._families("var", role_depth)
-        families = self._families("row", depth)
-        refinements = [
-            self._refinement(kind, d)
-            for d in range(1, depth + 1)
-            for kind in ("row", "var")
-        ]
-        attention = []
-        if near_zero:
-            attention.append(
-                dict(
-                    kind="fact",
-                    code="near_zero_coefficients",
-                    count=near_zero,
-                )
-            )
-        for kind in ("rows", "variables"):
-            if topology[f"isolated_{kind}"]:
-                attention.append(
-                    dict(
-                        kind="fact",
-                        code=f"isolated_{kind}",
-                        count=topology[f"isolated_{kind}"],
-                    )
-                )
-        for delta in refinements:
-            if delta["split_count"]:
-                attention.append(
-                    dict(
-                        kind="structural_abstraction",
-                        code="refinement_splits",
-                        axis=delta["kind"],
-                        from_depth=delta["from_depth"],
-                        to_depth=delta["to_depth"],
-                        count=delta["split_count"],
-                    )
-                )
-        return dict(
-            schema_version=SCHEMA_VERSION,
-            indexed={"status": "not_run", "runs": []},
-            model=dict(
-                name=Path(m.manifest.get("source") or m.path).stem,
-                model_version=m.manifest["model_version"],
-                sense=m.manifest["sense"],
-            ),
-            size=dict(variables=nv, rows=nr, nonzeros=nz),
-            matrix=dict(
-                density=_fraction(nz, nr * nv),
-                row_nnz=_degree_profile(m.row_ptr, range(nr)),
-                column_nnz=_degree_profile(m.col_ptr, range(nv)),
-            ),
-            domains=dict(
-                variable_types=dict(types),
-                row_senses=dict(senses),
-                bounds=dict(bounds),
-            ),
-            numerics=dict(
-                absolute_coefficients=coefficients,
-                nonzero_rhs=rhs,
-                bounds=dict(bounds),
-                rhs_convention="raw finite nonzero row bounds; equality once, ranged rows both endpoints",
-                near_zero_coefficients=dict(
-                    count=near_zero,
-                    threshold=NEAR_ZERO,
-                    comparison="0 < abs(coef) <= threshold",
-                ),
-                coefficient_dynamic_range=coefficients["max"] / coefficients["min"]
-                if nz
-                else None,
-            ),
-            objective=objective,
-            topology=topology,
-            structure=dict(
-                mode="template",
-                depth=depth,
-                variable_role_depth=role_depth,
-                config=result.config,
-                overview=overview,
-                variable_roles=variables,
-                row_families=families,
-                refinements=refinements,
-            ),
-            attention=attention,
-        )
+        from mipframe.store.scan import Scan
+        m = self._owner.model
+        data = getattr(m, '_scan_data', None)
+        if data is None:
+            m.prepare_scan(self._memory_mb)
+            data=m._scan_data
+        # Ownership transfers to the IR: no second copy of all scan candidates.
+        m._scan_data = None
+        data.update(schema_version=SCHEMA_VERSION,model=dict(
+            name=Path(m.manifest.get('source') or m.path).stem,
+            model_version=m.manifest['model_version'],sense=m.manifest['sense']))
+        data['objective'].update(sense=m.manifest['sense'],constant=m.num(m.manifest['objective_constant']))
+        data['attention'] = [dict(kind='fact',code=k,count=v) for k,v in data['presolve_cues'].items() if v]
+        return data
+
+    def _objective_roles(self):
+        self._guard()
+        if 'objective_roles' not in self._analyses:
+            from mipframe.ir.signatures import refinement
+            depth = max(0,self._depth-1)
+            result = refinement(self._owner,depth=depth,mode='template',memory_mb=self._memory_mb)
+            colors = result._store.array(result._config,'var',depth)
+            m = self._owner.model
+            support = Counter(int(colors[v[0]]) for v in m.variables if m.num(v[5]))
+            total = self._data['objective']['nonzeros']
+            self._analyses['objective_roles'] = dict(role_depth=depth,role_support=[
+                dict(id=f'V{color}',depth=depth,count=count,fraction=_fraction(count,total))
+                for color,count in sorted(support.items(),key=lambda x:(-x[1],x[0]))])
+        return deepcopy(self._analyses['objective_roles'])
+
+    def _build_structure(self):
+        result,depth = self._result,self._depth
+        overview=[]
+        for d in range(depth+1):
+            nr,nv=len(self._family_frame('row',d)),len(self._family_frame('var',d))
+            overview.append(dict(depth=d,row_roles=nr,var_roles=nv,
+                delta_rows=None if not d else nr-overview[-1]['row_roles'],
+                delta_vars=None if not d else nv-overview[-1]['var_roles']))
+        return dict(mode='template',depth=depth,variable_role_depth=max(0,depth-1),config=result.config,
+            overview=overview,variable_roles=self._families('var',max(0,depth-1)),
+            row_families=self._families('row',depth),
+            refinements=[self._refinement(kind,d) for d in range(1,depth+1) for kind in ('row','var')])
+
+    def row_shapes(self):
+        """
+        Compute the full exact local row-shape directory as a navigable Frame.
+
+        MIPFRAME HELP BEGIN
+        Compute a full exact local row-shape Frame.
+
+        Full contract: mf.help("api.CompressedIR.row_shapes")
+        MIPFRAME HELP END
+        """
+        return self._directory('row_shapes')
+
+    def name_templates(self, kind='row'):
+        """
+        Compute full exact lexical templates and integer slots as Frames.
+
+        MIPFRAME HELP BEGIN
+        Compute a full exact lexical-template Frame.
+
+        Full contract: mf.help("api.CompressedIR.name_templates")
+        MIPFRAME HELP END
+        """
+        if kind not in ('row','var'): raise ValueError('kind must be row or var')
+        return self._directory('names_'+kind)
+
+    def _directory(self, kind):
+        self._guard()
+        if kind not in self._directories:
+            from mipframe.ir.scan_views import Directory
+            self._directories[kind] = Directory(self._owner,kind,self._memory_mb).directory()
+        return self._directories[kind]
 
     def _family_frame(self, kind, depth):
         self._guard()
@@ -526,7 +347,7 @@ class CompressedIR(Mapping):
                 values = provider.record(entry, ('parent','parent_depth'))
                 record = dict(id=entry['id'],signature_id=_signature_id(sig),count=entry['count'],
                     fraction=_fraction(entry['count'],total),depth=depth,**values)
-                degree = _degree_profile(m.row_ptr if kind=='row' else m.col_ptr,entry['ids'])
+                degree = _profile(sorted(Counter(m.degree(kind,int(i)) for i in entry['ids']).items()))
                 if kind=='var':
                     typ,bounds,objective=sig.base
                     record.update(base=dict(type=typ,bounds=bounds,objective=objective),degree=degree)
@@ -555,7 +376,7 @@ class CompressedIR(Mapping):
             entry=dict(id=row.child,depth=depth,count=row.count)
             if kind=='row':
                 partition=self._result.partition(kind,depth)
-                first=partition.db.execute('SELECT first_row FROM families WHERE position=?',(int(row.child[1:]),)).fetchone()[0]
+                first=partition.find('position',int(row.child[1:]))[3]
                 entry['structure']=_tokens(_Signature(self._result,kind,first,depth))[0]
             split['children'].append(entry)
         return dict(kind=kind,from_depth=depth-1,to_depth=depth,
@@ -565,20 +386,23 @@ class CompressedIR(Mapping):
 
     def _topology(self):
         m = self._owner.model
-        nr, nv = self._owner.shape
-        dsu = DSU(nr + nv)
-        for r in range(nr):
-            for p in range(int(m.row_ptr[r]), int(m.row_ptr[r + 1])):
-                dsu.union(r, nr + int(m.col_idx[p]))
-        counts = {}
-        for i in range(nr + nv):
-            root = dsu.find(i)
-            stats = counts.setdefault(root, [0, 0, 0, i])
-            if i < nr:
-                stats[0] += 1
-                stats[2] += int(m.row_ptr[i + 1]) - int(m.row_ptr[i])
-            else:
-                stats[1] += 1
+        nr,nv=self._owner.shape
+        row_ids=m.entity_ids('row');var_ids=m.entity_ids('var')
+        row_capacity=m.capacity('row');var_capacity=m.capacity('var')
+        from mipframe.data.runtime import WorkContext
+        from types import SimpleNamespace
+        with WorkContext(self._memory_mb) as work:
+            dsu=DSU(row_capacity+var_capacity,SimpleNamespace(work=work,paths=set()))
+            for r in row_ids:
+                for neighbors,_ in m.sparse.blocks('row',int(r),max(1,work.memory//64)):
+                    for v in neighbors:dsu.union(int(r),row_capacity+int(v))
+            counts={}
+            for axis,ids,offset in (('row',row_ids,0),('var',var_ids,row_capacity)):
+                for ident in ids:
+                    i=offset+int(ident);root=dsu.find(i)
+                    stats=counts.setdefault(root,[0,0,0,i])
+                    if axis=='row':stats[0]+=1;stats[2]+=m.degree('row',int(ident))
+                    else:stats[1]+=1
         ordered = sorted(
             counts.items(),
             key=lambda item: (-item[1][2], -sum(item[1][:2]), item[1][3]),
@@ -598,10 +422,10 @@ class CompressedIR(Mapping):
         return dict(
             connected_components=len(components),
             isolated_rows=sum(
-                int(m.row_ptr[i]) == int(m.row_ptr[i + 1]) for i in range(nr)
+                m.degree('row',int(i))==0 for i in row_ids
             ),
             isolated_variables=sum(
-                int(m.col_ptr[i]) == int(m.col_ptr[i + 1]) for i in range(nv)
+                m.degree('var',int(i))==0 for i in var_ids
             ),
             largest_component=components[0] if components else None,
             components=components,
@@ -610,6 +434,8 @@ class CompressedIR(Mapping):
 
     def show(self):
         """
+        Render bounded cached scan data without triggering analysis.
+
         MIPFRAME HELP BEGIN
         Render a bounded factual model overview.
 
@@ -617,32 +443,7 @@ class CompressedIR(Mapping):
         MIPFRAME HELP END
         """
         self._guard()
-        text = _render(self._data)
-        from mipframe.ir.indexing.views import ir_summary
-
-        indexed = ir_summary(self._owner, limit=5)
-        text += "\n\nIndexed: " + indexed["status"]
-        for run in indexed["runs"][:5]:
-            if indexed["total_runs"] > 1:
-                scope = run["scope"]
-                label = (
-                    "Full model"
-                    if scope["full_model"]
-                    else f"Selection: {scope['row_count']:,} rows × {scope['var_count']:,} variables"
-                )
-                config = run["signatures"]
-                text += (
-                    f"\n  {label} · {config['config']['mode']} depth {config['depth']}"
-                )
-            nt, no = run["total_tensors"], run["total_operators"]
-            text += f"\n  {nt} coordinate view{'s' if nt != 1 else ''} · {no} exact operator{'s' if no != 1 else ''}"
-            for t in run["tensors"][:5]:
-                text += f"\n    {t['shape'][0]:,} × {t['shape'][1]:,} · {t['var_count']:,} variables · missing {t['missing_cells']:,}"
-            if run["total_tensors"] > 5:
-                text += "\n    ..."
-        if indexed["total_runs"] > 5:
-            text += "\n  ..."
-        return Formula(text)
+        return Formula(_render_scan(self._data))
 
     def __repr__(self):
         return str(self.show())
@@ -651,9 +452,20 @@ class CompressedIR(Mapping):
         printer.text(repr(self))
 
 
+def _rational_text(value):
+    """Exact JSON text even when a derived ratio exceeds Python's digit guard."""
+    try:
+        return str(value)
+    except ValueError:
+        numerator = format(Decimal(value.numerator), "f")
+        return numerator if value.denominator == 1 else numerator + "/" + format(Decimal(value.denominator), "f")
+
+
 def _number(value):
     if value is None:
         return "—"
+    if isinstance(value, (int, Fraction)) and max(value.numerator.bit_length(), value.denominator.bit_length()) > 128:
+        return _approx(value)
     text = _text(value)
     if len(text) > 32:
         return _approx(value)
@@ -669,223 +481,61 @@ def _approx(value):
         return format(number, ".2e").replace("E", "e")
 
 
-def _degree(value):
-    if value["kind"] == "empty":
-        return "empty"
-    if value["kind"] == "constant":
-        return _number(value["value"])
-    return f"{_number(value['min'])}..{_number(value['max'])} (mode {_number(value['mode'])})"
-
-
-def _pattern(tokens):
-    parts = []
-    for token in tokens[:12]:
-        multiplicity = token["multiplicity"]
-        suffix = (
-            f"×{multiplicity['value']}"
-            if multiplicity["kind"] == "constant"
-            else f"×[{multiplicity['min']}..{multiplicity['max']}]"
-        )
-        parts.append(f"{token['sign']}{token['var_role']}{suffix}")
-    if len(tokens) > 12:
-        parts.append(f"... ({len(tokens) - 12} signed groups omitted)")
-    return " | ".join(parts) or "(no terms)"
-
-
-def _percent(value):
-    return f"{float(value) * 100:.1f}%"
-
-
-def _render(data):
-    size, matrix, domains, numeric, objective, topology, structure = (
-        data[k]
-        for k in (
-            "size",
-            "matrix",
-            "domains",
-            "numerics",
-            "objective",
-            "topology",
-            "structure",
-        )
-    )
-    lines = [
-        "MIPFrame compressed IR",
-        _text(data["model"]["name"]),
-        "",
-        "Model",
-        f"  {size['variables']:,} variables · {size['rows']:,} rows · {size['nonzeros']:,} nonzeros",
-        f"  sense: {objective['sense']} · density: {_approx(matrix['density']) if matrix['density'] else '0'}",
-        "  variables: "
-        + " · ".join(f"{n:,} {k}" for k, n in domains["variable_types"].items()),
-        "  rows: " + " · ".join(f"{n:,} {k}" for k, n in domains["row_senses"].items()),
-    ]
-    for label, key in (("row nnz", "row_nnz"), ("col nnz", "column_nnz")):
-        p = matrix[key]
-        lines.append(
-            f"  {label}: min {_number(p['min'])} · median {_number(p['median'])} · p90 {_number(p['p90'])} · max {_number(p['max'])}"
-        )
-    a, rhs = numeric["absolute_coefficients"], numeric["nonzero_rhs"]
-    lines += [
-        "",
-        "Numerics",
-        f"  |A|: min {_number(a['min'])} · median {_number(a['median'])} · max {_number(a['max'])}",
-        f"  nonzero rhs: min {_number(rhs['min'])} · max {_number(rhs['max'])}",
-        "  bounds: "
-        + (" · ".join(f"{n:,} {k}" for k, n in numeric["bounds"].items()) or "empty"),
-        f"  coefficient dynamic range: {_number(numeric['coefficient_dynamic_range'])}",
-        f"  near-zero coefficients (0 < |A| <= 1e-9): {numeric['near_zero_coefficients']['count']:,}",
-        "",
-        "Objective",
-        f"  sense: {objective['sense']} · constant: {_number(objective['constant'])}",
-        f"  nonzeros: {objective['nonzeros']:,} / {size['variables']:,}",
-        f"  coefficient signs: +{objective['sign_counts']['positive']:,} / -{objective['sign_counts']['negative']:,}",
-    ]
-    profile = objective["coefficient_profile"]
-    text = (
-        f"constant({_number(profile['value'])})"
-        if profile["kind"] == "constant"
-        else _degree(profile)
-    )
-    lines += [f"  coefficients: {text}", "  support:"]
-    limit = options.ir.max_var_roles
-    for role in objective["role_support"][:limit]:
-        lines.append(
-            f"    {role['id']}  {role['count']:,} variables ({_percent(role['fraction'])})"
-        )
-    if len(objective["role_support"]) > limit:
-        covered = sum(r["count"] for r in objective["role_support"][:limit])
-        lines.append(
-            f"    ... {len(objective['role_support']) - limit:,} roles omitted; shown cover {_percent(_fraction(covered, objective['nonzeros']))} of objective support → m.vars.where(mf.col('obj') != 0)"
-        )
-    lines += [
-        "",
-        "Topology",
-        f"  connected components: {topology['connected_components']:,}",
-        f"  isolated vars/rows: {topology['isolated_variables']:,} / {topology['isolated_rows']:,}",
-    ]
-    largest = topology["largest_component"]
-    if largest:
-        lines.append(
-            f"  largest ({largest['id']}): {_percent(largest['row_fraction'])} rows / {_percent(largest['var_fraction'])} vars / {_percent(largest['nonzero_fraction'])} nonzeros"
-        )
-        if topology["connected_components"] > 1:
-            lines.append(
-                "  next (nonzeros): "
-                + ", ".join(
-                    _percent(c["nonzero_fraction"]) for c in topology["components"][1:4]
-                )
-                + (" ..." if topology["connected_components"] > 4 else "")
-            )
-    lines += [
-        "",
-        f"Structure (template, depth={structure['depth']})",
-        "  Depth   Row roles   Var roles",
-    ]
-    for level in structure["overview"]:
-        delta = lambda key: "" if level[key] is None else f" ({level[key]:+d})"
-        lines.append(
-            f"  {level['depth']:<7} {level['row_roles']}{delta('delta_rows')}       {level['var_roles']}{delta('delta_vars')}"
-        )
-    for kind, key, limit, depth, total in (
-        (
-            "Variable roles",
-            "variable_roles",
-            options.ir.max_var_roles,
-            structure["variable_role_depth"],
-            size["variables"],
-        ),
-        (
-            "Row families",
-            "row_families",
-            options.ir.max_row_families,
-            structure["depth"],
-            size["rows"],
-        ),
-    ):
-        records = structure[key]
-        lines += [
-            "",
-            f"{kind} @ depth {depth}",
-            f"  showing {min(limit, len(records)):,} of {len(records):,}, sorted by coverage",
-            "  id  count  parent  type  bounds  obj  degree"
-            if key == "variable_roles"
-            else "  id  count  parent  relation  rhs  nnz  structure",
-        ]
-        for r in records[:limit]:
-            prefix = f"  {r['id']}  {r['count']:,}  {r['parent'] or '—'}"
-            if key == "variable_roles":
-                base = r["base"]
-                lines.append(
-                    f"{prefix}  {base['type']}  {base['bounds']}  {base['objective']}  {_degree(r['degree'])}"
-                )
-            else:
-                pattern = (
-                    _pattern(r["structure"])
-                    if r["structure_available"]
-                    else "(base role only)"
-                )
-                lines.append(
-                    f"{prefix}  {r['relation']}  {_text(r['rhs_class'])}  {_degree(r['nnz'])}  {pattern}"
-                )
-        covered = sum(r["count"] for r in records[:limit])
-        lines.append(
-            f"  shown families cover {_percent(_fraction(covered, total))}; singleton families: {sum(r['count'] == 1 for r in records):,}"
-        )
-        if len(records) > limit:
-            method = "var_families" if key == "variable_roles" else "row_families"
-            default_depth = 2
-            target = (
-                f"m.{method}"
-                if depth == default_depth
-                else f"m.families(kind={chr(39) + ('var' if key == 'variable_roles' else 'row') + chr(39)}, depth={depth})"
-            )
-            lines.append(f"  {len(records) - limit:,} families omitted → {target}")
-    # Latest row delta; variable delta explains the actual displayed legend.
-    for delta in structure["refinements"]:
-        wanted = (
-            structure["depth"]
-            if delta["kind"] == "row"
-            else structure["variable_role_depth"]
-        )
-        if delta["to_depth"] != wanted:
-            continue
-        lines += [
-            "",
-            f"{'Row' if delta['kind'] == 'row' else 'Variable'} refinement {delta['from_depth']} → {delta['to_depth']}",
-            f"  {delta['before_count']} → {delta['after_count']} families · {delta['split_count']} splits",
-        ]
-        target = (
-            f"m.refinement(kind={delta['kind']!r}, "
-            f"start={delta['from_depth']}, stop={delta['to_depth']})"
-        )
-        for split in delta["splits"][: options.ir.max_splits]:
-            lines.append(f"  {split['parent']} ({split['count']:,})")
-            for child in split["children"][:12]:
-                detail = (
-                    "  " + _pattern(child["structure"]) if "structure" in child else ""
-                )
-                lines.append(f"    → {child['id']}  {child['count']:,}{detail}")
-            if len(split["children"]) > 12:
-                lines.append(
-                    f"    ... {len(split['children']) - 12:,} children omitted → {target}"
-                )
-        if delta["split_count"] > options.ir.max_splits:
-            lines.append(
-                f"  ... {delta['split_count'] - options.ir.max_splits:,} splits omitted → {target}"
-            )
-        lines.append(
-            f"  {delta['unchanged']['families']} families unchanged ({delta['unchanged']['members']:,} members)"
-        )
-    if data["attention"]:
-        lines += ["", "Attention (facts / structural abstractions)"]
-        for item in data["attention"][: options.ir.max_attention]:
-            lines.append(f"  {item['code']}: {item['count']:,}")
-        if len(data["attention"]) > options.ir.max_attention:
-            lines.append(
-                f"  ... {len(data['attention']) - options.ir.max_attention} items omitted → m.ir.attention"
-            )
-    lines.append(
-        "\nInspect details through m.rows, m.vars, m.matrix and m.families(). Signed groups are multisets, not formulas."
-    )
-    return "\n".join(lines)
+def _render_scan(data):
+    size,domains,matrix = data['size'],data['domains'],data['matrix']
+    numeric,obj = data['numerics'],data['objective']
+    limits = options.ir
+    def short(value,limit=100):
+        text=str(value).replace('\n',' ').replace('\r',' ')
+        return text if len(text)<=limit else text[:limit-1]+'…'
+    def frequency(e):
+        return str(e['count']) if not e.get('error') else f"{e['count_lower']}..{e['count']} (estimate)"
+    def common(summary):
+        return ', '.join(f"{_number(e['value'])} × {frequency(e)}" for e in summary['items'][:limits.max_values]) or ('none' if not summary['total_count'] else '(not shown)')
+    lines=['MIPFrame scan · '+short(data['model']['name'],100),'Model',
+        f"  {size['variables']:,} vars · {size['rows']:,} rows · {size['nonzeros']:,} A-nnz · {obj['sense']}",
+        f"  density: {_approx(matrix['density']) if matrix['density'] else '0'}",
+        '  domains: '+' · '.join(f'{n:,} {k}' for k,n in domains['variable_types'].items()),
+        '  rows: '+' · '.join(f'{n:,} {k}' for k,n in domains['row_senses'].items()),
+        'Bounds', '  '+' · '.join(f'{k}: {n:,}' for k,n in domains['bounds'].items()),
+        f"  [0,1]: {domains['unit_interval']:,}"]
+    for title,key in [('Rows','row_nnz'),('Columns','column_nnz')]:
+        p=matrix[key]
+        lines += [title,f"  nnz min {_number(p['min'])} · p50 {_number(p['median'])} · p90 {_number(p['p90'])} · max {_number(p['max'])}"]
+        lines.append('  nnz histogram: '+', '.join(f"{e['value']} × {e['count']:,}" for e in p['histogram']['items'][:limits.max_histogram]))
+    a=numeric['absolute_coefficients'];sg=numeric['sign_counts'];rhs=numeric['nonzero_rhs']
+    lines += ['Numerics',f"  A signs +{sg['positive']:,} / -{sg['negative']:,}; |A| {_number(a['min'])} .. {_number(a['max'])}",
+        '  common coefficients: '+common(numeric['common_coefficients']),
+        '  coefficient dynamic range: '+_number(numeric['coefficient_dynamic_range']),
+        f"  nonzero RHS: {rhs['count']:,}; "+common(numeric['common_rhs']),
+        'Objective',f"  nonzeros: {obj['nonzeros']:,} / {size['variables']:,}; constant: {_number(obj['constant'])}",
+        f"  signs +{obj['sign_counts']['positive']:,} / -{obj['sign_counts']['negative']:,}; range {_number(obj['coefficient_profile']['min'])} .. {_number(obj['coefficient_profile']['max'])}",
+        '  common coefficients: '+common(obj['common_coefficients']),
+        'Presolve cues','  '+' · '.join(f'{k}: {v:,}' for k,v in data['presolve_cues'].items())]
+    shapes=data['local_row_shapes'];items=shapes['items'][:limits.max_local_shapes]
+    lines += ['Local row shapes (raw coefficients; no neighboring roles)']
+    for i,e in enumerate(items):
+        rhs = f"[{_number(e['lb'])}, {_number(e['ub'])}]" if e['sense']=='range' else _number(e['lb'] if e['sense']=='>=' else e['ub'])
+        coefficients=', '.join(f"{_number(c['value'])}×{c['count']}" for c in e['coefficients'][:6])
+        if len(e['coefficients'])>6 or not e['coefficients_complete']: coefficients+=', …'
+        sample=e['examples'][0] if e['examples'] else None
+        lines.append(f"  S{i} count={frequency(e)} · {e['sense']} {rhs} · nnz={e['nnz']} · {{{coefficients}}}"+(' [fingerprint candidate]' if e['candidate'] else ''))
+        if sample: lines.append(f"    example: {short(sample['name'],60)} → m.rows.loc[{sample['id']}].terms")
+    total=shapes['total_groups']
+    lines.append(f"  showing {len(items)} of {total if total is not None else 'unknown (bounded candidates)'} → m.ir.row_shapes()")
+    lines.append('Names (lexical hypothesis; not structural evidence)')
+    for axis,kind in [('rows','row'),('vars','var')]:
+        summary=data['names'][axis];items=summary['items'][:limits.max_name_templates]
+        for e in items:
+            slots='; '.join(f"{s['index']}: {'observed ' if not s['complete'] else ''}{s['min']}..{s['max']}, distinct "+(str(s['distinct']) if s['distinct_exact'] else '>='+str(s['distinct_lower_bound'])) for s in e['slots'][:3])
+            sample=short(e['examples'][0]['name'],45) if e['examples'] else ''
+            lines.append(f"  {axis}: {short(e['template'],65)} × {frequency(e)} · {e['slot_count']} slots · {short(slots,100)} · e.g. {sample}")
+        total=summary['total_groups']
+        lines.append(f"  {axis}: showing {len(items)} of {total if total is not None else 'unknown'}; unprofiled {summary['unprofiled']} → m.ir.name_templates('{kind}')")
+    lines.append('Deeper queries: m.row_families · m.ir.topology · m.indexed() (computed on request)')
+    text='\n'.join(lines)
+    if len(text)>limits.max_chars:
+        footer='\n… display truncated; exact detail: m.ir.row_shapes(), m.ir.name_templates()'
+        text=text[:max(0,limits.max_chars-len(footer))]+footer
+        text=text[:limits.max_chars]
+    return text

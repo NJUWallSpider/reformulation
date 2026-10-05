@@ -51,7 +51,7 @@ def test_logical_build_numeric_save_and_retry(m, tmp_path, monkeypatch):
         assert n.rows.count() == 3 and n._ir is None
         monkeypatch.setattr(Model, '_build_ir', real)
         assert n.ir is n.ir
-        assert len(n._indexed_results) == 1
+        assert not getattr(n, '_indexed_results', {})
 
 
 def test_partial_lazy_failure_keeps_numeric_and_retries(m, monkeypatch):
@@ -61,48 +61,32 @@ def test_partial_lazy_failure_keeps_numeric_and_retries(m, monkeypatch):
         def fail(*a, **k):
             raise RuntimeError('indexed interrupted')
         monkeypatch.setattr(Model, 'indexed', fail)
+        scan = n.ir.to_dict()
         with pytest.raises(RuntimeError, match='indexed interrupted'):
-            n.ir
-        assert n._ir is None and n.nnz == m.nnz
+            n.ir.indexed
+        assert n.ir.to_dict() == scan and n.nnz == m.nnz
         monkeypatch.setattr(Model, 'indexed', real)
-        assert n.ir is n.ir
+        assert n.ir.indexed['status'] == 'complete'
+        assert n.ir.to_dict() == scan
 
 
 def test_receipt_survives_edit_close_and_matches_replay(m, tmp_path, monkeypatch):
-    from mipframe.edit.lineage import Lineage
-    e = m.edit()
-    row = m.rows.by_name('cap')
-    proof = m.check.linear(row.ub_claim, using=[row.ub_claim])
-    e.add_row(row.ub_claim, name='extra', because=proof)
-    n = e.build()
-    e.close()
+    e=m.edit();row=m.rows.by_name('cap')
+    proof=m.check.linear(row.ub_claim,using=[row.ub_claim])
+    e.add_row(row.ub_claim,name='extra',because=proof)
+    n=e.commit();e.close()
     with n:
-        auto = n.diff(m)
-        assert auto._frames == {} and auto._stats == {}
-        strict = n.diff(m, verify='replay')
-        assert auto.semantic == strict.semantic
-        for field in ('rows_added','rows_dropped','vars_added','vars_dropped',
-                      'row_bounds_changed','var_bounds_changed','domains_changed','rows_changed'):
-            assert getattr(auto,field).to_records() == getattr(strict,field).to_records()
-        assert auto.row_nnz_stats == strict.row_nnz_stats
-        assert auto.col_nnz_stats == strict.col_nnz_stats
-        path = n.save(tmp_path / 'saved.native')
-        calls = []
-        original = Lineage._restore
-        def observed(*args, **kwargs):
-            calls.append(1)
-            return original(*args, **kwargs)
-        monkeypatch.setattr(Lineage, '_restore', observed)
-        assert n.diff(m).semantic == auto.semantic
-        assert not calls
+        from mipframe.check.compact import BatchProof
+        monkeypatch.setattr(BatchProof,'replay',lambda *a,**k:pytest.fail('Implicit replay'))
+        auto=n.diff(m)
+        assert auto.semantic['mip']=='SAME' and len(auto.rows_added)==1
+        assert n._store._arrays is None
+        path=n.save(tmp_path/'saved.native')
         with mf.load(path) as external:
-            assert external.diff(m).semantic == auto.semantic
-            assert calls == [1]
-            external.diff(m)
-            assert calls == [1]
-            external.diff(m, verify='replay')
-            assert calls == [1,1]
-        with pytest.raises(ValueError): n.diff(m, verify='unchecked')
+            assert external.diff(m).semantic['mip']=='UNKNOWN'
+        monkeypatch.undo()
+        with mf.load(path) as external:
+            assert external.audit(source=m)['semantic']==auto.semantic
 
 
 def test_receipt_does_not_retain_edit_or_source(m):
@@ -114,7 +98,7 @@ def test_receipt_does_not_retain_edit_or_source(m):
     gc.collect()
     assert ref() is None
     # The retained maps belong only to the child, not to the Edit/source store.
-    assert n._verified_edit.s.models == (n,)
+    assert n._exact_facts.parent is m._exact_facts
     m.close()
     assert n.nnz == 4
     with pytest.raises(mf.MIPFrameError): n.diff(m)
@@ -125,14 +109,13 @@ def test_receipt_does_not_retain_edit_or_source(m):
 def test_batch_table_count_and_exact_spill(m, budget):
     with m.check.linear_batch(residual='bounds', memory_mb=budget) as b:
         traces = []
-        b._store.db.set_trace_callback(traces.append)
         x = m.vars.by_name('x')
+        m.model.db.set_trace_callback(traces.append)
         for i in range(40):
             b.add(key=str(i), target=x <= 5+i)
         r = b.run()
     assert r.ok
-    creates = [s for s in traces if s.startswith('CREATE TABLE')]
-    assert len(creates) < 50
+    assert not traces
     for i in (0, 39):
         report = r.for_target(str(i))
         assert report.ok

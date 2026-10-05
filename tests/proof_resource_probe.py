@@ -35,7 +35,7 @@ def run(mode, count):
             if mode == "batch":
                 with model.check.linear_batch(residual="bounds") as builder:
                     for i in range(count):
-                        builder.add(key=str(i), target=claim, using=[source], assume=[x.eq(i % 2)])
+                        builder.add(key=str(i), target=claim, using=[source], assume=[x.eq(0)])
                         if i % 100 == 0:
                             peak = max(peak, fd_count())
                     batch = builder.run().require()
@@ -55,8 +55,8 @@ def run(mode, count):
             peak = max(peak, fd_count())
             assert peak - baseline <= 8, (mode, baseline, peak)
             if mode == "retained":
-                assert len({id(r._store._runtime) for r in reports}) == 1
-                assert reports[0]._store.execute("SELECT count(*) FROM sqlite_master WHERE type='table'").fetchone()[0] < 20
+                assert len({id(r.batch._facts) for r in reports}) == 1
+                assert not hasattr(reports[0],"_store")
                 assert mf.Report.replay(reports[-1].to_spec(), models=[model]).ok
             reports.clear()
             if mode == "batch":

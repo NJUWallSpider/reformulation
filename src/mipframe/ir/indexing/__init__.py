@@ -9,10 +9,10 @@ from mipframe.ir.indexing.store import js
 from mipframe.ir.indexing.store import restore
 from mipframe.frame.entity import RowFrame
 from mipframe.frame.entity import VarFrame
-from mipframe.store.query_store import memory_bytes
+from mipframe.core.resources import memory_bytes
 
 
-def indexed(owner, *, rows=None, vars=None, signatures=None, memory_mb=128):
+def indexed(owner, *, rows=None, vars=None, signatures=None, memory_mb=128,disk_mb=None):
     owner.model
     memory_bytes(memory_mb)
     for value, cls, name in ((rows, RowFrame, "rows"), (vars, VarFrame, "vars")):
@@ -20,7 +20,8 @@ def indexed(owner, *, rows=None, vars=None, signatures=None, memory_mb=128):
             not isinstance(value, cls) or value._owner is not owner
         ):
             raise ValueError(f"{name} must be a same-model {cls.__name__}")
-    sig = owner.ir._result if signatures is None else signatures
+    from mipframe.ir.signatures import refinement
+    sig = refinement(owner, memory_mb=memory_mb) if signatures is None else signatures
     from mipframe.ir.signatures import _Refinement
 
     if not isinstance(sig, _Refinement) or sig._store.owner is not owner:
@@ -36,19 +37,10 @@ def indexed(owner, *, rows=None, vars=None, signatures=None, memory_mb=128):
     rows = owner.rows if rows is None else rows
     variables = owner.vars if vars is None else vars
     # Work in a private copy. Published stores and their live queries remain unchanged on failure.
-    s = Store(owner, memory_mb)
+    s = Store(owner, memory_mb,disk_mb)
     try:
-        rd = s.table("id INTEGER PRIMARY KEY")
-        vd = s.table("id INTEGER PRIMARY KEY")
-        s.db.executemany(
-            f"INSERT OR IGNORE INTO {rd} VALUES(?)", ((int(i),) for i in rows.ids)
-        )
-        s.db.executemany(
-            f"INSERT OR IGNORE INTO {vd} VALUES(?)",
-            ((int(i),) for i in variables.ids),
-        )
-        rg = s.domain("row", f"SELECT id FROM {rd}")
-        vg = s.domain("var", f"SELECT id FROM {vd}")
+        rg = s.domain("row", rows.ids)
+        vg = s.domain("var", variables.ids)
         scope = dict(
             rows_domain=rg,
             vars_domain=vg,
@@ -60,11 +52,8 @@ def indexed(owner, *, rows=None, vars=None, signatures=None, memory_mb=128):
             "run_",
             [owner.model.manifest["model_version"], rg, vg, sig.config, sig.depth],
         )
-        cached = s.db.execute("SELECT record FROM runs WHERE id=?", (key,)).fetchone()
-        if cached:
-            import json
-
-            record = json.loads(cached[0])
+        record = s.runs.get(key)
+        if record is not None:
             if record["scope"] != scope or record["signatures"] != {
                 "config": sig.config,
                 "depth": sig.depth,
@@ -80,17 +69,9 @@ def indexed(owner, *, rows=None, vars=None, signatures=None, memory_mb=128):
         from mipframe.ir.indexing.discovery import discover
         from mipframe.ir.indexing.operators import recover
 
-        _, _, edges = prepare(
-            s,
-            key,
-            (r[0] for r in s.db.execute(f"SELECT id FROM {rd}")),
-            (v[0] for v in s.db.execute(f"SELECT id FROM {vd}")),
-            sig,
-        )
+        _, _, edges = prepare(s, key, s.domains[rg], s.domains[vg], sig)
         discover(s, key, edges)
         recover(s, key, edges)
-        for table in (rd, vd, edges):
-            s.discard(table)
         record = dict(
             id=key,
             status="complete",
@@ -98,13 +79,13 @@ def indexed(owner, *, rows=None, vars=None, signatures=None, memory_mb=128):
             signatures=dict(config=sig.config, depth=sig.depth),
             search="homogeneous type/unit seeds + all available signature levels + role direction groups + bipartite components",
         )
-        s.db.execute("INSERT INTO runs VALUES(?,?)", (key, js(record)))
+        s.runs[key] = record
         s.publish()
         # Previous result objects keep their own valid stores; new registry uses the latest snapshot.
         owner._indexing_store = s
         owner._indexed_results = {
             r: IndexedResult(s, r)
-            for (r,) in s.execute("SELECT id FROM runs ORDER BY id")
+            for r in sorted(s.runs)
         }
         return owner._indexed_results[key]
     except BaseException:

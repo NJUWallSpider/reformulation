@@ -38,7 +38,7 @@ def test_signatures_and_generated_files():
     for t in corpus()['topics']:
         for symbol,binding in t.get('bindings',{}).items():
             obj=builder['resolve'](binding)
-            assert t['signatures'][symbol]==builder['signature'](obj)
+            assert t['signatures'][symbol]==builder['signature'](obj, constructor=t.get('constructor', False))
             raw=obj.fget if isinstance(obj,property) else obj
             assert 'MIPFRAME HELP BEGIN' in (inspect.getdoc(raw) or '')
     result=subprocess.run([sys.executable,str(ROOT/'scripts/build_help.py'),'--check'],capture_output=True,text=True)

@@ -44,14 +44,15 @@ Use `Edit.close()` or a context manager to release its scratch resources.
 - `set_var_bounds(V, lb=..., ub=..., because=...)` and `fix(V, value, because=...)`.
 - `set_domains(V, kind="C")`: use only canonical `C/I`, not `B`.
 - `add_vars(specs)` and `drop_vars(V)`.
+- `substitute_fixed(vars=None, because=None, drop_trivial_rows=True)`: eliminate finite fixed source coordinates.
 - `set_objective(expr, sense="min")`: replace the entire objective and constant.
 - `replace_rows(old, rows=..., terms=..., correspondence=..., because=...)`:
   explicit add/drop sugar; the correspondence has `old_row, new_label` columns.
   Its `because` is a mapping with optional `add` and `drop` Report pools.
 
 Selectors are source Row/Var entities or their entity Frames. Separate loaded
-instances of the same uid/version are compatible. Names and untyped integers are
-not selectors. Repeated deletes are idempotent; conflicting writes to the same
+instances of the same uid/version are compatible. Names are not selectors. Dense integer IDs address the source snapshot; qualified
+references are checked against its identity. Repeated deletes are idempotent; conflicting writes to the same
 field, or deleting and modifying the same entity, raise `EditConflictError`.
 Each API call is transactional: a failed batch leaves earlier declarations intact.
 
@@ -115,11 +116,11 @@ entities; new variable specifications are supplied when adding them.
 
 Omitting `because` is allowed: the library reports the inclusion that is justified
 by the edit itself, without claiming equivalence. Supplying evidence is a strict
-contract. A Report must have a verified, exact, unconditional PROVED linear
+contract. A compact proof must have a verified, exact, unconditional PROVED linear
 conclusion on the source snapshot. Structural, solution, and candidate-search
 reports are not linear evidence.
 
-`because` accepts a scalar Report, a PROVED batch Report, or an iterable of Reports.
+`because` accepts a scalar `ProofRef`, a PROVED `BatchProof`, a proof selection, or an iterable of proofs.
 Finite sides are matched by exact mathematical content, including positive scaling
 and a stronger bound for the same linear part. No matching by names or position
 occurs. Both sides of ranged rows require coverage. Equalities can cover both sides.
@@ -134,22 +135,20 @@ B = m.check.linear_many(
     residual="exact",     # or "bounds"
     memory_mb=128,
 )
-B.evidence["results"]     # target, status, domain
-B.for_target("cut_17")    # scalar Report sharing batch storage
+B.status, B.summary      # aggregate status and complete failure count
+B.for_target("cut_17")    # scalar ProofRef sharing batch storage
 ```
 
 `using` is a Frame or iterable of Frames with `target, multiplier` and one source:
 `row + side`, `var + side`, or `proof`. Row sides are `lb/ub/eq`; variable sides are
-`lb/ub`. `proof` keys bind scalar reports through `reports={key: report}`. Missing
+`lb/ub`. `proof` keys bind scalar ProofRefs through `reports={key: report}`. Missing
 endpoint columns may be omitted; nullable mixed-source columns are allowed.
-Inequality multipliers must be nonnegative. Equality targets use equality sources
-or two explicit `direction="le"/"ge"` certificates; ordinary sources default to
-`direction="main"`. Exact duplicate target coefficients are merged.
+Inequality multipliers must be nonnegative. Frame equality targets use equality sources and `direction="main"`.
+For separate directional certificates, use scalar `linear(..., using={"le": ..., "ge": ...})`. Exact duplicate target coefficients are merged.
 
 All targets are checked. Insufficient certificates yield INCONCLUSIVE, with each
 target's status retained; invalid inputs raise. `B.for_target(key)` makes any
-selection of a proven target explicit. The normal Report spec/write/replay APIs
-also support batches. Restored verdicts are recomputed, never trusted from JSON.
+selection of a proven target explicit. `BatchProof.to_spec/write/replay` serialize and replay compact batches. Restored verdicts are recomputed, never trusted from JSON.
 
 Removing or weakening a fact requires more than a source proof. Its dependencies
 must ultimately reach facts still present in the final snapshot. This includes
@@ -167,9 +166,10 @@ assume that an unverified restriction and relaxation cancel each other.
 
 An integer-valid cut may yield `lp=SUBSET, mip=SAME`. Removing integrality can
 invalidate reverse-direction dependencies even when a source integer proof is
-still valid for the forward direction. Adding/removing variables yields an
-`EXTENDED/REDUCED/CHANGED` coordinate relation and `NOT_COMPARABLE` feasible sets;
-no projection equivalence is inferred.
+still valid for the forward direction. Fixed substitution uses `coordinates=PROJECTED` and, with sufficient evidence,
+`mip=EQUIVALENT_UNDER_EXTENSION`. LP directions are checked independently; an
+integer-only fixedness proof does not establish LP equivalence. Other variable
+changes retain their own extension or unknown semantic scope.
 
 Objectives are classified as `SAME`, `SHIFT`, `POSITIVE_AFFINE`, or `CHANGED`.
 Known affine transformations carry exact `scale` and `offset`. Optimal-value
@@ -191,12 +191,12 @@ establish general feasibility. Failures carry a pageable violations Report.
 rows have before/after nnz. `row_nnz_stats` and `col_nnz_stats` include zero-degree
 entities, exact medians and nearest-rank p90. The total nnz alone can hide fill-in.
 
-Native v3 keeps an independently versioned, checksummed lineage attachment with
-operations, mappings and only the explicitly attached proof packages. Parent model
-data is not embedded. The target works without a live parent; historical proof
-statuses are recorded data, not reusable Reports. `candidate.lineage.proof(id,
-models=(source,))` replays evidence, and `diff(source)` rechecks evidence and the
-actual target facts. Saved semantic labels are not accepted as proof.
+Native v6 embeds the immutable base arrays, typed deltas and necessary proof
+recipes. A saved child is portable and does not depend on its parent's temporary
+directory. Loading verifies artifacts but retains only historical proof status;
+`loaded.diff(source).semantic` is UNKNOWN until explicit replay establishes the
+relevant conclusions. Use `loaded.audit(source=source)` to replay its complete
+reformulation bundle. Do not trust a serialized PROVED string.
 
 `lineage.operations`, `lineage.changes`, and `lineage.evidence` are normal Frames.
 `lineage.validation` records the build-time static check summary, and
@@ -204,16 +204,15 @@ actual target facts. Saved semantic labels are not accepted as proof.
 `lineage.mapping("var")` preserves qualified source identity alongside target refs;
 `mapping("var", source=source)` offers bound entity navigation on both sides.
 
-`write_lp()` publishes atomically. It rejects non-terminating rational decimals,
-free rows and incompatible names unless supported explicit renaming is supplied.
-It does not silently round or drop facts. Native save remains the exact outlet for
-arbitrary Fraction values. `mf.audit.roundtrip(candidate, "candidate.lp")` re-parses
+`write(path)` infers LP/MPS from the extension, or accepts `format="lp"/"mps"`.
+MPS uses eligible source patches or canonical CSC output. Both current writers
+reject nonterminating decimal rationals. Both retain exact facts; neither silently rounds coefficients. `mf.audit.roundtrip(candidate, "candidate.lp")` re-parses
 numerical facts without IR search and checks all coefficients, bounds, domains and
 the complete objective. Optional `rename_vars/rename_rows` mappings are explicit.
 The audit Report establishes I/O consistency only, not a mathematical implication.
 
-No solver, new core dependency, MPS writer, automatic rewrite recipe or global
-transformation proof is introduced. The query/edit memory minimum is 16 KiB;
+No solver is called. MPS output performs an independent exact readback before
+publishing. A successful I/O audit is separate from mathematical equivalence. The query/edit memory minimum is 16 KiB;
 LP parsing, including the auditor's parser, retains its existing 32 MiB minimum.
 
 Run `python examples/exact_edits.py` for the small end-to-end example. The larger
@@ -228,9 +227,9 @@ coordinate product check. This flow builds three snapshots per input model.
 exact proof obligations and LP/MIP relations and produces an independent native
 snapshot. Numerical rows, variables, terms, matrices, lineage, `repr` and `save`
 are immediately available without constructing structural analyses. Accessing
-`m.ir` prepares the default IR/indexed results once; `m.indexed()` and family
+`m.ir` prepares only the numerical scan once; `m.indexed()` and family
 queries prepare their own required analyses. Use `edit.build(prepare="indexed")`
-to prepare everything before returning. `read()` and `load()` remain eager.
+to prepare the scan and default indexed result before returning. `read()` and `load()` prepare only the scan.
 A failed lazy analysis leaves numerical facts usable and can be retried.
 
 `child.diff(parent, verify="auto")` reuses a process-local receipt from a
@@ -241,3 +240,38 @@ receipt: their first diff replays lineage and compares the complete target.
 `verify="replay"` always forces that full audit. There is no unchecked mode.
 Diff Frames and row/column degree statistics are materialized only when read.
 Both snapshots must remain open while using the diff.
+
+For incomplete resource migrations, see [runtime implementation status](RUNTIME_V5_STATUS.md).
+
+
+## Compiled fixed substitution and lifting
+
+```python
+with mf.read("model.mps") as m:
+    edit = m.edit(memory_mb=16)
+    edit.substitute_fixed()             # selection frozen at this call
+    plan = edit.patch_plan(format="mps") # no write and no seal
+    receipt = edit.write("reduced.mps", strategy="patch")
+    # edit.lift(solution) now restores source coordinates from qualified child refs
+```
+
+Explicit selections fail atomically if any variable is not finite fixed or an
+integer coordinate has a noninteger value. Identical repeated substitutions are
+idempotent. Row-bound and objective replacements are source-relative; elimination
+is applied once to their final values. Zero substitutions read affected incidence
+IDs to maintain row degrees, but do not decode matrix coefficients. Nonzero
+substitutions use checked integer arithmetic and exact rational/bigint fallback.
+The compiled delta is shared by summary, build, bounds access, persistence and I/O.
+
+Affected empty rows are checked exactly. A feasible empty row is removed when
+`drop_trivial_rows=True`; contradictory empty rows record activity zero and reduced
+bounds and reject build/commit/write. Only `build(allow_infeasible=True)` can retain
+such contradictions. Passing this static check does not establish feasibility.
+
+For a fixed coordinate `x_j=c_j`, the child objective constant increases by
+`a_j*c_j`. The representation change is `constant_delta`; the objective-value
+`offset` remains zero because `f_child(y) == f_parent(lift(y))`. Both Model and a
+successfully built/written Edit expose `lift(solution, ancestor=None)`. Input must
+cover every live child variable exactly once with snapshot-qualified references.
+The returned variable/value Frame restores the direct parent by default or a
+specified ancestor. Lifting does not check solution feasibility.

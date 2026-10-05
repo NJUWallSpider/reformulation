@@ -5,15 +5,7 @@ from fractions import Fraction
 from mipframe.store.numbers import MIPFrameError
 
 
-class ExactArithmeticError(MIPFrameError):
-    """
-    MIPFRAME HELP BEGIN
-    Diagnostic exception; inspect original message and any attached complete Report.
-
-    Full contract: mf.help("api.ExactArithmeticError")
-    MIPFRAME HELP END
-    """
-    pass
+from mipframe.core.errors import ExactArithmeticError
 
 
 class NonlinearExpressionError(MIPFrameError):

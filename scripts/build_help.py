@@ -14,9 +14,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'src'))
 import mipframe as mf
 from mipframe._help.content import TOPICS, EXCEPTIONS, topic
+from mipframe._help.recipes import QUICKSTART
 from mipframe._help.search import index
 from mipframe._help.render import card
 from mipframe._help.maintenance import source_hash, content_hash, docstring_hash
+from mipframe._help.signatures import signature
 
 
 def resolve(binding):
@@ -27,17 +29,6 @@ def resolve(binding):
         if isinstance(obj,(classmethod,staticmethod)):
             obj = obj.__func__
     return obj
-
-
-def signature(obj):
-    if isinstance(obj,property):
-        return ' [property]'
-    if inspect.isclass(obj):
-        return ' [type]'
-    sig = inspect.signature(obj)
-    params = [p for n,p in sig.parameters.items() if n not in ('self','cls','ctx')]
-    result = str(sig.replace(parameters=params))
-    return re.sub(r'<object object at 0x[0-9a-f]+>', '<unchanged>',result)
 
 
 def documentation(t):
@@ -88,7 +79,7 @@ def source_docs(updates, check):
 
 def build(check=False):
     topics=copy.deepcopy(TOPICS)
-    skill=(ROOT/'src/mipframe/_help/skill.md').read_text().replace('{{version}}',mf.__version__)
+    skill=(ROOT/'src/mipframe/_help/skill.md').read_text().replace('{{version}}',mf.__version__).replace('{{quickstart}}',QUICKSTART)
     topics.append(dict(id='skill',kind='concept',title='Portable agent onboarding',summary='Read this short workflow before analyzing a model.',aliases=['SKILL.md','onboarding'],keywords=['agent','workflow'],symbols=[],bindings={},body=skill,related=['home'],non_guarantees='This guide does not authorize external actions or provide optimization proofs.'))
     ids=[t['id'] for t in topics]
     assert len(ids)==len(set(ids)),'Duplicate topic IDs'
@@ -100,7 +91,7 @@ def build(check=False):
         for symbol,binding in t.get('bindings',{}).items():
             try:obj=resolve(binding)
             except Exception as e:raise RuntimeError(binding) from e
-            t['signatures'][symbol]=signature(obj)
+            t['signatures'][symbol]=signature(obj, constructor=t.get('constructor', False))
             raw=obj.fget if isinstance(obj,property) else obj
             # Same inherited function can have several documented receiver paths.
             objects.setdefault(raw.__module__+':'+raw.__qualname__,t['id'])

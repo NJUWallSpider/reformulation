@@ -26,6 +26,7 @@ def report(s, errors, **summary):
 def _frame(result, schema, scan, key=None):
     f=Frame({n:t if isinstance(t,DType) else DType(t) for n,t in schema.items()},
             key=key,models=(result._store.owner,),source=scan)
+    f._array_scan=scan
     f._query.resource=result._store
     return f
 
@@ -41,8 +42,7 @@ class _Directory:
         return 'indexed:'+hashlib.sha256(json.dumps(payload,separators=(',',':')).encode()).hexdigest()
 
     def records(self):
-        for (text,) in self.store.execute('SELECT record FROM cards WHERE run=? AND kind=? ORDER BY id',(self.result.id,self.kind)):
-            yield json.loads(text)
+        yield from self.store.records(self.result.id,self.kind)
 
     def selected(self, view, keys, ctx):
         selected=view.select(indexed_key=col(keys['indexed_key'])).distinct()
@@ -148,29 +148,29 @@ class _Directory:
             return
         if name=='axis_members':
             for axis,g in enumerate(card['rows_domains']):
-                for position,(r,) in enumerate(s.execute('SELECT id FROM domain_members WHERE g=? ORDER BY id',(g,))):
+                for position,r in enumerate(map(int,s.domains[g])):
                     yield dict(axis=axis,position=position,row=r)
             return
         if name=='rows_members' and self.kind=='operators':
-            sql='SELECT r FROM bindings WHERE o=? ORDER BY r';args=(ident,);fields=('row',)
-        elif name in ('rows_members','vars_members'):
+            for r in sorted(map(int,s.bindings[ident].columns['r'])):yield dict(row=r)
+            return
+        if name in ('rows_members','vars_members'):
             axis='row' if name=='rows_members' else 'var'
-            sql='SELECT id FROM domain_members WHERE g=? ORDER BY id';args=(card[axis+'s_domain'],);fields=(axis,)
-        elif name=='members':
-            sql='SELECT r,v FROM members WHERE g=? ORDER BY r,v';args=(card['g'],);fields=('row','var')
-        elif name=='coordinates':
-            sql='SELECT v,i,j,a,b FROM coordinates WHERE t=? ORDER BY v';args=(ident,);fields=('var','i','j','axis0','axis1')
-        elif name=='bindings':
-            sql='SELECT r,p,k,anchor,scale,lo,hi FROM bindings WHERE o=? ORDER BY p,k';args=(ident,);fields=('row','p','k','anchor','scale','lower','upper')
-        elif name=='kernel':
-            sql='SELECT p,CASE WHEN k=-1 THEN NULL ELSE k END,j,value FROM kernel WHERE o=? ORDER BY p,k,j';args=(ident,);fields=('p','k','j','value')
-        elif name=='alignment':
-            sql='SELECT p,j FROM alignment WHERE o=? ORDER BY p';args=(ident,);fields=('p','j')
-        else:raise KeyError(name)
-        for values in s.execute(sql,args):
+            for i in s.domains[card[axis+'s_domain']]:yield {axis:int(i)}
+            return
+        tables = {
+            'members':(s.members,card.get('g'),('row','var')),
+            'coordinates':(s.coordinates,ident,('var','i','j','axis0','axis1')),
+            'bindings':(s.bindings,ident,('row','p','k','anchor','scale','lower','upper')),
+            'kernel':(s.kernels,ident,('p','k','j','value')),
+            'alignment':(s.alignments,ident,('p','j')),
+        }
+        if name not in tables:raise KeyError(name)
+        table,key,fields=tables[name]
+        if key not in table:return
+        for values in table[key].records():
             row=dict(zip(fields,values))
-            for n in ('scale','lower','upper','value'):
-                if n in row and row[n] is not None:row[n]=Fraction(row[n])
+            if name=='kernel' and row['k']==-1:row['k']=None
             yield row
 
     inspect_options = {'max_items', 'verbose'}
@@ -202,7 +202,7 @@ class _Axes:
                 ident=d.identity(card['id'])
                 for axis,g in enumerate(card['rows_domains']):
                     if not ctx.contains(axis_selections[axis],ident):continue
-                    for position,(r,) in enumerate(d.store.execute('SELECT id FROM domain_members WHERE g=? ORDER BY id',(g,))):
+                    for position,r in enumerate(map(int,d.store.domains[g])):
                         row=dict(indexed_key=ident,axis=axis,position=position,row=r)
                         yield {n:row[n] for n in fields}
         f=_frame(d.result,dict(indexed_key='str',axis='int',position='int',row=ref_type(d.owner,'row')),scan,key=('indexed_key','axis','position'))
@@ -230,7 +230,7 @@ class IndexedResult:
     def scope(self):
         raw=dict(self._record()['scope']);raw['row_count']=raw.pop('rows');raw['var_count']=raw.pop('variables');return raw
     def _record(self):
-        return json.loads(self._store.execute('SELECT record FROM runs WHERE id=?',(self.id,)).fetchone()[0])
+        return deepcopy(self._store.runs[self.id])
     def _card(self,kind,ident):return self._store.get(self.id,kind,ident)
     def _directory(self,kind):return _Directory(self,kind).directory()
     def _one(self,kind,ident):

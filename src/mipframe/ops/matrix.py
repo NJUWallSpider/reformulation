@@ -33,7 +33,7 @@ def _axis(owner, frame, cls):
     if (frame._owner.uid, frame._owner.version) != (owner.uid, owner.version):
         raise ValueError("Matrix selections require frames from the same model")
     index = frame.ids
-    size = len(owner.model.rows if cls is RowFrame else owner.model.variables)
+    size = owner.model.capacity("row" if cls is RowFrame else "var")
     if isinstance(index, range):
         if index and (min(index[0], index[-1]) < 0 or max(index[0], index[-1]) >= size):
             raise ValueError("Matrix selection contains an invalid model ID")
@@ -253,26 +253,13 @@ class MatrixView:
             ids = self._vars.ids
             self._var_members = ids if isinstance(ids, range) else frozenset(ids)
         for row in self._rows.ids if rows is None else rows:
-            self._owner.model
-            for pos in range(int(m.row_ptr[row]), int(m.row_ptr[row + 1])):
-                self._owner.model
-                var = int(m.col_idx[pos])
+            for var,coef in m.iter_terms(row):
                 if self._all_vars or var in self._var_members:
-                    yield row, var, pos
+                    yield row,var,coef
 
     def _counts(self, axis):
         from mipframe.frame.adapters import sparse_counts
-        from mipframe.frame.executor import Context
-        from mipframe.frame.materialized import stored_frame
-
-        ctx = Context((self._owner,))
-        try:
-            source = sparse_counts(self._owner, self._rows, self._vars, axis)
-            table, schema = ctx.stage(source)
-            return stored_frame(ctx, table, schema, key=(axis,))
-        except BaseException:
-            ctx.close()
-            raise
+        return sparse_counts(self._owner,self._rows,self._vars,axis)
 
     def _scan_counts(self):
         if self._row_counts is None:
@@ -293,14 +280,14 @@ class MatrixView:
             if not all(self.shape):
                 self._nnz = 0
             elif self._all_rows and self._all_vars:
-                self._nnz = len(m.col_idx)
+                self._nnz = m.nnz
             elif self._all_vars:
                 self._nnz = sum(
-                    int(m.row_ptr[r + 1] - m.row_ptr[r]) for r in self._rows.ids
+                    m.degree("row",r) for r in self._rows.ids
                 )
             elif self._all_rows:
                 self._nnz = sum(
-                    int(m.col_ptr[v + 1] - m.col_ptr[v]) for v in self._vars.ids
+                    m.degree("var",v) for v in self._vars.ids
                 )
             else:
                 self._scan_counts()
@@ -417,7 +404,7 @@ class MatrixView:
         cells = {}
         for row, var, pos in self._positions(rows):
             if var in wanted:
-                cells[row, var] = _text(m.num(int(m.coeff_id[pos])))
+                cells[row, var] = _text(pos)
         more_rows, more_vars = len(rows) < nrows, len(variables) < nvars
         lines = [["", *[_text(m.variables[v][1]) for v in variables]]]
         if more_vars:
@@ -470,7 +457,7 @@ class MatrixView:
         indptr[0] = 0
         for i, row in enumerate(self._rows.ids):
             for _, var, pos in self._positions((row,)):
-                exact = m.num(int(m.coeff_id[pos]))
+                exact = pos
                 try:
                     value = float(exact)
                 except (OverflowError, ValueError) as exc:

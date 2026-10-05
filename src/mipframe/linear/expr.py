@@ -5,7 +5,6 @@ from fractions import Fraction
 from itertools import zip_longest
 from mipframe.frame.base import Frame
 from mipframe.frame.schema import DType, Ref, SchemaError, ref_type, encode, decode
-from mipframe.store.algorithm_store import AlgorithmStore
 from mipframe.linear.scalar import q, NonlinearExpressionError
 
 
@@ -31,17 +30,6 @@ def attach(ctx, models):
         model._query_stores.add(ctx)
 
 
-def context(models, memory_mb=None, disk_mb=None):
-    from mipframe.options import options
-
-    return AlgorithmStore(
-        models,
-        memory_mb=options.query.memory_mb if memory_mb is None else memory_mb,
-        disk_mb=disk_mb,
-        max_output_rows=None,
-    )
-
-
 def var_id(owner, key):
     from mipframe.frame.var import Var
 
@@ -58,48 +46,11 @@ def var_id(owner, key):
         raise SchemaError(
             "Expected a Var or VarRef of this snapshot, not a name or integer"
         )
-    if not 0 <= ident < owner.shape[1]:
+    if ident not in owner.vars.ids:
         raise SchemaError("Variable ID outside model")
     return ident
 
 
-def vector(ctx, owner, values, value="value"):
-    """Validate the complete input before use, retaining only one exact scalar per ID."""
-    table = ctx.raw_table("v INTEGER PRIMARY KEY,c TEXT")
-    if isinstance(values, Frame):
-        if (
-            "var" not in values.schema
-            or value not in values.schema
-            or not ref_type(owner, "var").compatible(values.schema["var"])
-        ):
-            raise SchemaError("Expected a snapshot-qualified Frame(var, value)")
-        if values.schema[value].kind not in ("number", "int"):
-            raise SchemaError("Vector values must have an exact numeric type")
-        attach(ctx, values._models)
-        records = ((r["var"], r[value]) for r in values._raw(("var", value), ctx))
-    elif isinstance(values, Mapping):
-
-        def records_():
-            for key, x in values.items():
-                if hasattr(key, "_owner"):
-                    attach(ctx, (key._owner,))
-                yield var_id(owner, key), x
-
-        records = records_()
-    else:
-        raise SchemaError("Expected a Frame or a Var/VarRef mapping")
-    import sqlite3
-
-    for ident, x in records:
-        if type(ident) is not int or not 0 <= ident < owner.shape[1]:
-            raise SchemaError("Variable ID outside model")
-        scalar = q(x)
-        ctx.check_size(scalar)
-        try:
-            ctx.execute(f"INSERT INTO {table} VALUES(?,?)", (ident, str(scalar)))
-        except sqlite3.IntegrityError as exc:
-            raise SchemaError("Duplicate vector variable") from exc
-    return table
 
 
 class LinExpr:
@@ -144,17 +95,9 @@ class LinExpr:
         if ctx is not None:
             attach(ctx, self._models)
         if self._store is not None:
-            from contextlib import nullcontext
-
-            with ctx.reader(self._store) if hasattr(ctx, "reader") else nullcontext():
-                iterator = iter(self._store.execute(self._query))
-                while True:
-                    self._guard()
-                    row = next(iterator, None)
-                    if row is None:
-                        break
-                    v, c = row
-                    yield int(v), Fraction(c)
+            for v,c in self._store.items():
+                self._guard()
+                yield v,c
         elif self._source is not None:
             it = iter(self._source())
             while True:
@@ -169,13 +112,9 @@ class LinExpr:
         if ctx is not None:
             attach(ctx, self._models)
         if self._store is not None:
-            iterator = iter(self._store.execute(f"SELECT v FROM ({self._query})"))
-            while True:
+            for v in self._store.ids:
                 self._guard()
-                item = next(iterator, None)
-                if item is None:
-                    return
-                yield int(item[0])
+                yield int(v)
         elif self._id_source is not None:
             iterator = iter(self._id_source())
             while True:
@@ -219,12 +158,14 @@ class LinExpr:
             for v, c in self._items(ctx):
                 yield {n: v if n == "var" else c for n in fields}
 
-        return Frame(
+        frame = Frame(
             {"var": ref_type(self._owner, "var"), "coef": DType("number")},
             key=("var",),
             models=self._models,
             source=read,
         )
+        frame._array_scan = read
+        return frame
 
     @property
     def vars(self):
@@ -361,43 +302,23 @@ class LinExpr:
         """
         if not isinstance(mapping, Mapping):
             raise SchemaError("Substitution requires a Var/VarRef mapping")
-        ctx = context(self._models, memory_mb, disk_mb)
-        try:
-            table = ctx.raw_table("v INTEGER PRIMARY KEY,c TEXT")
-            replacements = ctx.raw_table("v INTEGER PRIMARY KEY,constant TEXT")
-            terms = ctx.raw_table("v INTEGER,w INTEGER,c TEXT,PRIMARY KEY(v,w)")
-            for key, value in mapping.items():
-                ident = var_id(self._owner, key)
-                if hasattr(key, "_owner"):
-                    attach(ctx, (key._owner,))
-                e = self._coerce(value)
-                attach(ctx, e._models)
-                ctx.execute(
-                    f"INSERT INTO {replacements} VALUES(?,?)", (ident, str(e.constant))
-                )
-                for w, c in e._items(ctx):
-                    ctx.execute(
-                        f"INSERT INTO {terms} VALUES(?,?,?)", (ident, w, str(c))
-                    )
-            constant = self.constant
-            for v, c in self._items(ctx):
-                replacement = ctx.execute(
-                    f"SELECT constant FROM {replacements} WHERE v=?", (v,)
-                ).fetchone()
-                if replacement is None:
-                    add(ctx, table, v, c)
-                else:
-                    constant += c * Fraction(replacement[0])
-                    ctx.check_size(constant)
-                    for w, a in ctx.execute(
-                        f"SELECT w,c FROM {terms} WHERE v=? ORDER BY w", (v,)
-                    ):
-                        add(ctx, table, w, c * Fraction(a))
-            from mipframe.linear.storage import finish_expression
-            return finish_expression(self._owner, ctx, table, constant)
-        except BaseException:
-            ctx.close()
-            raise
+        replacements = {}
+        models = self._models
+        for key,value in mapping.items():
+            ident = var_id(self._owner,key)
+            if ident in replacements:raise SchemaError('Duplicate substitution variable')
+            expression = self._coerce(value)
+            models = owners(models,expression._models)
+            replacements[ident] = expression
+        constant = self.constant
+        for v,c in self._items():
+            if v in replacements:constant += c*replacements[v].constant
+        def terms():
+            for v,c in self._items():
+                if v in replacements:
+                    for w,a in replacements[v]._items():yield w,c*a
+                else:yield v,c
+        return materialize(self._owner,terms(),constant,models=models,memory_mb=memory_mb,disk_mb=disk_mb)
 
     def evaluate(
         self, values, *, value="value", missing="error", memory_mb=128, disk_mb=None
@@ -411,20 +332,37 @@ class LinExpr:
         """
         if missing not in ("error", "zero"):
             raise ValueError("missing must be error or zero")
-        ctx = context(self._models, memory_mb, disk_mb)
+        from mipframe.data.exact_sparse import ExactSparse
+        from mipframe.check.kernel import facts
+        f = facts(self._owner)
+        if isinstance(values,Frame):
+            if ('var' not in values.schema or value not in values.schema
+                or not ref_type(self._owner,'var').compatible(values.schema['var'])
+                or values.schema[value].kind not in ('number','int')):
+                raise SchemaError('Expected a snapshot-qualified Frame(var, value)')
+            owners(self._models,values._models)
+            records = ((r['var'],r[value]) for r in values._iterate(('var',value),memory_mb))
+        elif isinstance(values,Mapping):
+            records = ((var_id(self._owner,k),x) for k,x in values.items())
+        else:raise SchemaError('Expected a Frame or a Var/VarRef mapping')
+        def validated():
+            for v,c in records:
+                if type(v) is not int:raise SchemaError('Invalid variable ID')
+                try:f.validate('var',v)
+                except ValueError as error:raise SchemaError('Variable ID outside model') from error
+                yield v,q(c)
+        data = ExactSparse(memory_mb,disk_mb)
         try:
-            table = vector(ctx, self._owner, values, value)
-            total = self.constant
-            for v, c in self._items(ctx):
-                found = ctx.execute(f"SELECT c FROM {table} WHERE v=?", (v,)).fetchone()
-                if found is None and missing == "error":
-                    raise SchemaError(f"Missing value for variable ID {v}")
-                if found is not None:
-                    total += c * Fraction(found[0])
-                    ctx.check_size(total)
+            try:data.build(validated(),duplicates=True)
+            except ValueError as error:raise SchemaError(str(error)) from error
+            inputs = iter(data.items());item = next(inputs,None);total = self.constant
+            for v,c in self._items():
+                while item is not None and item[0]<v:item=next(inputs,None)
+                if item is None or item[0]!=v:
+                    if missing=='error':raise SchemaError(f'Missing value for variable ID {v}')
+                else:total += c*item[1];data.check(total)
             return total
-        finally:
-            ctx.close()
+        finally:data.close()
 
     def formula(self, *, max_terms=12):
         """
@@ -541,16 +479,10 @@ def row_expr(row):
     owner, ident = row._owner, row.id
 
     def read():
-        m = owner.model
-        for p in range(int(m.row_ptr[ident]), int(m.row_ptr[ident + 1])):
-            owner.model
-            yield int(m.col_idx[p]), m.num(int(m.coeff_id[p]))
+        yield from owner.model.iter_terms(ident)
 
     def ids():
-        m = owner.model
-        for p in range(int(m.row_ptr[ident]), int(m.row_ptr[ident + 1])):
-            owner.model
-            yield int(m.col_idx[p])
+        yield from map(int,owner.model.support(ident))
 
     return LinExpr(owner, items=read, ids=ids)
 
@@ -572,81 +504,40 @@ def merge(left, right):
             a, b = next(left, sentinel), next(right, sentinel)
 
 
-def add(ctx, table, v, c):
-    c = q(c)
-    old = ctx.execute(f"SELECT c FROM {table} WHERE v=?", (v,)).fetchone()
-    if old:
-        c += Fraction(old[0])
-    ctx.check_size(c)
-    if c:
-        ctx.execute(f"INSERT OR REPLACE INTO {table} VALUES(?,?)", (v, str(c)))
-    elif old:
-        ctx.execute(f"DELETE FROM {table} WHERE v=?", (v,))
-
-
-def from_table(owner, ctx, table, constant):
-    ctx.check_size(constant)
-    ctx.disk_check()
-    return LinExpr(
-        owner,
-        constant,
-        store=ctx,
-        query=f"SELECT v,c FROM {table} ORDER BY v",
-        models=ctx.models,
-    )
-
-
 def materialize(owner, items, constant=0, *, models=(), memory_mb=None, disk_mb=None):
-    # Most agent-authored expressions have only a few terms. Canonicalize those
-    # in bounded memory instead of allocating a SQLite connection per operator.
-    if disk_mb is None:
-        from mipframe.options import options
-        from mipframe.store.query_store import memory_bytes
-        from mipframe.frame.executor import size, QueryMemoryError
-
-        models = owners((owner,), models)
-        for model in models:
-            model.model
-        memory = memory_bytes(options.query.memory_mb if memory_mb is None else memory_mb)
-        constant = q(constant)
-        if size(constant) > memory // 2:
-            raise QueryMemoryError("An expression constant exceeds the working-memory budget")
-        values, used = {}, 0
-        items = iter(items)
-        for v, c in items:
-            if type(v) is not int or not 0 <= v < owner.shape[1]:
-                raise SchemaError("Invalid variable ID in expression")
-            c = q(c)
-            if size(c) > memory // 2:
-                raise QueryMemoryError("An expression coefficient exceeds the working-memory budget")
-            old = values.pop(v, None)
-            if old is not None:
-                used -= size(v) + size(old) + 72
-                c += old
-            if size(c) > memory // 2:
-                raise QueryMemoryError("An expression coefficient exceeds the working-memory budget")
-            if c:
-                values[v] = c
-                used += size(v) + size(c) + 72
-            if used > min(65536, memory // 4):
-                from itertools import chain
-
-                items = chain(values.items(), items)
-                break
-        else:
-            data = tuple(sorted(values.items()))
-            return LinExpr(owner, constant, items=lambda: iter(data), models=models)
-    ctx = context(owners((owner,), models), memory_mb, disk_mb)
+    from mipframe.data.exact_sparse import ExactSparse
+    from mipframe.options import options
+    from mipframe.check.kernel import facts
+    from mipframe.frame.executor import size
+    from itertools import chain
+    models = owners((owner,),models)
+    for model in models:model.model
+    f = facts(owner)
+    data = ExactSparse(options.query.memory_mb if memory_mb is None else memory_mb,disk_mb)
     try:
-        table = ctx.raw_table("v INTEGER PRIMARY KEY,c TEXT")
-        for v, c in items:
-            if type(v) is not int or not 0 <= v < owner.shape[1]:
-                raise SchemaError("Invalid variable ID in expression")
-            add(ctx, table, v, c)
-        from mipframe.linear.storage import finish_expression
-        return finish_expression(owner, ctx, table, q(constant))
+        constant = q(constant);data.check(constant)
+        def validated():
+            for v,c in items:
+                if type(v) is not int:raise SchemaError('Invalid variable ID in expression')
+                try:f.validate('var',v)
+                except ValueError as error:raise SchemaError('Invalid variable ID in expression') from error
+                yield v,q(c)
+        iterator = iter(validated());values = {};used = 0
+        for v,c in iterator:
+            data.check(c)
+            old = values.pop(v,None)
+            if old is not None:used-=size(old)+104;c+=old;data.check(c)
+            if c:values[v]=c;used+=size(c)+104
+            if used>min(65536,data.work.memory//4):break
+        else:
+            records = tuple(sorted(values.items()));data.close()
+            return LinExpr(owner,constant,items=lambda:iter(records),models=models)
+        data.build(chain(values.items(),iterator))
+        from mipframe.store.lifecycle import register
+        for model in models:register(model,data)
+        return LinExpr(owner,constant,store=data,models=models)
     except BaseException:
-        ctx.close()
+        data.close()
         raise
 
 
@@ -670,32 +561,16 @@ def linexpr(
     source = vars if T is None else T
     if not isinstance(source, Frame):
         raise SchemaError("linexpr requires source model Frames, not draft handles")
-    ctx = context(owners((owner,), source._models), memory_mb, disk_mb)
-    try:
-        table = ctx.raw_table("v INTEGER PRIMARY KEY,c TEXT")
-        name = "var" if T is None else var
-        if name not in source.schema or not ref_type(owner, "var").compatible(
-            source.schema[name]
-        ):
-            raise SchemaError("Expression requires a variable Ref column")
-        if T is None:
-            if getattr(vars, "_entity_axis", None) != "var":
-                raise SchemaError("vars requires a VarFrame")
-            a = q(1 if coef == "coef" else coef)
-            for record in source._raw((name,), ctx):
-                add(ctx, table, record[name], a)
-        else:
-            if coef not in T.schema:
-                raise SchemaError("Missing coefficient column")
-            if T.schema[coef].kind not in ("number", "int"):
-                raise SchemaError("Coefficients must have an exact numeric type")
-            for record in T._raw((name, coef), ctx):
-                v = record[name]
-                if type(v) is not int or not 0 <= v < owner.shape[1]:
-                    raise SchemaError("Variable ID outside model")
-                add(ctx, table, v, record[coef])
-        from mipframe.linear.storage import finish_expression
-        return finish_expression(owner, ctx, table, q(constant))
-    except BaseException:
-        ctx.close()
-        raise
+    models = owners((owner,),source._models)
+    name = 'var' if T is None else var
+    if name not in source.schema or not ref_type(owner,'var').compatible(source.schema[name]):
+        raise SchemaError('Expression requires a variable Ref column')
+    if T is None:
+        if getattr(vars,'_entity_axis',None)!='var':raise SchemaError('vars requires a VarFrame')
+        a = q(1 if coef=='coef' else coef)
+        records = ((r[name],a) for r in source._iterate((name,),memory_mb))
+    else:
+        if coef not in T.schema:raise SchemaError('Missing coefficient column')
+        if T.schema[coef].kind not in ('number','int'):raise SchemaError('Coefficients must have an exact numeric type')
+        records = ((r[name],r[coef]) for r in source._iterate((name,coef),memory_mb))
+    return materialize(owner,records,constant,models=models,memory_mb=memory_mb,disk_mb=disk_mb)

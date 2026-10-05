@@ -108,6 +108,7 @@ def _canonical_form(m, row_id, values):
         scale = -scale
         lo, hi = hi, lo
         sense = "<="
+    scale = Fraction(scale)
     lo = None if lo is None else lo / scale
     hi = None if hi is None else hi / scale
     pairs = tuple(sorted(((token[0] / scale, *token[1:]), n) for token, n in values.items()))
@@ -121,15 +122,13 @@ def _canonical_form(m, row_id, values):
 
 def algebraic_signature(owner, row_id):
     m = owner.model
-    start, stop = int(m.row_ptr[row_id]), int(m.row_ptr[row_id + 1])
-    # Count canonical number IDs before converting to fractions: O(unique coefficients).
-    counts = Counter(int(n) for n in m.coeff_id[start:stop])
-    values = Counter()
-    for ident, count in counts.items():
-        values[(m.num(ident),)] += count
+    values=Counter()
+    for _,coefficient in m.iter_terms(row_id):
+        values[(coefficient,)]+=1
+    nnz=sum(values.values())
     sense, pairs, lo, hi, scale = _canonical_form(m, row_id, values)
     pattern = CoefficientPattern((token[0], n) for token, n in pairs)
-    return _AlgebraicKey(sense, stop - start, pattern, lo, hi,
+    return _AlgebraicKey(sense, nnz, pattern, lo, hi,
                               scale=scale)
 
 

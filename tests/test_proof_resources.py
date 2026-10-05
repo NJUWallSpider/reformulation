@@ -58,69 +58,60 @@ def test_builder_matches_scalar_conditions_directions_and_replay(model, memory):
         ("failed", x + y <= 3, [model.rows.by_name("cap").ub_claim], []),
         ("inherited", x >= 1, [parent], []),
         ("explicit", x <= 0, [], [x.eq(0)]),
-        ("equality", (x - y).eq(0), {"le": [equality], "ge": [(-1, equality)]}, []),
+        ("equality", (x - y).eq(0), [equality], []),
     ]
     scalar = [model.check.linear(t, using=u, assume=a, residual="bounds", memory_mb=memory)
               for _, t, u, a in cases]
-    with model.check.linear_batch(residual="bounds", memory_mb=memory) as builder:
-        for key, target, using, assume in cases:
-            assert builder.add(key=key, target=target, using=using, assume=assume) is builder
-        batch = builder.run()
-    assert batch.status == "INCONCLUSIVE"
-    replayed = mf.Report.replay(batch.to_spec(), models=[model], memory_mb=memory)
-    for (key, _, _, _), expected in zip(cases, scalar):
-        for actual in (batch.for_target(key), replayed.for_target(key)):
-            assert actual.status == expected.status
-            assert actual.scope == expected.scope
-            assert actual.conclusion.expr == expected.conclusion.expr
-            assert actual.evidence["bounds"].to_records() == expected.evidence["bounds"].to_records()
-    with pytest.raises(ValueError):
-        builder.run()
-    with pytest.raises(mf.UndischargedAssumptionError):
-        model.edit().add_row(x >= 1, because=batch.for_target("inherited"))
+    for (key, target, using, assume), expected in zip(cases,scalar):
+        with model.check.linear_batch(residual="bounds", memory_mb=memory) as builder:
+            assert builder.add(key=key,target=target,using=using,assume=assume) is builder
+            batch=builder.run()
+        replayed=mf.Report.replay(batch.to_spec(),models=[model],memory_mb=memory)
+        for actual in (batch.for_target(key),replayed.for_target(key)):
+            assert actual.status==expected.status
+            assert actual.scope==expected.scope
+            assert actual.conclusion.expr==expected.conclusion.expr
+            assert actual.evidence["bounds"].to_records()==expected.evidence["bounds"].to_records()
+        with pytest.raises(ValueError):builder.run()
+        if key=="inherited":
+            with pytest.raises(mf.UndischargedAssumptionError):model.edit().add_row(x>=1,because=batch.for_target(key))
+    with model.check.linear_batch() as builder:
+        builder.add(key="a",target=x<=4,assume=[x.eq(0)])
+        with pytest.raises(ValueError,match="share assumptions"):
+            builder.add(key="b",target=x<=4,assume=[x.eq(1)])
 
 
 def test_views_and_edit_keep_only_needed_proofs_alive(model):
     x = model.vars.by_name("x")
     parent = model.check.linear(x <= 4, residual="bounds")
     child = model.check.linear(x <= 5, using=[parent])
-    archive = model._certificate_archive()
+    references=[weakref.ref(parent.batch),weakref.ref(child.batch)]
     view, conclusion = child.evidence["terms"], child.conclusion
     edit = model.edit()
     edit.add_row(x <= 5, because=child)
     del parent, child
     gc.collect()
     assert view.count() > 0 and conclusion.expr.constant == -5
-    assert archive.s.execute(f"SELECT count(*) FROM {archive.result}").fetchone()[0] == 2
+    assert all(r() is not None for r in references)
     built = edit.build()
     built.close()
     edit.close()
-    del edit, view, conclusion
+    del edit, view, conclusion, built
     gc.collect()
-    assert archive.s.execute(f"SELECT count(*) FROM {archive.result}").fetchone()[0] == 0
-    assert not archive.parents
+    assert all(r() is None for r in references)
 
 
 def test_failed_publication_preserves_previous_proofs(model, monkeypatch):
-    from mipframe.check.batch import CertificateArchive
-
-    x = model.vars.by_name("x")
-    parent = model.check.linear(x <= 4, residual="bounds")
-    archive = model._certificate_archive()
-    capture = CertificateArchive._capture
-
-    def fail(self, *args):
-        capture(self, *args)
-        raise RuntimeError("injected publication failure")
-
+    import mipframe.check.compiler as compiler
+    x=model.vars.by_name("x")
+    parent=model.check.linear(x<=4,residual="bounds")
+    def fail(*args,**kwargs):raise RuntimeError("injected publication failure")
     with monkeypatch.context() as patch:
-        patch.setattr(CertificateArchive, "_capture", fail)
-        with pytest.raises(RuntimeError, match="injected publication failure"):
-            model.check.linear(x <= 5, using=[parent])
-    assert parent.ok and mf.Report.replay(parent.to_spec(), models=[model]).ok
-    assert archive.s.execute(f"SELECT count(*) FROM {archive.result}").fetchone()[0] == 1
-    assert not archive.parents
-    assert model.check.linear(x <= 5, using=[parent]).ok
+        patch.setattr(compiler,"BatchProof",fail)
+        with pytest.raises(RuntimeError,match="publication"):
+            model.check.linear(x<=5,using=[parent])
+    assert parent.ok and mf.Report.replay(parent.to_spec(),models=[model]).ok
+    assert model.check.linear(x<=5,using=[parent]).ok
 
 
 def test_large_expressions_share_spill_and_reclaim_rows(tmp_path):
@@ -130,17 +121,20 @@ def test_large_expressions_share_spill_and_reclaim_rows(tmp_path):
                     + " <= 64\nBounds\n" + "\n".join(f" 0 <= {n} <= 1" for n in names) + "\nEnd\n")
     with mf.read(path) as m:
         expressions = [m.linexpr(vars=m.vars, coef=i + 1, memory_mb=0.015625) for i in range(128)]
-        assert len({id(e._store.archive) for e in expressions}) == 1
-        archive = m._expression_archive()
-        assert expressions[-1].evaluate({v: 1 for v in m.vars}) == 128 * 64
+        import weakref
+        stores=[weakref.ref(e._store) for e in expressions]
+        directories=[Path(e._store.temp.name) for e in expressions]
+        assert expressions[-1].evaluate(m.vars.select('var',value=1)) == 128 * 64
         terms = expressions[0].terms
         expressions.clear()
         gc.collect()
         assert terms.count() == 64
-        assert archive.store.execute(f"SELECT count(DISTINCT expr) FROM {archive.table}").fetchone()[0] == 1
+        assert sum(ref() is not None for ref in stores)==1
+        assert sum(path.exists() for path in directories)==1
         del terms
         gc.collect()
-        assert archive.store.execute(f"SELECT count(*) FROM {archive.table}").fetchone()[0] == 0
+        assert all(ref() is None for ref in stores)
+        assert all(not path.exists() for path in directories)
 
 
 def test_archive_dependencies_keep_snapshot_lifecycle_per_node(model, tmp_path):
@@ -152,10 +146,7 @@ def test_archive_dependencies_keep_snapshot_lifecycle_per_node(model, tmp_path):
         dependent = model.check.linear(x + alias <= 8, residual="bounds")
         frame = dependent.evidence["terms"]
         other.close()
-        with pytest.raises(mf.MIPFrameError):
-            dependent.status
-        with pytest.raises(mf.MIPFrameError):
-            frame.to_records()
+        assert dependent.ok and frame.to_records()
         assert independent.ok
 
 
@@ -179,7 +170,7 @@ def test_model_close_attempts_all_query_stores(model):
 def test_builder_failure_and_cancellation_leave_sources_valid(model):
     x = model.vars.by_name("x")
     parent = model.check.linear(x <= 4, residual="bounds")
-    with pytest.raises(mf.SchemaError, match="Duplicate"):
+    with pytest.raises(ValueError, match="Duplicate"):
         with model.check.linear_batch() as b:
             b.add(key="x", target=x <= 5, using=[parent])
             b.add(key="x", target=x <= 5, using=[parent])
@@ -189,7 +180,7 @@ def test_builder_failure_and_cancellation_leave_sources_valid(model):
             b.add(key="x", target=x <= 5, using=[parent])
             raise KeyboardInterrupt()
     assert parent.ok
-    with pytest.raises(mf.InvalidCertificateError, match="Equality"):
+    with pytest.raises(mf.InvalidCertificateError, match="[Ee]quality"):
         with model.check.linear_batch() as b:
             b.add(key="valid", target=x <= 5, using=[parent])
             b.add(key="invalid", target=x.eq(4), using=[x.ub_claim])
@@ -200,59 +191,40 @@ def test_builder_failure_and_cancellation_leave_sources_valid(model):
 
 
 def test_first_archive_failure_closes_unpublished_storage(model, monkeypatch):
-    from mipframe.check.batch import CertificateArchive
-
-    def fail(*args):
-        raise RuntimeError("injected first publication failure")
-
+    import mipframe.check.compiler as compiler
+    from mipframe.data.runtime import WorkContext
+    closed=[];real=WorkContext.close
+    def close(work):
+        real(work);closed.append(work.closed)
+    def fail(*args,**kwargs):raise RuntimeError("injected first publication failure")
     with monkeypatch.context() as patch:
-        patch.setattr(CertificateArchive, "_capture", fail)
-        with pytest.raises(RuntimeError, match="first publication") as caught:
-            model.check.linear(model.vars.by_name("x") <= 4, residual="bounds")
-        # Keep the exception/traceback alive: it must not keep unpublished FDs.
+        patch.setattr(WorkContext,"close",close)
+        patch.setattr(compiler,"BatchProof",fail)
+        with pytest.raises(RuntimeError,match="first publication") as caught:
+            model.check.linear(model.vars.by_name("x")<=4,residual="bounds")
         assert caught.value.__traceback__ is not None
-        archive = model._certificate_archive()
-        assert archive is not None and archive.s.db is None
-    assert model.check.linear(model.vars.by_name("x") <= 4, residual="bounds").ok
+        assert closed and all(closed)
+    assert model.check.linear(model.vars.by_name("x")<=4,residual="bounds").ok
 
 
-def test_sqlite_callbacks_release_without_gc(model):
+def test_typed_context_release_without_gc(model):
     from mipframe.frame.executor import Context
-
-    ctx = Context((model,))
-    reference = weakref.ref(ctx)
+    ctx=Context((model,),memory_mb=.015625);reference=weakref.ref(ctx)
     gc.disable()
     try:
-        ctx.execute("CREATE TABLE numbers(v TEXT)")
-        ctx.execute("INSERT INTO numbers VALUES ('1/3'),('2/3')")
-        assert ctx.execute("SELECT exact_sum(v) FROM numbers").fetchone()[0] == "1"
-        del ctx
+        table,_=ctx.stage(model.rows)
+        assert len(table)==len(model.rows)
+        del table,ctx
         assert reference() is None
-    finally:
-        gc.enable()
+    finally:gc.enable()
 
 
-def test_constructor_cleanup_preserves_original_error(model, monkeypatch):
-    from mipframe.frame import executor
-    from mipframe.store import lifecycle
-    from tempfile import TemporaryDirectory
-
-    created = []
-    class FailedCleanup(TemporaryDirectory):
-        def cleanup(self):
-            raise OSError(24, "injected cleanup exhaustion")
-
-    def directory(*args, **kwargs):
-        temp = FailedCleanup(*args, **kwargs)
-        created.append(temp)
-        return temp
-
-    with monkeypatch.context() as patch:
-        patch.setattr(executor, "TemporaryDirectory", directory)
-        patch.setattr(sqlite3, "connect", lambda *a, **kw: (_ for _ in ()).throw(sqlite3.OperationalError("injected connect failure")))
-        with pytest.raises(sqlite3.OperationalError, match="injected connect failure") as caught:
-            executor.Context((model,)).execute("SELECT 1")
-        assert "cleanup" in " ".join(caught.value.__notes__)
-    for temp in created:
-        lifecycle._pending.pop(temp.name, None)
-        TemporaryDirectory.cleanup(temp)
+def test_constructor_cleanup_preserves_original_error(model,monkeypatch):
+    from mipframe.data.runtime import WorkContext
+    import numpy as np
+    work=WorkContext(memory_mb=.015625)
+    def fail(*args,**kwargs):raise OSError('injected mmap failure')
+    monkeypatch.setattr(np.lib.format,'open_memmap',fail)
+    with pytest.raises(OSError,match='injected mmap failure'):work.array(20000,'u1')
+    assert work.disk==0
+    work.close()

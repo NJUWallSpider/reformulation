@@ -1,0 +1,603 @@
+{
+  "python": "3.13.13 | packaged by conda-forge | (main, Apr  8 2026, 02:29:07) [Clang 19.1.7 ]",
+  "source_sha256": "f241260ba98a41262a2457c68407522376f9df8040f6b1722a029882a2892c22",
+  "probes": [
+    {
+      "label": "array_frame_unique_check",
+      "n": 128,
+      "statements": {
+        "query.sqlite:PRAGMA": 5,
+        "query.sqlite:CREATE": 2,
+        "query.sqlite:BEGIN": 1,
+        "query.sqlite:INSERT": 128,
+        "query.sqlite:SELECT": 4
+      },
+      "insert_rows": {
+        "query.sqlite:f1": 128
+      },
+      "aggregate_steps": 0,
+      "ok": true,
+      "sql_statements": 140
+    },
+    {
+      "label": "explicit_entity_id_list",
+      "n": 128,
+      "statements": {
+        "query.sqlite:PRAGMA": 5,
+        "query.sqlite:CREATE": 1,
+        "query.sqlite:BEGIN": 1,
+        "query.sqlite:INSERT": 128,
+        "query.sqlite:SELECT": 2
+      },
+      "insert_rows": {
+        "query.sqlite:q1": 128
+      },
+      "aggregate_steps": 0,
+      "count": 128,
+      "sum_ids": 8128,
+      "explain": "Frame · key=('row',) · rows=unknown\nschema: row: Ref[row], name: str, source_line: int?, lb: number, ub: number, nnz: int, relation: str, sense: str, lhs: number, rhs: number, coef_min: number?, coef_max: number?\nmodels: 5902d60b-ebd6-4b2f-94c4-09d9b6c5046b\n#0 row · numpy: typed column execution",
+      "sql_statements": 137
+    },
+    {
+      "label": "public_row_terms_loop",
+      "n": 128,
+      "statements": {
+        "query.sqlite:PRAGMA": 640,
+        "query.sqlite:CREATE": 128,
+        "query.sqlite:BEGIN": 128,
+        "query.sqlite:INSERT": 128,
+        "query.sqlite:SELECT": 256
+      },
+      "insert_rows": {
+        "query.sqlite:q1": 128
+      },
+      "aggregate_steps": 0,
+      "terms": 256,
+      "sql_statements": 1280
+    },
+    {
+      "label": "records_low_memory_ingress",
+      "n": 128,
+      "statements": {
+        "query.sqlite:PRAGMA": 5,
+        "query.sqlite:CREATE": 1,
+        "query.sqlite:BEGIN": 1,
+        "query.sqlite:INSERT": 128,
+        "query.sqlite:SELECT": 1
+      },
+      "insert_rows": {
+        "query.sqlite:f1": 128
+      },
+      "aggregate_steps": 0,
+      "count": 128,
+      "explain": "Frame · key=None · rows=128\nschema: u: int, v: int\nmodels: \n#0 relation · sqlite: relation source or operator requires exact spill",
+      "sql_statements": 136
+    },
+    {
+      "label": "sum_from_spilled_frame",
+      "n": 128,
+      "statements": {
+        "query.sqlite:PRAGMA": 5,
+        "query.sqlite:CREATE": 2,
+        "query.sqlite:BEGIN": 1,
+        "query.sqlite:SELECT": 3,
+        "query.sqlite:INSERT": 256
+      },
+      "insert_rows": {
+        "query.sqlite:f1": 128,
+        "query.sqlite:f2": 128
+      },
+      "aggregate_steps": 128,
+      "total": "8256",
+      "sql_statements": 267
+    },
+    {
+      "label": "graph_path_from_spilled_frame",
+      "n": 128,
+      "statements": {
+        "query.sqlite:SELECT": 1
+      },
+      "insert_rows": {},
+      "aggregate_steps": 0,
+      "count": 128,
+      "path": "typed arrays",
+      "sql_statements": 1
+    },
+    {
+      "label": "compact_linear_rows",
+      "n": 128,
+      "statements": {},
+      "insert_rows": {},
+      "aggregate_steps": 0,
+      "ok": true,
+      "sql_statements": 0
+    },
+    {
+      "label": "frame_certificate_ingress",
+      "n": 128,
+      "statements": {
+        "query.sqlite:PRAGMA": 15,
+        "query.sqlite:CREATE": 3,
+        "query.sqlite:BEGIN": 3,
+        "query.sqlite:INSERT": 512,
+        "query.sqlite:SELECT": 3
+      },
+      "insert_rows": {
+        "query.sqlite:f1": 512
+      },
+      "aggregate_steps": 0,
+      "sql_statements": 536
+    },
+    {
+      "label": "linear_many_from_spilled_frames",
+      "n": 128,
+      "statements": {
+        "query.sqlite:SELECT": 3
+      },
+      "insert_rows": {},
+      "aggregate_steps": 0,
+      "ok": true,
+      "sql_statements": 3
+    },
+    {
+      "label": "template_refinement_cold_depth1",
+      "n": 128,
+      "statements": {
+        "refinement.sqlite:PRAGMA": 5,
+        "refinement.sqlite:SELECT": 6,
+        "refinement.sqlite:CREATE": 17,
+        "refinement.sqlite:BEGIN": 3,
+        "refinement.sqlite:INSERT": 305,
+        "refinement.sqlite:COMMIT": 3,
+        "refinement.sqlite:UPDATE": 2
+      },
+      "insert_rows": {
+        "refinement.sqlite:meta": 1,
+        "refinement.sqlite:configs": 1,
+        "refinement.sqlite:row_data": 128,
+        "refinement.sqlite:var_data": 129,
+        "refinement.sqlite:array_artifacts": 28,
+        "refinement.sqlite:roles": 2,
+        "refinement.sqlite:definitions": 16
+      },
+      "aggregate_steps": 0,
+      "families": 2,
+      "sql_statements": 341
+    },
+    {
+      "label": "template_refinement_warm_depth1",
+      "n": 128,
+      "statements": {
+        "refinement.sqlite:PRAGMA": 2,
+        "refinement.sqlite:SELECT": 1
+      },
+      "insert_rows": {},
+      "aggregate_steps": 0,
+      "families": 2,
+      "sql_statements": 3
+    },
+    {
+      "label": "filtered_head_low_memory",
+      "n": 128,
+      "statements": {},
+      "insert_rows": {},
+      "aggregate_steps": 0,
+      "output": [
+        {
+          "row": 0
+        }
+      ],
+      "tracemalloc_peak_bytes": 24652,
+      "memory_budget_bytes": 16384,
+      "largest_intermediate_rows": 128,
+      "largest_intermediate_array_bytes": 2048,
+      "sql_statements": 0
+    },
+    {
+      "label": "array_frame_unique_check",
+      "n": 512,
+      "statements": {
+        "query.sqlite:PRAGMA": 5,
+        "query.sqlite:CREATE": 2,
+        "query.sqlite:BEGIN": 1,
+        "query.sqlite:INSERT": 512,
+        "query.sqlite:SELECT": 4
+      },
+      "insert_rows": {
+        "query.sqlite:f1": 512
+      },
+      "aggregate_steps": 0,
+      "ok": true,
+      "sql_statements": 524
+    },
+    {
+      "label": "explicit_entity_id_list",
+      "n": 512,
+      "statements": {
+        "query.sqlite:PRAGMA": 5,
+        "query.sqlite:CREATE": 1,
+        "query.sqlite:BEGIN": 1,
+        "query.sqlite:INSERT": 512,
+        "query.sqlite:SELECT": 2
+      },
+      "insert_rows": {
+        "query.sqlite:q1": 512
+      },
+      "aggregate_steps": 0,
+      "count": 512,
+      "sum_ids": 130816,
+      "explain": "Frame · key=('row',) · rows=unknown\nschema: row: Ref[row], name: str, source_line: int?, lb: number, ub: number, nnz: int, relation: str, sense: str, lhs: number, rhs: number, coef_min: number?, coef_max: number?\nmodels: 7f14abf9-4515-4350-978d-0f3b63690beb\n#0 row · numpy: typed column execution",
+      "sql_statements": 521
+    },
+    {
+      "label": "public_row_terms_loop",
+      "n": 512,
+      "statements": {
+        "query.sqlite:PRAGMA": 2560,
+        "query.sqlite:CREATE": 512,
+        "query.sqlite:BEGIN": 512,
+        "query.sqlite:INSERT": 512,
+        "query.sqlite:SELECT": 1024
+      },
+      "insert_rows": {
+        "query.sqlite:q1": 512
+      },
+      "aggregate_steps": 0,
+      "terms": 1024,
+      "sql_statements": 5120
+    },
+    {
+      "label": "records_low_memory_ingress",
+      "n": 512,
+      "statements": {
+        "query.sqlite:PRAGMA": 5,
+        "query.sqlite:CREATE": 1,
+        "query.sqlite:BEGIN": 1,
+        "query.sqlite:INSERT": 512,
+        "query.sqlite:SELECT": 1
+      },
+      "insert_rows": {
+        "query.sqlite:f1": 512
+      },
+      "aggregate_steps": 0,
+      "count": 512,
+      "explain": "Frame · key=None · rows=512\nschema: u: int, v: int\nmodels: \n#0 relation · sqlite: relation source or operator requires exact spill",
+      "sql_statements": 520
+    },
+    {
+      "label": "sum_from_spilled_frame",
+      "n": 512,
+      "statements": {
+        "query.sqlite:PRAGMA": 5,
+        "query.sqlite:CREATE": 2,
+        "query.sqlite:BEGIN": 1,
+        "query.sqlite:SELECT": 3,
+        "query.sqlite:INSERT": 1024
+      },
+      "insert_rows": {
+        "query.sqlite:f1": 512,
+        "query.sqlite:f2": 512
+      },
+      "aggregate_steps": 512,
+      "total": "131328",
+      "sql_statements": 1035
+    },
+    {
+      "label": "graph_path_from_spilled_frame",
+      "n": 512,
+      "statements": {
+        "query.sqlite:SELECT": 1
+      },
+      "insert_rows": {},
+      "aggregate_steps": 0,
+      "count": 512,
+      "path": "typed arrays",
+      "sql_statements": 1
+    },
+    {
+      "label": "compact_linear_rows",
+      "n": 512,
+      "statements": {},
+      "insert_rows": {},
+      "aggregate_steps": 0,
+      "ok": true,
+      "sql_statements": 0
+    },
+    {
+      "label": "frame_certificate_ingress",
+      "n": 512,
+      "statements": {
+        "query.sqlite:PRAGMA": 15,
+        "query.sqlite:CREATE": 3,
+        "query.sqlite:BEGIN": 3,
+        "query.sqlite:INSERT": 2048,
+        "query.sqlite:SELECT": 3
+      },
+      "insert_rows": {
+        "query.sqlite:f1": 2048
+      },
+      "aggregate_steps": 0,
+      "sql_statements": 2072
+    },
+    {
+      "label": "linear_many_from_spilled_frames",
+      "n": 512,
+      "statements": {
+        "query.sqlite:SELECT": 3
+      },
+      "insert_rows": {},
+      "aggregate_steps": 0,
+      "ok": true,
+      "sql_statements": 3
+    },
+    {
+      "label": "template_refinement_cold_depth1",
+      "n": 512,
+      "statements": {
+        "refinement.sqlite:PRAGMA": 5,
+        "refinement.sqlite:SELECT": 6,
+        "refinement.sqlite:CREATE": 17,
+        "refinement.sqlite:BEGIN": 3,
+        "refinement.sqlite:INSERT": 1073,
+        "refinement.sqlite:COMMIT": 3,
+        "refinement.sqlite:UPDATE": 2
+      },
+      "insert_rows": {
+        "refinement.sqlite:meta": 1,
+        "refinement.sqlite:configs": 1,
+        "refinement.sqlite:row_data": 512,
+        "refinement.sqlite:var_data": 513,
+        "refinement.sqlite:array_artifacts": 28,
+        "refinement.sqlite:roles": 2,
+        "refinement.sqlite:definitions": 16
+      },
+      "aggregate_steps": 0,
+      "families": 2,
+      "sql_statements": 1109
+    },
+    {
+      "label": "template_refinement_warm_depth1",
+      "n": 512,
+      "statements": {
+        "refinement.sqlite:PRAGMA": 2,
+        "refinement.sqlite:SELECT": 1
+      },
+      "insert_rows": {},
+      "aggregate_steps": 0,
+      "families": 2,
+      "sql_statements": 3
+    },
+    {
+      "label": "filtered_head_low_memory",
+      "n": 512,
+      "statements": {},
+      "insert_rows": {},
+      "aggregate_steps": 0,
+      "output": [
+        {
+          "row": 0
+        }
+      ],
+      "tracemalloc_peak_bytes": 36400,
+      "memory_budget_bytes": 16384,
+      "largest_intermediate_rows": 512,
+      "largest_intermediate_array_bytes": 8192,
+      "sql_statements": 0
+    },
+    {
+      "label": "array_frame_unique_check",
+      "n": 2048,
+      "statements": {
+        "query.sqlite:PRAGMA": 5,
+        "query.sqlite:CREATE": 2,
+        "query.sqlite:BEGIN": 1,
+        "query.sqlite:INSERT": 2048,
+        "query.sqlite:SELECT": 4
+      },
+      "insert_rows": {
+        "query.sqlite:f1": 2048
+      },
+      "aggregate_steps": 0,
+      "ok": true,
+      "sql_statements": 2060
+    },
+    {
+      "label": "explicit_entity_id_list",
+      "n": 2048,
+      "statements": {
+        "query.sqlite:PRAGMA": 5,
+        "query.sqlite:CREATE": 1,
+        "query.sqlite:BEGIN": 1,
+        "query.sqlite:INSERT": 2048,
+        "query.sqlite:SELECT": 2
+      },
+      "insert_rows": {
+        "query.sqlite:q1": 2048
+      },
+      "aggregate_steps": 0,
+      "count": 2048,
+      "sum_ids": 2096128,
+      "explain": "Frame · key=('row',) · rows=unknown\nschema: row: Ref[row], name: str, source_line: int?, lb: number, ub: number, nnz: int, relation: str, sense: str, lhs: number, rhs: number, coef_min: number?, coef_max: number?\nmodels: 5c5eb939-c30f-41fc-87cd-43d7c719f662\n#0 row · numpy: typed column execution",
+      "sql_statements": 2057
+    },
+    {
+      "label": "public_row_terms_loop",
+      "n": 2048,
+      "statements": {
+        "query.sqlite:PRAGMA": 10240,
+        "query.sqlite:CREATE": 2048,
+        "query.sqlite:BEGIN": 2048,
+        "query.sqlite:INSERT": 2048,
+        "query.sqlite:SELECT": 4096
+      },
+      "insert_rows": {
+        "query.sqlite:q1": 2048
+      },
+      "aggregate_steps": 0,
+      "terms": 4096,
+      "sql_statements": 20480
+    },
+    {
+      "label": "records_low_memory_ingress",
+      "n": 2048,
+      "statements": {
+        "query.sqlite:PRAGMA": 5,
+        "query.sqlite:CREATE": 1,
+        "query.sqlite:BEGIN": 1,
+        "query.sqlite:INSERT": 2048,
+        "query.sqlite:SELECT": 1
+      },
+      "insert_rows": {
+        "query.sqlite:f1": 2048
+      },
+      "aggregate_steps": 0,
+      "count": 2048,
+      "explain": "Frame · key=None · rows=2048\nschema: u: int, v: int\nmodels: \n#0 relation · sqlite: relation source or operator requires exact spill",
+      "sql_statements": 2056
+    },
+    {
+      "label": "sum_from_spilled_frame",
+      "n": 2048,
+      "statements": {
+        "query.sqlite:PRAGMA": 5,
+        "query.sqlite:CREATE": 2,
+        "query.sqlite:BEGIN": 1,
+        "query.sqlite:SELECT": 3,
+        "query.sqlite:INSERT": 4096
+      },
+      "insert_rows": {
+        "query.sqlite:f1": 2048,
+        "query.sqlite:f2": 2048
+      },
+      "aggregate_steps": 2048,
+      "total": "2098176",
+      "sql_statements": 4107
+    },
+    {
+      "label": "graph_path_from_spilled_frame",
+      "n": 2048,
+      "statements": {
+        "query.sqlite:SELECT": 1
+      },
+      "insert_rows": {},
+      "aggregate_steps": 0,
+      "count": 2048,
+      "path": "typed arrays",
+      "sql_statements": 1
+    },
+    {
+      "label": "compact_linear_rows",
+      "n": 2048,
+      "statements": {},
+      "insert_rows": {},
+      "aggregate_steps": 0,
+      "ok": true,
+      "sql_statements": 0
+    },
+    {
+      "label": "frame_certificate_ingress",
+      "n": 2048,
+      "statements": {
+        "query.sqlite:PRAGMA": 15,
+        "query.sqlite:CREATE": 3,
+        "query.sqlite:BEGIN": 3,
+        "query.sqlite:INSERT": 8192,
+        "query.sqlite:SELECT": 3
+      },
+      "insert_rows": {
+        "query.sqlite:f1": 8192
+      },
+      "aggregate_steps": 0,
+      "sql_statements": 8216
+    },
+    {
+      "label": "linear_many_from_spilled_frames",
+      "n": 2048,
+      "statements": {
+        "query.sqlite:SELECT": 3
+      },
+      "insert_rows": {},
+      "aggregate_steps": 0,
+      "ok": true,
+      "sql_statements": 3
+    },
+    {
+      "label": "template_refinement_cold_depth1",
+      "n": 2048,
+      "statements": {
+        "refinement.sqlite:PRAGMA": 5,
+        "refinement.sqlite:SELECT": 6,
+        "refinement.sqlite:CREATE": 17,
+        "refinement.sqlite:BEGIN": 3,
+        "refinement.sqlite:INSERT": 4145,
+        "refinement.sqlite:COMMIT": 3,
+        "refinement.sqlite:UPDATE": 2
+      },
+      "insert_rows": {
+        "refinement.sqlite:meta": 1,
+        "refinement.sqlite:configs": 1,
+        "refinement.sqlite:row_data": 2048,
+        "refinement.sqlite:var_data": 2049,
+        "refinement.sqlite:array_artifacts": 28,
+        "refinement.sqlite:roles": 2,
+        "refinement.sqlite:definitions": 16
+      },
+      "aggregate_steps": 0,
+      "families": 2,
+      "sql_statements": 4181
+    },
+    {
+      "label": "template_refinement_warm_depth1",
+      "n": 2048,
+      "statements": {
+        "refinement.sqlite:PRAGMA": 2,
+        "refinement.sqlite:SELECT": 1
+      },
+      "insert_rows": {},
+      "aggregate_steps": 0,
+      "families": 2,
+      "sql_statements": 3
+    },
+    {
+      "label": "filtered_head_low_memory",
+      "n": 2048,
+      "statements": {},
+      "insert_rows": {},
+      "aggregate_steps": 0,
+      "output": [
+        {
+          "row": 0
+        }
+      ],
+      "tracemalloc_peak_bytes": 86912,
+      "memory_budget_bytes": 16384,
+      "largest_intermediate_rows": 2048,
+      "largest_intermediate_array_bytes": 32768,
+      "sql_statements": 0
+    }
+  ],
+  "date": "2026-10-05",
+  "timezone": "Asia/Shanghai",
+  "git_head": "da1a940f113ad6f63177cbd11059977d44f40210",
+  "scope": "Current working tree, including modified and untracked Python source files; not HEAD alone.",
+  "suite": {
+    "command": "/Users/bhz/miniforge3/bin/python3 -m pytest -q",
+    "passed": 629,
+    "skipped": 8,
+    "seconds": 100.76
+  },
+  "method": {
+    "model": "m=q, n=q+1, nnz=2*q; x_i-x_(i+1)<=0; 0<=x_i<=2",
+    "phase_sizes": [
+      128,
+      512,
+      2048
+    ],
+    "memory_mb": 0.015625,
+    "sqlite_trace": "Every new sqlite3.connect connection in the probe process; import phase excluded. Counts include PRAGMAs and DDL. executemany traced once per row.",
+    "aggregate_steps": "Wrapped SQLite aggregate step callback invocations.",
+    "memory": "Python tracemalloc plus directly observed intermediate NumPy column nbytes; not RSS or mmap residency.",
+    "timing": "No speed or scaling-time claim is made."
+  },
+  "probe_script_sha256": "462f27df38bfaf3c596ac27a0a566b236c3702a4551f5ef3b3996691a47b5f79"
+}

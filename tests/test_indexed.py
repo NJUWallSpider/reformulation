@@ -28,29 +28,16 @@ def coordinate_records(t):
 
 
 def test_operator_recovery_looks_up_coordinates_from_each_row(tmp_path, monkeypatch):
-    from mipframe.ir.indexing.store import Store
-
-    plans = []
-    original = Store._initialize
-
-    def initialize(store, owner):
-        original(store, owner)
-
-        def trace(sql):
-            if sql.startswith(('SELECT e.v FROM q', 'SELECT c.a,c.b,e.pos FROM q')):
-                plans.append(list(store.db.execute('EXPLAIN QUERY PLAN ' + sql)))
-
-        store.db.set_trace_callback(trace)
-
-    monkeypatch.setattr(Store, '_initialize', initialize)
     text, _ = model([[5, 2, 0], [2, 5, 1], [0, 1, 5]], groups=2)
     with build(tmp_path, text) as m:
-        m.indexed().verify().require()
-    assert plans
-    for plan in plans:
-        # The unrestricted tensor scan must never be the outer loop. This
-        # checks the planner used by recovery, without a machine-specific timer.
-        assert 'SEARCH e ' in plan[0][3] and 'r=?' in plan[0][3]
+        m.families(depth=3)
+        queries = []
+        m.model.db.set_trace_callback(queries.append)
+        result = m.indexed(depth=3)
+        result.verify().require()
+        assert not queries  # Numerical discovery and replay borrow sparse arrays.
+        assert not hasattr(result._store, 'db')
+        assert all(a.dtype.kind != 'O' for t in result._store.coordinates.values() for a in t.columns.values())
 
 
 @pytest.mark.parametrize("memory", [0.015625])
@@ -367,7 +354,7 @@ def test_large_sparse_scope_memory_and_display(tmp_path, monkeypatch):
     "change",
     [
         "UPDATE meta SET value='wrong' WHERE key='identity'",
-        "UPDATE cards SET record='{}' WHERE kind='tensors'",
+        "UPDATE meta SET value='{}' WHERE key='manifest'",
     ],
 )
 def test_load_rejects_incompatible_or_corrupt_results(tmp_path, change):
@@ -375,9 +362,9 @@ def test_load_rejects_incompatible_or_corrupt_results(tmp_path, change):
     with build(tmp_path, txt) as m:
         m.indexed()
         path = m.save(tmp_path / "saved")
-    with sqlite3.connect(path / "indexing.sqlite") as db:
+    with sqlite3.connect(path / "base" / "indexing.sqlite") as db:
         db.execute(change)
-    with pytest.raises(mf.MIPFrameError):
+    with pytest.raises(mf.MIPFrameError,match='Corrupt native artifact'):
         mf.load(path)
 
 

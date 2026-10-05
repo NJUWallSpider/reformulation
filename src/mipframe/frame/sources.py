@@ -72,7 +72,6 @@ def entity_scan(frame, fields, ctx):
         needed.update(("lo", "hi"))
     columns = tuple(sorted(needed))
     table = "rows" if axis == "row" else "variables"
-    ptr = m.row_ptr if axis == "row" else m.col_ptr
     block = max(1, min(500, ctx.memory // 2048))
     while True:
         batch = list(islice(ids, block))
@@ -104,7 +103,7 @@ def entity_scan(frame, fields, ctx):
                 elif n == "obj":
                     value = m.num(raw["obj"])
                 elif n == "nnz":
-                    value = int(ptr[ident + 1] - ptr[ident])
+                    value = m.degree(axis,ident)
                 elif n in ("type", "is_binary"):
                     b = binary(raw["kind"], lo, hi)
                     value = b if n == "is_binary" else "B" if b else raw["kind"]

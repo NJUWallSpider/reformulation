@@ -45,7 +45,7 @@ def test_free_mps_exact(make_model, tmp_path):
     assert [(m.num(r[2]), m.num(r[3])) for r in m.rows] == [(2, 4), (1, 6), (7, 10)]
     assert m.row(0) == {0: F(1), 1: F(-1)} and ir.verify().status == "PROVED"
     p = tmp_path / "out.lp"
-    ir.write_lp(p)
+    ir.write(p)
 
     with read(p) as restored:
         assert restored.verify().status == "PROVED"

@@ -135,18 +135,18 @@ def test_integrity_failure_skips_replay_and_diagnostic_release(m,monkeypatch):
     assert report.evidence['checks'].where(status='SKIPPED').count()>0
     with pytest.raises(mf.ValidationError):report.require()
     store=m._diagnostic_store
-    before=store.db.execute('SELECT count(*) FROM diagnostic_records').fetchone()[0]
+    before=store.record_count
     again=m.verify();view=again.violations
     del again;gc.collect()
     assert len(view)>0
     del view;gc.collect()
-    assert store.db.execute('SELECT count(*) FROM diagnostic_records').fetchone()[0]==before
+    assert store.record_count==before
     from mipframe.check.diagnostics import diagnostic
     def broken():
         yield dict(status='REFUTED',reason='unpublished')
         raise RuntimeError('injected')
     with pytest.raises(RuntimeError):diagnostic(m,broken(),kind='test')
-    assert store.db.execute('SELECT count(*) FROM diagnostic_records').fetchone()[0]==before
+    assert store.record_count==before
 
 
 def test_independent_complete_candidate_and_cross_run_rejection(m):

@@ -4,7 +4,7 @@ from functools import wraps
 from inspect import signature, Parameter
 from mipframe.frame.base import Frame, merge_models
 from mipframe.frame.schema import SchemaError, encode, decode
-from mipframe.store.algorithm_store import AlgorithmStore
+from mipframe.execution.algorithm import ArrayAlgorithmStore
 from mipframe.frame.query import dependencies, expression_frames
 
 REGISTRY = {}
@@ -46,7 +46,7 @@ def operation(name, *, search=False):
                     if id(frame) not in seen:
                         seen.add(id(frame))
                         frames.append(frame)
-            store = AlgorithmStore
+            store = ArrayAlgorithmStore
             if search:
                 from mipframe.store.search_store import SearchStore
 
@@ -58,6 +58,7 @@ def operation(name, *, search=False):
                 disk_mb=disk_mb,
             )
             ctx.operation = name
+            token=ctx.work.activate()
             try:
                 if search:
                     ctx.configure(
@@ -65,7 +66,21 @@ def operation(name, *, search=False):
                         max_states=params["max_states"],
                         time_limit=params["time_limit"],
                     )
-                result = fn(ctx, **params)
+                if name.startswith('graph.'):
+                    from mipframe.execution.graph import run as run_graph
+                    result = run_graph(ctx, name.split('.', 1)[1], **params)
+                elif name.startswith('sets.'):
+                    from mipframe.execution.sets import run as run_sets
+                    result=run_sets(ctx,name.split('.',1)[1],**params)
+                elif name=='equal_groups':
+                    from mipframe.execution.sets import equal_groups
+                    result=equal_groups(ctx,**params)
+                else:
+                    result = fn(ctx, **params)
+                if hasattr(result,'_finalize_algorithm'):
+                    result._finalize_algorithm(name,params,dict(memory_mb=memory_mb,max_output_rows=max_output_rows,disk_mb=disk_mb),ctx.paths)
+                    ctx.close()
+                    return result
                 ctx.disk_check()
                 provenance = list(getattr(result, "_search_provenance", ()))
                 for frame in frames:
@@ -105,13 +120,7 @@ def operation(name, *, search=False):
                         or frame.key
                         or ()
                     )
-                    scope[key] = (
-                        ctx.execute(
-                            f"SELECT coalesce(max(ordinal),0) FROM {stages[0][1]}"
-                        ).fetchone()[0]
-                        if stages
-                        else frame._known_count
-                    )
+                    scope[key] = len(stages[0][1]) if stages else frame._known_count
                 result._algorithm_info = {
                     "status": (
                         (
@@ -122,7 +131,8 @@ def operation(name, *, search=False):
                         if search
                         else "complete"
                     ),
-                    "path": ", ".join(sorted(ctx.paths)) or "exact SQLite spill",
+                    "path": ", ".join(sorted(ctx.paths)) or "typed arrays/mmap",
+                    "resources": dict(peak_working_bytes=ctx.work.ledger.peak_resident,peak_temporary_disk_bytes=ctx.work.ledger.peak_disk,memory_limit_bytes=ctx.memory),
                     "columns": columns,
                     "scope": scope,
                 }
@@ -134,10 +144,10 @@ def operation(name, *, search=False):
                             "source": result,
                             "name": relation_name,
                         }
-                # Commit before publishing. Every public result is a complete snapshot.
-                ctx.db.commit()
                 if search:
                     ctx.searching = False
+                if search or name.startswith(('graph.','matrix.','sets.')) or name=='equal_groups':
+                    ctx.close()
                 return result
             except BaseException as exc:
                 if search:
@@ -149,6 +159,9 @@ def operation(name, *, search=False):
                         arguments=params, resources=dict(memory_mb=memory_mb,
                         max_output_rows=max_output_rows,disk_mb=disk_mb))
                 raise
+
+            finally:
+                ctx.work.deactivate(token)
 
         run.__signature__ = sig.replace(
             parameters=[p for n, p in sig.parameters.items() if n != "ctx"]
@@ -224,4 +237,6 @@ def restore(node, build):
                 raise SchemaError("Invalid time limit") from exc
         else:
             arguments[key] = value(encoded)
-    return fn(**arguments, **resources)
+    result=fn(**arguments, **resources)
+    part=node.get('result')
+    return result.relations[part] if part is not None else result

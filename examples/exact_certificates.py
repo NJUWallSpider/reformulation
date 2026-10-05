@@ -40,10 +40,10 @@ End
             impossible = m.check.infeasible(
                 using=[conditional, x <= 1], assume=[x <= 1], residual="bounds"
             ).require()
-            print(impossible.explain())
+            print(impossible.status, impossible.scope, impossible.summary)
             output = Path(directory) / "rounding.jsonl"
-            rounded.write(output)
-            mf.Report.replay(output, models=[m], memory_mb=0.015625).require()
+            rounded.batch.write(output)
+            mf.BatchProof.replay(str(output), model=m).require()
             m.check.solution({x: 2, y: 2, z: 0}).require()
             # The local point x=0 refutes this implication but violates the model's lower row.
             local = m.check.enumerate(x >= 1, vars=[x])

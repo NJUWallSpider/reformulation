@@ -88,6 +88,7 @@ def test_projection_checks_and_complete_violation_relations(m):
 
 
 def test_patterns_normalized_relations_no_values(m, monkeypatch):
+    m.row_families  # Explicitly prepare the signatures consumed by pattern_counts.
     budget = 0.015625
     monkeypatch.setattr(m.model, "num", forbidden)
     monkeypatch.setattr(type(m.model.rows), "__getitem__", forbidden)
@@ -162,4 +163,4 @@ def test_high_degree_disk_projection_cleanup(tmp_path, monkeypatch):
         assert exc.value.report.violations.one().count == n
         assert len(exc.value.report.violations.relations["matches"]) == n
         stores = list(model._query_stores)
-    assert all(store.db is None for store in stores)
+    assert all(getattr(store,'_closed',getattr(store,'db',None) is None) for store in stores)

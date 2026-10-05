@@ -39,13 +39,7 @@ Establishes: Alignment uses uid, version, entity axis and ID. Canonical kind is 
 
 Does not establish: Names do not establish an original-to-presolved mapping. Exact saved values do not preserve unsaved source tokens.
 
-Model is immutable. Keep all models referenced by a query open while using live results or suspended iterators.
-Exported records contain detached Ref identity values. Bind them explicitly to the matching snapshot to navigate entities.
-Use m.rows.loc[ref] or m.vars.loc[ref] for same-snapshot, same-axis references; selections still enforce membership.
-ref.bind(m) uses the full matching model. loc[ref.id] discards the Ref snapshot and axis checks.
-Same uid with conflicting versions is rejected. New Edit snapshots have new uid and explicit parent/lineage.
-read/load prepare default IR and indexed results synchronously. Help and repr do not start an additional discovery run.
-Only native v3 is accepted; reimport LP/MPS for older native formats.
+Snapshot uid/revision identify immutable facts; content_hash computes an exact numerical hash only on explicit access. Entity IDs remain stable across overlays; iloc is a position and loc is identity. Native v7 restores numerical arrays, deltas and historical certificate data. Native v3/v4/v5/v6 are rejected; reimport the original LP/MPS. Reloaded historical verdicts are UNKNOWN until an explicit audit; they cannot authorize a new edit.
 
 See also: api.Ref.bind, api.Model.save, recipe.edits
 
@@ -53,21 +47,14 @@ See also: api.Ref.bind, api.Model.save, recipe.edits
 
 Claims, reports and proof scope [concept.proofs]
 
-A Claim states a proposition; only the matching completed checker establishes its stated conclusion.
+Discover witnesses, check compact certificates, then commit a proof-carrying delta.
 
 Establishes: Report status is PROVED, REFUTED or INCONCLUSIVE. require() succeeds only for PROVED.
 
 Does not establish: Structural checks, feasible points, solver status and graph candidates cannot serve as linear proofs.
 
-identity compares algebra, linear checks supplied multipliers, infeasible checks a contradiction, round uses model integrality,
-enumerate checks a finite local integer domain, and solution checks a complete point against the mathematical integer model, including integrality.
-For a fractional LP point, use matrix.activity plus exact comparisons of both row sides and all variable bounds, with complete variable coverage.
-solution rejects domain="relaxation". linear_many batches explicit certificates.
-These checkers do not search for multipliers or solve the MIP. A failed certificate is INCONCLUSIVE, not a proof of the opposite claim.
-Assumptions propagate and remain conditional. A local enumeration counterexample need not extend to a feasible point of the full model.
-Relaxation-valid evidence can support integer claims, but integer-only evidence cannot establish a relaxation claim.
-Use original row/variable side claims, not a newly typed unproved equivalent Claim, as trusted sources.
-Proof replay rechecks sources and dependencies; a saved PROVED string carries no authority.
+The checker executes explicit witnesses; it does not search for proofs. Existing row targets use integer IDs and CertificateBatch offsets/sources. Custom targets use Targets sparse arrays. Scalar Claims and optional Frames compile into the same exact kernel. A BatchProof stores statuses and dependencies without materializing target Reports. for_target returns a lazy ProofRef; select returns a compact selection. Edits accept these objects directly.
+Proofs bind an immutable snapshot and domain. Unproved/conditional/foreign evidence cannot authorize commit. Serialized status is never trusted: replay re-executes the certificate. Public Frame assertion Reports are separate from mathematical proofs.
 
 See also: concept.conditions, api.Checker.linear, api.Report.require
 
@@ -169,20 +156,13 @@ See also: api.MatrixAccessor.activity, api.Frame.join, api.Checker.solution, con
 
 Report resource lifecycle [concept.report-resources]
 
-Mathematical Reports share paged certificate storage; evidence views and proof dependencies retain the data they need.
+BatchProof owns immutable certificate arrays; ProofRef is a lightweight view.
 
 Establishes: Scalar mathematical checkers release their temporary workspace after publication and share retained evidence per live model owner. Batch targets share one store; for_target does not open another database.
 
 Does not establish: Report and LinExpr have no public close() method. Retained evidence still uses memory and disk. Unrelated queries and separately retained batches have their own storage; memory_mb is not a global process budget.
 
-Use check.linear_batch() for a loop of explicit claims, sources and per-target assumptions. Use check.linear_many when the inputs already exist as Frames.
-Retaining thousands of scalar mathematical Reports does not allocate one persistent SQLite connection per Report. Releasing the last Report, Claim, evidence Frame and dependent proof for a node makes its stored rows reclaimable; free database pages can be reused.
-Small expressions use bounded exact in-memory terms; larger materialized expressions share spill storage. Temporary SQLite callbacks do not keep discarded workspaces alive; manual garbage collection is not part of the API contract.
-Keep source models and proof dependencies alive until verification and any Edit that consumes them are complete.
-Export needed audit data with Report.to_spec or Report.write; exported status alone is not a live proof and must be replayed before reuse.
-Release unneeded reports, evidence Frames, expressions and containers holding them. Dependent reports and staged edits may still retain references, so deleting one name need not free storage immediately.
-Model.close releases owned query resources and invalidates dependent live results. Close a model only when its live results are no longer needed.
-Do not call private report stores to close shared evidence. This release offers no per-report deterministic close API.
+Successful batch execution creates no target Report, evidence Frame or symbolic Claim. for_target and evidence access are explicit lazy presentation. Mathematical values use Python integers or exact Fraction only when needed. Closing a source Model does not release data still shared by a child overlay. Entity/Frame navigation still requires its owner to be open.
 
 See also: api.Checker.linear_batch, api.Checker.linear_many, api.Report.for_target, api.Report.write, api.Report.replay, api.Model.close, concept.resources
 
@@ -220,7 +200,9 @@ Establishes: Complete ops finish or raise; no truncated mathematical result is r
 Does not establish: head() cannot bypass a join validation barrier, sort or aggregation. repr does not promise constant-time upstream work.
 
 Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. Parsing has a separate 32 MiB minimum.
-to_records explicitly materialize and can raise MaterializationLimitError; use iter_batches/write for large outputs.
+memory_mb controls working buffers; disk_mb limits temporary spill (None is unlimited). Child operations share a ledger.
+to_records and to_spec use a separate materialize_mb limit, default 128 MiB, and can raise MaterializationLimitError; use iter_batches/write for large outputs.
+Frame input, relation execution and diagnostics use typed arrays and mmap; there is no SQLite numerical fallback.
 Most ops default to 1,000,000 output records. Set max_output_rows=None only when full output is intended.
 alg *_candidates may stop early and record scope/stop reason. Exhaustive algorithms raise SearchBudgetExceeded when incomplete.
 check.enumerate returns INCONCLUSIVE when its enumeration budget is exhausted; this is different from alg.integer.enumerate.
@@ -359,29 +341,29 @@ Use an external solver for candidate points, multipliers and optimization. Bind 
 
 See also: concept.exact, api.Checker.solution
 
-## Exact native and LP output
+## Exact native, LP and MPS output
 
-Exact native and LP output [limitation.export]
+Exact native, LP and MPS output [limitation.export]
 
-Native save is lossless; LP output has explicit representability restrictions.
+Native save is lossless; LP and MPS output have explicit representability restrictions.
 
-Does not establish: Native save is lossless; LP output has explicit representability restrictions.
+Does not establish: Native save is lossless; LP and MPS output have explicit representability restrictions.
 
-There is no MPS writer. LP export rejects nonterminating decimal rationals and unrepresentable free rows rather than changing mathematics. Use native save for lossless persistence and audit.roundtrip for supported LP files.
+MPS supports stream patching and canonical output. Both LP and MPS reject nonterminating decimal rationals and unrepresentable free rows rather than changing mathematics. Use native save for lossless persistence and audit.roundtrip for supported LP files.
 
-See also: api.Model.write_lp, api.audit.roundtrip
+See also: api.Model.write, api.audit.roundtrip
 
-## Dropping a variable is not elimination
+## Fixed-variable elimination and lifting
 
-Dropping a variable is not elimination [limitation.elimination]
+Fixed-variable elimination and lifting [limitation.elimination]
 
-Edit.drop_vars only removes variables absent from all final rows and the final objective.
+Fixed-variable elimination carries an explicit lifting map.
 
 Does not establish: Edit.drop_vars only removes variables absent from all final rows and the final objective.
 
-LinExpr.substitute is algebra without proof. Edit does not provide automatic variable elimination, quotient reformulation, Model.from_frames or projection equivalence for changed coordinates.
+Use substitute_fixed after proving finite equal bounds. Nonzero fixed values shift row bounds and the objective constant exactly. General variable substitution and arbitrary dimension-changing reformulations require additional mapping rules.
 
-See also: api.Edit.drop_vars, api.LinExpr.substitute
+See also: api.Edit.substitute_fixed, api.Model.lift, api.Edit.drop_vars, api.LinExpr.substitute
 
 ## Explicit display and query settings
 

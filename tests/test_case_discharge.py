@@ -60,7 +60,8 @@ def test_two_stage_edit_replay_and_native(m, tmp_path, memory):
         d = middle.diff(m).semantic
         assert (d["lp"], d["mip"], d["optimal_value"]) == ("SUBSET", "SAME", "PRESERVED")
         with mf.load(middle.save(tmp_path / "middle.native")) as saved:
-            assert saved.diff(m).semantic["mip"] == "SAME"
+            assert saved.diff(m).semantic["mip"] == "UNKNOWN"
+            assert saved.audit(source=m)["semantic"]["mip"] == "SAME"
         yy = middle.vars.by_name("y")
         old = middle.rows.by_name("old")
         reverse = middle.check.linear(old.ub_claim, using=[middle.rows.by_name("tight").ub_claim, (1194, yy.ub_claim)])
@@ -80,8 +81,8 @@ def test_two_stage_edit_replay_and_native(m, tmp_path, memory):
                     assert feasible_rows(m, xx, yy) == feasible_rows(final, xx, yy) == expected
             assert feasible_rows(m, Q(6), Q(1, 2))
             assert not feasible_rows(final, Q(6), Q(1, 2))
-            with pytest.raises(mf.SchemaError, match="direct parent"):
-                final.diff(m)
+            assert final.diff(m).semantic["mip"] == "SAME"
+            assert final.diff(m).semantic["lp"] == "SUBSET"
 
 
 @pytest.mark.parametrize("lb,ub", [(0, 2), (-3, -1), (Q(-5, 2), Q(3, 2)), (1, 1)])
@@ -135,8 +136,9 @@ def test_unconditional_frontier_and_no_conditional_leak(m):
     cap = m.check.linear(m.rows.by_name("cap").ub_claim, using=[m.rows.by_name("cap").ub_claim])
     ps[0] = m.check.linear(t, using=[cap], assume=[y.eq(0)], residual="bounds")
     p = m.check.cases(t, var=y, cases=ps)
-    report_deps = [d for d in p.dependencies if d.kind == "report"]
-    assert report_deps and all(p._parents[d.parent].scope["assumptions"] == 0 for d in report_deps)
+    deps = list(p.batch.dependencies(p.index))
+    assert ("row", m.rows.by_name("cap").id, "ub") in deps
+    assert p.scope["assumptions"] == 0
     # A branch-only intermediate conclusion cannot certify an unrelated addition.
     x = m.vars.by_name("x")
     local = m.check.linear(x <= 3, using=[m.rows.by_name("old").ub_claim], assume=[y.eq(1)], residual="bounds")
@@ -161,7 +163,9 @@ def test_invalid_cases(m, change):
     if change == "inconclusive": ps[1] = m.check.linear(t)
     if change == "refuted": ps[1] = m.check.identity(y, y+1)
     if change == "infeasible": ps[1] = m.check.infeasible(assume=[y.eq(0), y.eq(1)])
-    if change == "unverified": ps[1]._verified = False
+    if change == "unverified":
+        from types import SimpleNamespace
+        ps[1] = SimpleNamespace(ok=True, status="PROVED", conclusion=t)
     if change == "relation": ps[1] = m.vars.check("unique", ("var",))
     if change == "mapping": ps = list(ps.values())
     if change == "relaxation": opts["domain"] = "relaxation"
@@ -210,12 +214,14 @@ def test_deletion_and_domain_dependency_safety(m):
     self_proof = m.check.cases(old.ub_claim, var=y, cases=self_ps)
     e = m.edit()
     e.drop_rows(old, because=self_proof)
-    with pytest.raises(mf.EditValidationError): e.build()
+    with pytest.raises((mf.EditValidationError, ValueError)): e.commit()
+    with e.build() as unproved: assert unproved.diff(m).semantic["mip"] == "UNKNOWN"
     # Deletion through cases still requires all branch facts to survive.
     e = m.edit()
     e.add_row(t, because=p)
     e.drop_rows(old, because=m.check.linear(old.ub_claim, using=[p, (1194, y.ub_claim)]))
-    with pytest.raises(mf.EditValidationError): e.build()
+    with pytest.raises((mf.EditValidationError, ValueError)): e.commit()
+    with e.build() as unproved: assert unproved.diff(m).semantic["mip"] == "UNKNOWN"
 
 
 def test_case_deletion_closure_and_mutual_cycle(m):
@@ -239,8 +245,9 @@ def test_case_deletion_closure_and_mutual_cycle(m):
         e = n.edit()
         e.drop_rows(a, because=pa)
         e.drop_rows(b, because=pb)
-        with pytest.raises(mf.EditValidationError):
-            e.build()
+        with pytest.raises((mf.EditValidationError, ValueError)):
+            e.commit()
+        with e.build() as unproved: assert unproved.diff(n).semantic["mip"] == "UNKNOWN"
 
 
 def test_coverage_bounds_cannot_be_lost_during_deletion(m):
@@ -255,8 +262,9 @@ def test_coverage_bounds_cannot_be_lost_during_deletion(m):
         e = n.edit()
         e.drop_rows(row, because=p)
         e.set_var_bounds(y, ub=2)
-        with pytest.raises(mf.EditValidationError):
-            e.build()
+        with pytest.raises((mf.EditValidationError, ValueError)):
+            e.commit()
+        with e.build() as unproved: assert unproved.diff(n).semantic["mip"] == "UNKNOWN"
 
 
 @pytest.mark.parametrize("tamper", ["missing", "value", "parent", "duplicate", "variable", "branch_target", "branch_assumption", "verdict"])
@@ -264,34 +272,30 @@ def test_replay_rechecks_case_certificates(m, tamper):
     t, y, ps = branches(m)
     p = m.check.cases(t, var=y, cases=ps)
     spec = deepcopy(p.to_spec())
-    events = spec["events"]
-    case = next(e for e in events if e["type"] == "case")
-    root = next(e for e in events if e["type"] == "node" and e["recipe"]["kind"] == "cases")
-    if tamper == "missing": events.remove(case)
-    if tamper == "value": case["value"] = "2"
-    if tamper == "parent": case["parent"] = 999
-    if tamper == "duplicate": events.append(dict(case))
+    root = spec["batch"]["nodes"][spec["batch"]["root"]]
+    if tamper == "missing": root["parents"].pop()
+    if tamper == "value": root["recipe"]["values"][0] = 2
+    if tamper == "parent": root["recipe"]["parent_indices"][0] = 999
+    if tamper == "duplicate": root["recipe"]["values"][1] = 0
     if tamper == "variable": root["recipe"]["var"] = -1
-    if tamper in ("branch_target", "branch_assumption"):
-        branch = next(e for e in events if e["type"] == "node" and e["recipe"]["kind"] == "linear")
-        cid = branch["recipe"]["target"] if tamper == "branch_target" else next(
-            e["claim"] for e in events if e["type"] == "assumption" and e["node"] == branch["node"])
-        claim = next(e for e in events if e["type"] == "claim" and e["node"] == branch["node"] and e["id"] == cid)
-        claim["constant"] = "-99"
+    if tamper == "branch_target": spec["batch"]["nodes"][root["parents"][0]]["targets"]["rhs"][0] = -99
+    if tamper == "branch_assumption": spec["batch"]["nodes"][root["parents"][0]]["recipe"]["assumptions"][0][1] = -99
     if tamper == "verdict":
         root["status"] = "REFUTED"
         assert mf.Report.replay(spec, models=[m]).ok
     else:
-        with pytest.raises(mf.InvalidCertificateError): mf.Report.replay(spec, models=[m])
+        with pytest.raises((ValueError, mf.InvalidCertificateError)):
+            mf.Report.replay(spec, models=[m])
 
 
 def test_batch_sources_and_reuse(m):
     t, y, ps = branches(m)
-    batch = m.check.linear_batch(residual="bounds")
+    selected = {}
     for k, name in ((0, "cap"), (1, "old")):
+        batch = m.check.linear_batch(residual="bounds")
         batch.add(key=str(k), target=t, using=[m.rows.by_name(name).ub_claim], assume=[y.eq(k)])
-    b = batch.run()
-    p = m.check.cases(t, var=y, cases={k: b.for_target(str(k)) for k in (0, 1)})
+        selected[k] = batch.run().for_target(str(k))
+    p = m.check.cases(t, var=y, cases=selected)
     assert mf.Report.replay(p.to_spec(), models=[m]).ok
     batch = m.check.linear_batch()
     batch.add(key="combined", target=t, using=[p])
@@ -300,33 +304,30 @@ def test_batch_sources_and_reuse(m):
     assert replayed.for_target("combined").scope["assumptions"] == 0
 
 
-def test_2016_merges_share_archive_and_release(m):
+def test_2016_merges_share_facts_and_release(m):
     t, y, ps = branches(m)
+    sql = []
+    m.model.db.set_trace_callback(sql.append)
     reports = [m.check.cases(t, var=y, cases=ps) for _ in range(2016)]
-    archive = reports[0]._store._runtime
-    assert all(p._store._runtime is archive for p in reports)
-    table_count = archive.execute("SELECT count(*) FROM sqlite_master WHERE type='table'").fetchone()[0]
-    assert table_count < 30
-    ref = weakref.ref(reports[0])
+    assert not sql
+    f = reports[0].batch._facts
+    assert all(p.batch._facts is f for p in reports)
+    refs = [weakref.ref(p.batch) for p in reports]
     del reports
     gc.collect()
-    assert ref() is None
-    # The two branch Reports survive; all 2016 merged nodes are reclaimed.
-    result_table = next(iter(ps.values()))._store._lease.archive.result
-    assert archive.execute(f"SELECT count(*) FROM {result_table}").fetchone()[0] == 2
+    assert all(ref() is None for ref in refs)
+    assert all(p.ok for p in ps.values())
 
 
 def test_lifecycle_and_cycles(m):
     t, y, ps = branches(m)
     p = m.check.cases(t, var=y, cases=ps)
-    parent = ps[0]
-    old = parent._parents
-    parent._parents = (parent,)
-    try:
-        with pytest.raises(mf.InvalidCertificateError, match="Cyclic"):
-            m.check.cases(t, var=y, cases=ps)
-    finally:
-        parent._parents = old
+    with pytest.raises(AttributeError): ps[0].batch._parents = (ps[0].batch,)
+    spec = p.to_spec()
+    spec["batch"]["nodes"][spec["batch"]["root"]]["parents"][0] = spec["batch"]["root"]
+    with pytest.raises(ValueError, match="Cyclic"):
+        mf.Report.replay(spec, models=[m])
     m.close()
+    assert p.ok  # checked values outlive presentation/query resources
     with pytest.raises(mf.MIPFrameError, match="closed"):
-        _ = p.status
+        _ = p.conclusion

@@ -26,52 +26,77 @@ class Model:
     Full contract: mf.help("api.Model")
     MIPFRAME HELP END
     """
-    def __init__(self, path: str | PathLike):
+    def __init__(self, path: str | PathLike, *, memory_mb=128,disk_mb=None):
+        from mipframe.core.resources import resource_limits
+        resource_limits(memory_mb,disk_mb)
         self._store = None
         self._temporary = None
         self._ir = None
-        self._analysis_memory_mb = 128
+        self._analysis_memory_mb = memory_mb
         try:
-            self._store = NumericalStore(path)
+            manifest = json.loads((Path(path)/'manifest.json').read_text())
+            if manifest.get('schema_version') != 7:
+                raise MIPFrameError('Expected native v7; re-import the original LP/MPS file')
+            if manifest.get('kind') == 'snapshot':
+                from mipframe.store.native7 import load_facts
+                from mipframe.store.overlay import OverlayStore
+                self._exact_facts = load_facts(path)
+                self._store = (NumericalStore.from_facts(self._exact_facts) if self._exact_facts.parent is None
+                               else OverlayStore(self._exact_facts))
+                self._delta_semantic = dict(coordinates='UNKNOWN', lp='UNKNOWN', mip='UNKNOWN',
+                                           objective=dict(kind='UNKNOWN'), optimal_value='UNKNOWN')
+                from mipframe.store.lifecycle import register
+                register(self, self._store)
+                if self._exact_facts.parent is None:self._build_ir(memory_mb=memory_mb)
+                return
+            self._store = NumericalStore(path, scan_memory_mb=memory_mb)
+            self._store.data.read_only_source=True
             from mipframe.store.lifecycle import register
             register(self, self._store)
             m = self._store
             from mipframe.store.integrity import dimensions_valid
             if not dimensions_valid(m):
                 raise MIPFrameError("Invalid native model dimensions")
-            self._build_ir()
+            self._build_ir(memory_mb=memory_mb)
         except BaseException:
             self.close()
             raise
 
     @classmethod
-    def _from_store(cls, store, temporary, *, memory_mb=128, prepare="indexed"):
+    def _from_store(cls, store, temporary, *, memory_mb=128, prepare="scan"):
         self = cls.__new__(cls)
         self._store, self._temporary = store, temporary
+        if getattr(store, 'data', None) is not None and temporary is not None:
+            store.data.temporary = temporary
+            self._temporary = None
         self._ir = None
         self._analysis_memory_mb = memory_mb
         try:
             from mipframe.store.lifecycle import register
             register(self, store)
-            if prepare == "indexed":
+            if prepare in ("scan", "indexed"):
                 self._build_ir(memory_mb=memory_mb)
+            if prepare == "indexed":
+                self.indexed(memory_mb=memory_mb)
         except BaseException:
             self.close()
             raise
         return self
 
+    @classmethod
+    def _from_facts(cls, facts, semantic):
+        from mipframe.store.overlay import OverlayStore
+        result=cls._from_store(OverlayStore(facts),None,prepare='logical')
+        result._exact_facts=facts
+        result._delta_semantic=semantic
+        facts.semantic=semantic
+        return result
+
     def _build_ir(self, *, memory_mb=128):
         if self._ir is not None:
             return
         from mipframe.ir.compressed import CompressedIR
-        ir = CompressedIR(self, memory_mb=memory_mb)
-        try:
-            self._restore_indexed()
-            self.indexed(memory_mb=memory_mb)
-        except BaseException:
-            ir._release()
-            raise
-        self._ir = ir
+        self._ir = CompressedIR(self, memory_mb=memory_mb)
 
     def _restore_indexed(self):
         if not getattr(self, "_indexed_restored", False):
@@ -82,10 +107,10 @@ class Model:
     @property
     def ir(self):
         """
-        Compressed model map (template depth 2); lazy after a logical Edit build.
+        Cached level-0 numerical scan; analyses are explicit and lazy.
 
         MIPFRAME HELP BEGIN
-        Factual compressed IR; prepared by read/load, or lazily on first access after a logical Edit build.
+        Cheap numerical scan; prepared by read/load, or lazily after a logical Edit build. Structural properties compute on explicit access.
 
         Full contract: mf.help("api.Model.ir")
         MIPFRAME HELP END
@@ -194,7 +219,7 @@ class Model:
         Full contract: mf.help("api.Model.nnz")
         MIPFRAME HELP END
         """
-        return len(self.model.col_idx)
+        return self.model.nnz
 
 
 
@@ -252,7 +277,7 @@ class Model:
         Full contract: mf.help("api.Model.edit")
         MIPFRAME HELP END
         """
-        from mipframe.edit.plan import Edit
+        from mipframe.edit.delta import DeltaEdit as Edit
         return Edit(self, memory_mb=memory_mb, disk_mb=disk_mb)
 
     @property
@@ -264,20 +289,58 @@ class Model:
         Full contract: mf.help("api.Model.lineage")
         MIPFRAME HELP END
         """
-        from mipframe.edit.lineage import Lineage
+        from mipframe.edit.compact_lineage import Lineage
         self.model
         return Lineage(self)
 
     def diff(self, source, *, verify="auto", memory_mb=128, disk_mb=None):
         """
         MIPFRAME HELP BEGIN
-        Compare the current snapshot with its direct parent or identical snapshot.
+        Read an ancestor delta directly, or explicitly compare unrelated numerical models.
 
         Full contract: mf.help("api.Model.diff")
         MIPFRAME HELP END
         """
-        from mipframe.edit.diff import ModelDiff
-        return ModelDiff(self, source, verify=verify, memory_mb=memory_mb, disk_mb=disk_mb)
+        from mipframe.check.kernel import facts
+        from mipframe.edit.delta import DeltaDiff
+        from mipframe.edit.numeric_diff import NumericDiff
+        cur=facts(self);ancestor=facts(source)
+        while cur is not ancestor and cur.parent is not None:cur=cur.parent
+        if cur is ancestor:return DeltaDiff(self,source)
+        return NumericDiff(self,source)
+
+    def audit(self, *, source, bundle=None, artifact=None):
+        """
+        Explicitly recheck saved certificates, delta coverage and numerical output.
+
+        MIPFRAME HELP BEGIN
+        Explicitly replay a persisted proof-carrying delta and compare numerical output.
+
+        Full contract: mf.help("api.Model.audit")
+        MIPFRAME HELP END
+        """
+        from mipframe.check.kernel import facts
+        from mipframe.control.proofs import proof_bundle
+        from mipframe.store.reformulation_audit import verify_bundle
+        f=facts(self)
+        if bundle is None:bundle=getattr(f,'saved_bundle',None) or proof_bundle(f)
+        return verify_bundle(bundle,source,target=self,artifact=artifact)
+
+    @property
+    def content_hash(self):
+        """
+        Compute the exact numerical fingerprint on explicit request.
+
+        MIPFRAME HELP BEGIN
+        Explicitly compute a numerical fingerprint; snapshot construction does not compute it.
+
+        Full contract: mf.help("api.Model.content_hash")
+        MIPFRAME HELP END
+        """
+        from mipframe.check.kernel import facts
+        from mipframe.store.reformulation_audit import fingerprint
+        if not hasattr(self,'_content_hash'):self._content_hash=fingerprint(facts(self))
+        return self._content_hash
 
     @property
     def check(self):
@@ -288,7 +351,7 @@ class Model:
         Full contract: mf.help("api.Model.check")
         MIPFRAME HELP END
         """
-        from mipframe.check.accessor import Checker
+        from mipframe.check.compiler import Checker
         self.model
         return Checker(self)
 
@@ -416,7 +479,7 @@ class Model:
         from mipframe.analysis import _transitions
         return _transitions(self,start,stop,kind=kind,entities=entities,**options)
 
-    def indexed(self, *, rows=None, vars=None, depth=2, method='template', memory_mb=128, **options):
+    def indexed(self, *, rows=None, vars=None, depth=2, method='template', memory_mb=128, disk_mb=None, **options):
         """
         Retrieve or discover indexed structure using explicit refinement options.
 
@@ -431,8 +494,8 @@ class Model:
         self._restore_indexed()
         if method not in ('template', 'exact_structural'):
             raise ValueError('Indexed analysis requires template or exact_structural')
-        result = refinement(self,depth=depth,mode='template' if method=='template' else 'exact',memory_mb=memory_mb,**options)
-        return indexed(self,rows=rows,vars=vars,signatures=result,memory_mb=memory_mb)
+        result = refinement(self,depth=depth,mode='template' if method=='template' else 'exact',memory_mb=memory_mb,disk_mb=disk_mb,**options)
+        return indexed(self,rows=rows,vars=vars,signatures=result,memory_mb=memory_mb,disk_mb=disk_mb)
 
     @property
     def objective(self) -> Objective:
@@ -448,29 +511,56 @@ class Model:
         self.model
         return Objective(self)
 
-    def save(self, directory: str | PathLike) -> Path:
+    def save(self, directory: str | PathLike, *, memory_mb=128,disk_mb=None) -> Path:
         """
         MIPFRAME HELP BEGIN
-        Atomically save a new native v3 directory.
+        Atomically save a new native v7 directory.
 
         Full contract: mf.help("api.Model.save")
         MIPFRAME HELP END
         """
         from mipframe.io import save
 
-        return save(self, directory)
+        return save(self, directory,memory_mb=memory_mb,disk_mb=disk_mb)
 
-    def write_lp(self, path: str | PathLike, **options) -> None:
+    def patch_plan(self, *, format='mps', memory_mb=128, disk_mb=None):
         """
-        MIPFRAME HELP BEGIN
-        Atomically export exact LP where decimal representation is lossless.
+        Plan source-record serialization without writing or proving an edit.
 
-        Full contract: mf.help("api.Model.write_lp")
+        MIPFRAME HELP BEGIN
+        Plan source patch support without sealing an edit or replaying proofs.
+
+        Full contract: mf.help("api.Model.patch_plan")
         MIPFRAME HELP END
         """
-        from mipframe.store.exporter import export
+        from mipframe.store.patch import patch_plan
+        return patch_plan(self,format=format,memory_mb=memory_mb,disk_mb=disk_mb)
 
-        return export(self.model, path, **options)
+    def write(self, path, *, format=None, strategy='auto', audit='readback', memory_mb=128, disk_mb=None, **options):
+        """
+        Atomically serialize exact numerical content and audit the artifact.
+
+        MIPFRAME HELP BEGIN
+        Atomically serialize an exact snapshot to MPS or LP.
+
+        Full contract: mf.help("api.Model.write")
+        MIPFRAME HELP END
+        """
+        from mipframe.store.output import write
+        return write(self,path,format=format,strategy=strategy,audit=audit,memory_mb=memory_mb,disk_mb=disk_mb,**options)
+
+    def lift(self, solution, *, ancestor=None):
+        """
+        Restore eliminated coordinates; this does not check feasibility.
+
+        MIPFRAME HELP BEGIN
+        Restore fixed variables to the direct parent or a requested ancestor.
+
+        Full contract: mf.help("api.Model.lift")
+        MIPFRAME HELP END
+        """
+        from mipframe.edit.lift import lift
+        return lift(self,solution,ancestor=ancestor)
 
     def close(self) -> None:
         """
@@ -487,6 +577,8 @@ class Model:
             resources.append(self._store)
         ir, temporary = getattr(self, '_ir', None), self._temporary
         self._store = self._temporary = None
+        self._exact_facts = None
+        self._one_hot_affine_cache = {}
         self._refinement_store = None
         self._analysis_groups = {}
         disconnect = [r._close_connection for r in resources if hasattr(r, '_close_connection')]
@@ -497,7 +589,7 @@ class Model:
         release_all(actions)
 
     def __del__(self):
-        if hasattr(self, '_store'):
+        if getattr(self, '_store', None) is not None:
             finalize_store(self)
 
     def __enter__(self) -> Model:
@@ -513,14 +605,14 @@ class Model:
         if getattr(self, "_display", None) is None:
             m = self.model
             rows, variables = self.shape
-            # Aggregate on disk instead of materializing all variable records.
-            counts = m.db.execute(
-                "SELECT v.kind, count(*), "
-                "sum(CASE WHEN n.numerator <> '0' THEN 1 ELSE 0 END) "
-                "FROM variables v JOIN numbers n ON n.id=v.obj GROUP BY v.kind"
-            ).fetchall()
-            types = Counter(m.variable_type(v) for v in m.variables)
-            objective_nnz = sum(count for _, _, count in counts)
+            from mipframe.check.kernel import facts
+            from mipframe.frame.sources import binary
+            f=facts(self)
+            types=Counter();objective_nnz=0
+            for v in f.var_ids():
+                _,_,kind,lo,hi,obj=f.numeric_var(v)
+                types['B' if binary(kind,lo,hi) else kind]+=1
+                objective_nnz+=bool(obj)
             density = self.nnz / (rows * variables) if rows and variables else 0.0
             density_text = f"{density:.3g}"
             if "e" in density_text:

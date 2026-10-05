@@ -19,7 +19,7 @@ from mipframe.check.report import Report
 from mipframe.check.report import CardinalityError
 from mipframe.check.report import ValidationError
 
-__version__ = "1.0.0"
+__version__ = "1.2.0"
 __all__ = [
     "read",
     "load",
@@ -76,7 +76,7 @@ __all__ += ["LinExpr", "Claim", "q", "ExactArithmeticError", "NonlinearExpressio
 from mipframe.check.certificate import InvalidCertificateError, UnsupportedEnumerationDomain
 __all__ += ["InvalidCertificateError", "UnsupportedEnumerationDomain"]
 
-from mipframe.check.batch import LinearBatch
+from mipframe.check.compiler import LinearBatch
 __all__ += ["LinearBatch"]
 
 from mipframe.edit import Edit, EditConflictError, EditValidationError, NonIsolatedVariableError, UndischargedAssumptionError, DraftRef
@@ -89,3 +89,16 @@ __all__ += ["help"]
 
 from mipframe import analysis
 __all__ += ["analysis"]
+
+from mipframe.check.kernel import CertificateBatch, Targets
+from mipframe.check.compact import BatchProof, ProofRef, ProofSelection
+from mipframe.edit.delta import DeltaEdit as Edit
+__all__ += ["CertificateBatch", "Targets", "BatchProof", "ProofRef", "ProofSelection"]
+
+from mipframe.ops.reduction import LinearCertificate, TransitiveReductionResult
+from mipframe.store.patch import PatchPlan, PatchNotSupportedError
+from mipframe.edit.substitution import SubstitutionInfeasibleError
+__all__ += ['LinearCertificate','TransitiveReductionResult','PatchPlan','PatchNotSupportedError','SubstitutionInfeasibleError']
+
+from mipframe.store.output import WriteReceipt
+__all__ += ['WriteReceipt']

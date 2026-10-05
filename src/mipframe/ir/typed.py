@@ -99,26 +99,15 @@ class _TypedKey:
 
 def typed_signature(owner, row_id):
     m = owner.model
-    start, stop = int(m.row_ptr[row_id]), int(m.row_ptr[row_id + 1])
-
     @lru_cache(maxsize=1024)
-    def classify(lo, hi):
-        return bound_class(m.num(lo), m.num(hi))
+    def classify(ident):
+        v=m.variables[ident]
+        return m.variable_type(v),bound_class(m.num(v[3]),m.num(v[4]))
 
-    counts = Counter()
-    # A bounded batch maps CSR terms to metadata; no row-sized variable dictionary.
-    for begin in range(start, stop, 900):
-        end = min(begin + 900, stop)
-        ids = [int(v) for v in m.col_idx[begin:end]]
-        marks = ",".join("?" for _ in ids)
-        metadata = {v: (m.variable_type((v,None,kind,lo,hi)), classify(lo, hi)) for v, kind, lo, hi in m.db.execute(
-            f"SELECT id,kind,lo,hi FROM variables WHERE id IN ({marks})", ids,
-        )}
-        for ptr, ident in enumerate(ids, begin):
-            kind, bounds = metadata[ident]
-            counts[int(m.coeff_id[ptr]), kind, bounds] += 1
-    values = Counter()
-    for (coef_id, kind, bounds), count in counts.items():
-        values[m.num(coef_id), kind, bounds] += count
+    values=Counter();nnz=0
+    for ident,coefficient in m.iter_terms(row_id):
+        kind,bounds=classify(ident)
+        values[coefficient,kind,bounds]+=1
+        nnz+=1
     sense, pairs, lo, hi, scale = _canonical_form(m, row_id, values)
-    return _TypedKey(sense, stop - start, TypedPattern(pairs), lo, hi, scale=scale)
+    return _TypedKey(sense, nnz, TypedPattern(pairs), lo, hi, scale=scale)

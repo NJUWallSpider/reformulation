@@ -1,446 +1,200 @@
-"""Shared bounded execution context, exact SQLite spill and sparse reads."""
-
+"""One exact relational executor over bounded typed storage."""
 from fractions import Fraction
-from tempfile import TemporaryDirectory
-import sqlite3
-import sys
-import weakref
-from mipframe.store.lifecycle import close_store, close_connection, finalize_store
-from mipframe.store.query_store import memory_bytes
-from mipframe.store.numbers import MIPFrameError
-from mipframe.store.numbers import compare_numeric_text
-from mipframe.store.numbers import exact_binary
-
-
-class QueryMemoryError(MIPFrameError):
-    """
-    MIPFRAME HELP BEGIN
-    Diagnostic exception; inspect original message and any attached complete Report.
-
-    Full contract: mf.help("api.QueryMemoryError")
-    MIPFRAME HELP END
-    """
-    pass
-
-
-class MaterializationLimitError(MIPFrameError):
-    """
-    MIPFRAME HELP BEGIN
-    Diagnostic exception; inspect original message and any attached complete Report.
-
-    Full contract: mf.help("api.MaterializationLimitError")
-    MIPFRAME HELP END
-    """
-    pass
-
-
-def size(value):
-    n = sys.getsizeof(value)
-    if isinstance(value, dict):
-        return n + sum(size(k) + size(v) for k, v in value.items())
-    if isinstance(value, (tuple, list)):
-        return n + sum(map(size, value))
-    if isinstance(value, Fraction):
-        return n + size(value.numerator) + size(value.denominator)
-    return n
+from mipframe.core.errors import MIPFrameError, QueryMemoryError, MaterializationLimitError
+from mipframe.core.resources import memory_bytes, size
+from mipframe.data.runtime import WorkContext
+from mipframe.data.relations import build, search_range, match_ranges, scalar
 
 
 def numeric(value):
-    if value is None:
-        return None
-    if value in ("inf", "-inf"):
-        return float(value)
-    return Fraction(value)
+    return None if value is None else float(value) if value in ('inf','-inf') else Fraction(value)
 
+def pack(value,typ):
+    if value is None:return None
+    return str(value) if typ.kind in ('number','int') else int(value) if typ.kind=='bool' else value
 
-def pack(value, typ):
-    if value is None:
-        return None
-    if typ.kind in ("number", "int"):
-        return str(value)
-    if typ.kind == "bool":
-        return int(value)
-    return value
-
-
-def unpack(value, typ):
-    if value is None:
-        return None
-    if typ.kind == "number":
-        return numeric(value)
-    if typ.kind == "int":
-        return int(value)
-    if typ.kind == "bool":
-        return bool(value)
-    return value
+def unpack(value,typ):
+    if value is None:return None
+    return numeric(value) if typ.kind=='number' else int(value) if typ.kind=='int' else bool(value) if typ.kind=='bool' else value
 
 
 class Context:
     @property
-    def query_context(self):
-        """The execution context used by Frame operators."""
-        return self
-
-    def __init__(self, models=(), memory_mb=None):
+    def query_context(self):return self
+    def __init__(self,models=(),memory_mb=None,disk_mb=None,*,work=None):
         from mipframe.options import options
-
-        self.memory = memory_bytes(
-            options.query.memory_mb if memory_mb is None else memory_mb
-        )
-        self.models = tuple(models)
-        self.db = self.temp = None
-        self._closed = False
-        self.serial = 0
-        self.staged = {}
-        self.members = {}
-        self.retained = False
-        self._aggregate_error = None
+        self.work=work.fork() if work is not None else WorkContext(options.query.memory_mb if memory_mb is None else memory_mb,options.query.disk_mb if disk_mb is None else disk_mb)
+        self.memory=self.work.memory;self.models=tuple(models)
+        self._closed=False;self.retained=False;self.staged={};self.members={};self.literal_members={};self._staged_frames={}
         from mipframe.store.lifecycle import register
-        for model in self.models:
-            register(model, self)
-
-    def ensure_storage(self):
-        self.guard()
-        if self.db is None:
-            try:
-                self._open()
-            except BaseException:
-                self.close()
-                raise
-
-    def _open(self):
-        self.temp = TemporaryDirectory(prefix="mipframe-frame-")
-        self.db = sqlite3.connect(self.temp.name + "/query.sqlite")
-        self.db.execute("PRAGMA temp_store=FILE")
-        self.db.execute("PRAGMA journal_mode=OFF")
-        self.db.execute("PRAGMA mmap_size=0")
-        self.db.execute(f"PRAGMA cache_size=-{max(1, self.memory // 4096)}")
-        self.db.execute(f"PRAGMA temp.cache_size=-{max(1, self.memory // 4096)}")
-        reference = weakref.ref(self)
-
-        def progress():
-            context = reference()
-            return 1 if context is None else context._progress()
-
-        self.db.set_progress_handler(progress, 10000)
-        self.db.create_collation(
-            "EXACT", compare_numeric_text
-        )
-        context = weakref.proxy(self)
-
-        class Sum:
-            def __init__(self):
-                self.total = Fraction(0)
-
-            def step(self, v):
-                if v is not None:
-                    try:
-                        self.total = exact_binary("add", self.total, numeric(v))
-                        context.check_size(self.total)
-                    except MIPFrameError as exc:
-                        context._aggregate_error = exc
-                        raise
-
-            def finalize(self):
-                return str(self.total)
-
-        self.db.create_aggregate("exact_sum", 1, Sum)
-
-    def _progress(self):
-        self.guard()
-        return 0
-
+        for m in self.models:register(m,self)
     def guard(self):
-        for model in self.models:
-            model.model
-        if self._closed:
-            raise MIPFrameError("Query storage is closed")
-
-    def check_size(self, row):
-        if size(row) > self.memory // 2:
-            raise QueryMemoryError(
-                "A query value or record exceeds the working-memory budget"
-            )
-
-    def execute(self, sql, args=()):
-        self.ensure_storage()
-        return self.db.execute(sql, args)
-
-    def table(self, schema):
-        self.serial += 1
-        name = f"f{self.serial}"
-        types = {
-            "ref": "INTEGER",
-            "draft_ref": "INTEGER",
-            "bool": "INTEGER",
-            "int": "TEXT COLLATE EXACT",
-            "number": "TEXT COLLATE EXACT",
-            "str": "TEXT",
-            "enum": "TEXT",
-            "null": "TEXT",
-        }
-        fields = ",".join(
-            f"c{i} {types[t.kind]}" for i, t in enumerate(schema.values())
-        )
-        self.execute(
-            f"CREATE TABLE {name}(ordinal INTEGER PRIMARY KEY{',' if fields else ''}{fields})"
-        )
-        return name
-
-    def index(self, table, columns, *, unique=False):
-        """Reuse an index for a staged table, including across workspace resets."""
-        columns = tuple(columns)
-        name = f"{table}_{'unique' if unique else 'index'}_{'_'.join(columns)}"
-        self.execute(
-            f"CREATE {'UNIQUE ' if unique else ''}INDEX IF NOT EXISTS {name} "
-            f"ON {table}({','.join(columns)})"
-        )
-
-    def append(self, table, schema, rows):
-        self.ensure_storage()
-        names = tuple(schema)
-        marks = ",".join("?" for _ in range(len(names) + 1))
-
-        def encoded():
-            for row in rows:
-                self.guard()
-                self.check_size(row)
-                yield (None, *(pack(row[n], schema[n]) for n in names))
-
-        self.db.executemany(f"INSERT INTO {table} VALUES({marks})", encoded())
-
-    def stage(self, frame, fields=None):
-        # Query plans must stay alive while id-based staging and membership caches refer to them.
-        if not hasattr(self, "_staged_frames"):
-            self._staged_frames = {}
-        self._staged_frames[id(frame)] = frame
-        fields = tuple(frame.schema if fields is None else fields)
-        key = (id(frame), fields)
+        for model in self.models:model.model
+        if self._closed:raise MIPFrameError('Query storage is closed')
+    def check_size(self,row):
+        if size(row)>self.memory//4:raise QueryMemoryError('A query value or record exceeds the working-memory budget')
+    def stage(self,frame,fields=None):
+        self.guard();fields=tuple(frame.schema if fields is None else fields);key=(id(frame),fields)
         if key not in self.staged:
-            schema = {n: frame.schema[n] for n in fields}
-            name = self.table(schema)
-            self.append(name, schema, frame._raw(fields, self))
-            self.staged[key] = (name, schema)
+            from mipframe.data.relations import Relation
+            frame._guard()
+            self._staged_frames[id(frame)]=frame
+            schema={n:frame.schema[n] for n in fields}
+            if frame._op=='source' and hasattr(frame,'_typed_relation'):
+                source=frame._typed_relation
+                table=Relation({n:source.columns[n] for n in fields},len(source),self.work,source.max_record)
+            elif frame._op=='source' and hasattr(frame,'_array_columns'):
+                source=frame._array_columns
+                table=Relation({n:source.columns[n] for n in fields},source.size,self.work)
+            elif frame._op=='select' and all(frame._params['expressions'][n].op=='col' for n in fields):
+                expressions=frame._params['expressions'];needed=tuple(dict.fromkeys(expressions[n].args[0] for n in fields))
+                source,_=self.stage(frame._parents[0],needed)
+                table=Relation({n:source.columns[expressions[n].args[0]] for n in fields},len(source),self.work,source.max_record)
+            else:
+                from mipframe.frame.stream import batches
+                from mipframe.data.relations import RelationBuilder
+                stream=batches(frame,fields,self)
+                if stream is None:table=build(self.work,schema,frame._raw(fields,self))
+                else:
+                    builder=RelationBuilder(self.work,schema)
+                    for batch in stream:builder.extend(batch)
+                    table=builder.finish()
+            self.staged[key]=(table,schema)
         return self.staged[key]
-
-    def rows(self, query, schema, args=()):
-        try:
-            for values in self.execute(query, args):
-                self.guard()
-                yield {
-                    name: unpack(value, typ)
-                    for (name, typ), value in zip(schema.items(), values)
-                }
-        except sqlite3.OperationalError:
-            # SQLite hides exceptions raised in aggregate callbacks. Preserve
-            # the exact-arithmetic/resource diagnostic for public Frame reads.
-            if self._aggregate_error is not None:
-                error, self._aggregate_error = self._aggregate_error, None
-                raise error from None
-            raise
-
-    def contains(self, frame, ident):
+    def contains(self,frame,ident):
+        key=frame.key[0]
         if id(frame) not in self.members:
-            key = frame.key[0]
-            table, schema = self.stage(frame, (key,))
-            self.index(table, ("c0",))
-            self.members[id(frame)] = (table, schema[key])
-        table, typ = self.members[id(frame)]
-        return (
-            self.execute(
-                f"SELECT 1 FROM {table} WHERE c0=? LIMIT 1", (pack(ident, typ),)
-            ).fetchone()
-            is not None
-        )
-
+            table,_=self.stage(frame,(key,));self.members[id(frame)]=(table,table.order((key,)))
+        table,ids=self.members[id(frame)]
+        lo,hi=search_range(table,ids,(key,),(ident,))
+        return lo<hi
+    def contains_literals(self,expression,value):
+        from mipframe.frame.schema import dtype
+        import numpy as np
+        key=id(expression)
+        if key not in self.literal_members:
+            table=build(self.work,{'value':dtype(value)},({'value':item.evaluate({},self)} for item in expression.args[1]))
+            order=table.order(('value',));column=table.columns['value']
+            has_null=False if isinstance(column,np.ndarray) else any(x is None for x in column)
+            self.literal_members[key]=(table,order,has_null,expression)
+        table,order,has_null,_=self.literal_members[key]
+        column=table.columns['value']
+        if isinstance(column,np.ndarray) and column.dtype.kind in 'iub':
+            # Avoid Python binary-search row dictionaries for primitive keys.
+            # Equality stays exact, including a rational or bigint probe value.
+            try:integer=int(value)
+            except (ValueError,OverflowError,TypeError):return False
+            if integer!=value or not -(2**63)<=integer<2**63:return False
+            pos=int(np.searchsorted(column,integer,sorter=order.view(np.int64)))
+            return pos<len(order) and int(column[int(order[pos])])==integer
+        lo,hi=search_range(table,order,('value',),(value,))
+        return True if lo<hi else None if has_null else False
     def clear_caches(self):
-        self.staged.clear()
-        self.members.clear()
-        self.__dict__.pop("_staged_frames", None)
-
+        self.staged.clear();self.members.clear();self.literal_members.clear();self._staged_frames.clear()
     def close(self):
-        self._closed = True
-        close_store(self)
-        if hasattr(self, "staged"):
-            self.clear_caches()
-
-    def _close_connection(self):
-        self._closed = True
-        close_connection(self)
-
+        if self._closed:return
+        self.clear_caches();self.work.close();self._closed=True
     def __del__(self):
-        finalize_store(self)
+        if hasattr(self,'_closed'):self.close()
+    def __enter__(self):return self
+    def __exit__(self,*_):
+        if not self.retained:self.close()
 
 
-def blocking(frame, fields, context):
-    """All non-streaming relational operations spill through this same context."""
-    op, p = frame._op, frame._params
-    parent = frame._parents[0]
-    if op == "join":
-        yield from join(frame, fields, context)
-        return
-    if op == "distinct":
-        needed = tuple(parent.schema)
-    elif op == "sort":
-        needed = tuple(dict.fromkeys((*fields, *p["by"])))
-    elif op in ("slice", "sample"):
-        needed = fields
-    else:
-        needed = tuple(
-            dict.fromkeys(
-                (
-                    *p["keys"],
-                    *(
-                        d
-                        for a in p["aggregates"].values()
-                        if a.expr is not None
-                        for d in a.expr.dependencies
-                    ),
-                )
-            )
-        )
-    table, schema = context.stage(parent, needed)
-    names = tuple(schema)
-    c = lambda n: f"c{names.index(n)}"
-    outputs = (",".join(c(n) for n in fields) or "1") if op != "group" else ""
-    if op == "sort":
-        keys = p["by"]
-        order = ",".join(
-            f"{c(n)} IS NULL, {c(n)} {'DESC' if d else 'ASC'}"
-            for n, d in zip(keys, p["descending"])
-        )
-        query = f"SELECT {outputs} FROM {table} ORDER BY {order},ordinal"
-    elif op == "distinct":
-        group = ",".join(c(n) for n in names)
-        query = (f"SELECT {outputs} FROM {table} GROUP BY {group} ORDER BY min(ordinal)"
-                 if group else f"SELECT 1 FROM {table} LIMIT 1")
-    elif op == "slice":
-        n = context.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
-        selected = range(n)[p["slice"]]
-        for pos in selected:
-            yield from context.rows(
-                f"SELECT {outputs} FROM {table} WHERE ordinal=?",
-                {n: frame.schema[n] for n in fields},
-                (pos + 1,),
-            )
-        return
-    elif op == "sample":
+def blocking(frame,fields,ctx):
+    op,p=frame._op,frame._params;parent=frame._parents[0]
+    if op=='join':yield from join(frame,fields,ctx);return
+    if op=='group':yield from group(frame,fields,ctx);return
+    needed=tuple(parent.schema) if op=='distinct' else tuple(dict.fromkeys((*fields,*p.get('by',()))))
+    table,_=ctx.stage(parent,needed)
+    if op=='sort':ids=table.order(p['by'],p['descending'])
+    elif op=='slice':ids=range(len(table))[p['slice']]
+    elif op=='distinct':
+        from mipframe.data.buffers import Buffer
+        from mipframe.data.sorting import lexorder
+        b=Buffer(ctx.work,'<u8')
+        for _,positions in table.groups(needed):b.append(int(positions[0]))
+        chosen=b.finish();order=lexorder(ctx.work,(chosen,));ids=(int(chosen[i]) for i in order)
+    elif op=='sample':
         import random
-
-        n = context.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
-        amount = p["n"]
-        if amount > n:
-            raise ValueError("Sample larger than population")
-        # External random ranking keeps Python state independent of sample size.
-        rng = random.Random(p["seed"])
-        from mipframe.frame.schema import DType
-        rank_schema = {"position": DType("int"), "rank": DType("int")}
-        ranks = context.table(rank_schema)
-        context.append(
-            ranks, rank_schema,
-            ({"position": i, "rank": rng.getrandbits(128)} for i in range(1, n + 1)),
-        )
-        query = f"SELECT {outputs} FROM {table} WHERE ordinal IN (SELECT CAST(c0 AS INTEGER) FROM {ranks} ORDER BY c1,ordinal LIMIT {amount}) ORDER BY ordinal"
-    elif op == "group":
-        # Evaluate aggregate expressions once into scalar spill columns.
-        from mipframe.frame.schema import DType
-
-        expanded = {n: schema[n] for n in p["keys"]}
-        for n, a in p["aggregates"].items():
-            expanded[n] = DType("int") if a.expr is None else a.expr.type(parent.schema)
-        stage = context.table(expanded)
-
-        def values():
-            for row in context.rows(
-                f"SELECT {','.join(c(n) for n in names) or '1'} FROM {table} ORDER BY ordinal",
-                schema,
-            ):
-                yield {
-                    **{k: row[k] for k in p["keys"]},
-                    **{
-                        k: 1 if a.expr is None else a.expr.evaluate(row, context)
-                        for k, a in p["aggregates"].items()
-                    },
-                }
-
-        context.append(stage, expanded, values())
-        enames = tuple(expanded)
-        expressions = {n: f"c{enames.index(n)}" for n in p["keys"]}
-        for n, a in p["aggregates"].items():
-            col = f"c{enames.index(n)}"
-            expressions[n] = (
-                f"count(DISTINCT {col})"
-                if a.op == "nunique"
-                else f"COALESCE(exact_sum({col}),'0')"
-                if a.op == "sum"
-                else f"{a.op}({col})"
-            )
-        group = ",".join(expressions[k] for k in p["keys"])
-        order = ",".join(
-            f"{expressions[k]} IS NULL,{expressions[k]}" for k in p["keys"]
-        )
-        # An ungrouped aggregate still emits one row when its outputs are pruned.
-        outputs = ",".join(expressions[n] for n in fields) or ("1" if group else "count(*)")
-        query = f"SELECT {outputs} FROM {stage}" + (
-            f" GROUP BY {group} ORDER BY {order}" if group else ""
-        )
-    else:
-        raise NotImplementedError(op)
-    yield from context.rows(query, {n: frame.schema[n] for n in fields})
+        if p['n']>len(table):raise ValueError('Sample larger than population')
+        rng=random.Random(p['seed'])
+        ranks=build(ctx.work,{'rank':'int'},({'rank':rng.getrandbits(128)} for _ in range(len(table))))
+        rank=ranks.order(('rank',));selected=rank[:p['n']]
+        from mipframe.data.sorting import lexorder
+        order=lexorder(ctx.work,(selected,));ids=(int(selected[i]) for i in order)
+    else:raise NotImplementedError(op)
+    yield from table.records(fields,ids)
 
 
-def join(frame, fields, ctx):
-    left, right = frame._parents
-    pairs = frame._params["on"]
-    lfields = tuple(dict.fromkeys((*pairs, *(n for n in fields if n in left.schema))))
-    rfields = tuple(
-        dict.fromkeys(
-            (
-                *pairs.values(),
-                *(n for n in fields if n in right.schema and n not in left.schema),
-            )
-        )
-    )
-    lt, ls = ctx.stage(left, lfields)
-    rt, rs = ctx.stage(right, rfields)
-    ln, rn = tuple(ls), tuple(rs)
-    keys_l = [f"c{ln.index(k)}" for k in pairs]
-    keys_r = [f"c{rn.index(k)}" for k in pairs.values()]
-    for table, keys in ((lt, keys_l), (rt, keys_r)):
-        ctx.index(table, keys)
-    match = " AND ".join(f"l.{a}=r.{b}" for a, b in zip(keys_l, keys_r))
-    violations = []
-    card = frame._params["cardinality"]
-    for side, table, keys, unique in [
-        ("left", lt, keys_l, card in ("1:1", "1:m")),
-        ("right", rt, keys_r, card in ("1:1", "m:1")),
-    ]:
-        if unique:
-            group = ",".join(keys)
-            # Null key tuples are also subject to declared uniqueness.
-            query = f"SELECT {group},count(*) FROM {table} GROUP BY {group} HAVING count(*)>1"
-            for row in ctx.execute(query):
-                violations.append((side, "duplicate", str(row[:-1]), row[-1]))
-                if len(violations) >= 16:
-                    break
-    req = frame._params["require"]
-    missing = {}
-    for side, table, alias, opposite, oa in [
-        ("left", lt, "l", rt, "r"),
-        ("right", rt, "r", lt, "l"),
-    ]:
-        if req in (side, "both"):
-            missing[side] = (
-                f"SELECT {alias}.ordinal FROM {table} {alias} WHERE NOT EXISTS(SELECT 1 FROM {opposite} {oa} WHERE {match})"
-            )
-            if ctx.execute(missing[side] + " LIMIT 1").fetchone():
-                violations.append((side, "unmatched", "", 1))
-    if violations:
-        from mipframe.check.frame import join_failure
+def group(frame,fields,ctx):
+    p=frame._params;parent=frame._parents[0];keys=p['keys']
+    needed=tuple(dict.fromkeys((*keys,*(n for a in p['aggregates'].values() if a.expr is not None for n in a.expr.dependencies))))
+    table,_=ctx.stage(parent,needed)
+    groups=table.groups(keys) if keys else (((),range(len(table))),)
+    for key,ids in groups:
+        row={}
+        for n in fields:
+            if n in keys:row[n]=key[keys.index(n)];continue
+            a=p['aggregates'][n]
+            def values():
+                for i in ids:
+                    value=1 if a.expr is None else a.expr.evaluate(table.row(int(i)),ctx)
+                    if value is not None:yield value
+            if a.op=='nunique':
+                with ctx.work.fork() as scratch:
+                    t=build(scratch,{'v':frame.schema[n] if a.expr is None else a.expr.type(parent.schema)},({'v':v} for v in values()))
+                    value=sum(1 for _ in t.groups(('v',)))
+            elif a.op=='count':value=sum(1 for _ in values())
+            elif a.op=='sum':
+                from mipframe.store.numbers import exact_binary
+                value=0
+                for v in values():value=exact_binary('add',value,v);ctx.check_size(value)
+            else:value=(min if a.op=='min' else max)(values(),default=None)
+            row[n]=value
+        yield row
 
-        raise join_failure(frame, ctx, lt, ls, rt, rs, pairs, card, req, match)
-    mapped = {n: f"l.c{ln.index(n)}" for n in ln}
-    mapped.update({n: f"r.c{rn.index(n)}" for n in rn if n not in pairs.values()})
-    outputs = ",".join(mapped[n] for n in fields) or "1"
-    query = f"SELECT {outputs} FROM {lt} l {'LEFT JOIN' if frame._params['how'] == 'left' else 'JOIN'} {rt} r ON {match} ORDER BY l.ordinal,r.ordinal"
-    yield from ctx.rows(query, {n: frame.schema[n] for n in fields})
+
+def join(frame,fields,ctx,*,as_batches=False):
+    import json
+    from mipframe.frame.schema import DType
+    from mipframe.check.frame import report
+    from mipframe.check.report import CardinalityError
+    left,right=frame._parents;p=frame._params;pairs=p['on'];ln,rn=tuple(pairs),tuple(pairs.values())
+    lf=tuple(dict.fromkeys((*ln,*(n for n in fields if n in left.schema))))
+    rf=tuple(dict.fromkeys((*rn,*(n for n in fields if n in right.schema and n not in left.schema))))
+    l,ls=ctx.stage(left,lf);r,rs=ctx.stage(right,rf)
+    li,ri=l.order(ln),r.order(rn);card,req=p['cardinality'],p['require']
+    lower,upper,right_matched=match_ranges(l,r,ln,rn,li,ri)
+    def violations():
+        for side,t,order,keys,types,unique in (
+            ('left',l,li,ln,ls,card in ('1:1','1:m')),
+            ('right',r,ri,rn,rs,card in ('1:1','m:1'))):
+            def text(k):return json.dumps([pack(v,types[n]) for n,v in zip(keys,k)])
+            if unique:
+                for key,ids in t.duplicate_groups(keys,order):
+                    yield dict(side=side,reason='duplicate key',key=text(key),count=len(ids))
+            if req in (side,'both'):
+                for i in range(len(t)):
+                    matched=lower[i]!=upper[i] if side=='left' else right_matched[i]
+                    if not matched:yield dict(side=side,reason='unmatched',key=text(t.key(i,keys)),count=1)
+    schema={'side':DType('str'),'reason':DType('str'),'key':DType('str'),'count':DType('int')}
+    retained=ctx.retained
+    checked=report(ctx,violations(),schema,dict(operation='join',scope='full declared inputs',cardinality=card,require=req),relations={'left':left,'right':right})
+    if not checked.ok:
+        checked._recipe=dict(kind='execution',frame_object=frame)
+        raise CardinalityError('Join cardinality or match requirement failed',checked)
+    ctx.retained=retained
+    left_columns=tuple((n,l.columns[n]) for n in fields if n in l.columns)
+    right_columns=tuple((n,r.columns[n]) for n in fields if n not in l.columns)
+    if as_batches:
+        from mipframe.data.relations import unique_join_batches
+        yield from unique_join_batches(ctx.work,dict(left_columns),dict(right_columns),lower,upper,ri,outer=p['how']=='left')
+        return
+    for i in range(len(l)):
+        lo,hi=int(lower[i]),int(upper[i])
+        matches=ri[lo:hi] if lo<hi else (-1,) if p['how']=='left' else ()
+        for j in matches:
+            row={n:scalar(c[i]) for n,c in left_columns}
+            row.update((n,None if j<0 else scalar(c[int(j)])) for n,c in right_columns)
+            yield row

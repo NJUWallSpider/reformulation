@@ -1,7 +1,8 @@
+from mipframe.control.cache import directory as cache_directory
 """Template and exact disk-backed refinement on the orientation-expanded graph.
 
-Only integer buffers are used for edges. SQLite holds exact roles, interning
-keys and bounded binary chunks; hashes are lookup accelerators, never identity.
+Numerical values, roles and signatures live in typed artifacts. SQLite holds
+configuration identities and array manifests; hashes never replace full equality.
 """
 
 from collections import OrderedDict
@@ -22,7 +23,7 @@ from mipframe.frame.entity import _sense
 from mipframe.store.numbers import MIPFrameError
 from mipframe.ir.typed import bound_class
 
-VERSION = "2.0"
+VERSION = "7.0"
 TOKEN = struct.Struct(">qqq")
 KEY_CHUNK = 256
 
@@ -64,7 +65,7 @@ def validate(depth, coefficient, rhs, objective, memory_mb, mode="template", mul
         raise ValueError("memory_mb must provide at least 16 KiB")
     return _json({"mode": mode, "coefficient": expected, "rhs": rhs, "objective": objective,
                   "multiplicity_ratio": str(ratio) if mode == "template" else None,
-                  "equality": "dual_zero_rhs", "algorithm": "2.0"})
+                  "equality": "dual_zero_rhs", "algorithm": "7.0"})
 
 
 def number_class(value, policy="sign"):
@@ -78,7 +79,7 @@ def number_class(value, policy="sign"):
 
 
 class RefinementStore:
-    def __init__(self, owner, memory_mb):
+    def __init__(self, owner, memory_mb,disk_mb=None):
         self.owner = owner
         self.temp = TemporaryDirectory(prefix="mipframe-refinement-")
         self.arrays = {}
@@ -90,8 +91,16 @@ class RefinementStore:
         self.counts = {}
         self.family_stores = WeakSet()
         self.db = None
+        self._interned = {}
+        self._pending_artifacts = []
+        self._pending_definitions = []
+        from mipframe.data.runtime import WorkContext
+        self.work=WorkContext(memory_mb,disk_mb)
+        self._token_data = {}
+        self._roles = {}
+        self._role_values = {}
         try:
-            self.db = sqlite3.connect(owner.model.path / "refinement.sqlite")
+            self.db = sqlite3.connect(cache_directory(owner) / "refinement.sqlite")
             self.db.execute("PRAGMA temp_store=FILE")
             self.set_memory(memory_mb)
             expected = _json([owner.uid, owner.model.manifest["model_version"], VERSION])
@@ -102,30 +111,8 @@ class RefinementStore:
             self.db.executescript("""
                 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT);
                 CREATE TABLE IF NOT EXISTS configs(id INTEGER PRIMARY KEY,key TEXT UNIQUE,depth INTEGER);
-                CREATE TABLE IF NOT EXISTS roles(id INTEGER PRIMARY KEY,value TEXT UNIQUE);
-                CREATE TABLE IF NOT EXISTS row_data(config INTEGER,id INTEGER,base TEXT,
-                    scale TEXT,lo TEXT,hi TEXT,dual INTEGER,PRIMARY KEY(config,id));
-                CREATE TABLE IF NOT EXISTS var_data(config INTEGER,id INTEGER,base TEXT,PRIMARY KEY(config,id));
-                CREATE TABLE IF NOT EXISTS definitions(config INTEGER,kind TEXT,depth INTEGER,
-                    color INTEGER,header TEXT,digest BLOB,n_tokens INTEGER,
-                    PRIMARY KEY(config,kind,depth,color));
-                CREATE INDEX IF NOT EXISTS definition_hash ON definitions(config,kind,depth,digest,header);
-                CREATE TABLE IF NOT EXISTS key_chunks(config INTEGER,kind TEXT,depth INTEGER,
-                    color INTEGER,part INTEGER,data BLOB,PRIMARY KEY(config,kind,depth,color,part));
-                CREATE TABLE IF NOT EXISTS arrays(config INTEGER,kind TEXT,depth INTEGER,
-                    part INTEGER,start INTEGER,n INTEGER,dtype TEXT,data BLOB,
-                    PRIMARY KEY(config,kind,depth,part));
-                CREATE TEMP TABLE candidate(part INTEGER PRIMARY KEY,data BLOB);
-                CREATE TEMP TABLE scratch(a INTEGER,b INTEGER);
-                CREATE INDEX scratch_tokens ON scratch(a,b);
-                CREATE TABLE IF NOT EXISTS template_ranges(config INTEGER,kind TEXT,depth INTEGER,
-                    color INTEGER,a INTEGER,b INTEGER,lo INTEGER,hi INTEGER,
-                    PRIMARY KEY(config,kind,depth,color,a,b));
-                CREATE TEMP TABLE template_nodes(id INTEGER PRIMARY KEY,coarse INTEGER,color INTEGER);
-                CREATE TEMP TABLE template_tokens(id INTEGER,a INTEGER,b INTEGER,n INTEGER,
-                    PRIMARY KEY(id,a,b));
-                CREATE TEMP TABLE template_modes(coarse INTEGER,a INTEGER,b INTEGER,n INTEGER,mode INTEGER,
-                    PRIMARY KEY(coarse,a,b,n));
+                CREATE TABLE IF NOT EXISTS array_artifacts(config INTEGER,kind TEXT,depth INTEGER,path TEXT,dtype TEXT,n INTEGER,checksum TEXT,
+                    PRIMARY KEY(config,kind,depth));
             """)
             old = self.db.execute("SELECT value FROM meta WHERE key='source'").fetchone()
             if not old:
@@ -133,7 +120,7 @@ class RefinementStore:
                 self.db.commit()
             from mipframe.store.lifecycle import register
             register(owner, self)
-            self.dtype = np.dtype("<i4" if max(2 * len(owner.model.rows), len(owner.model.variables)) <= np.iinfo(np.int32).max else "<i8")
+            self.dtype = np.dtype("<i4" if max(2 * owner.model.capacity("row"), owner.model.capacity("var")) <= np.iinfo(np.int32).max else "<i8")
         except BaseException:
             self.close()
             raise
@@ -158,11 +145,12 @@ class RefinementStore:
 
     def _close_connection(self):
         from mipframe.store.lifecycle import release_all, close_connection
-        actions = [store.db.close for store in self.family_stores]
+        actions = [store.close for store in self.family_stores]
         actions.append(lambda: close_connection(self))
-        actions.extend(array._mmap.close for array in self.maps if not array._mmap.closed)
+        actions.extend(array._mmap.close for array in self.maps if hasattr(array,'_mmap') and not array._mmap.closed and id(array) not in self.work._allocations)
         release_all(actions)
         self.maps.clear()
+        if hasattr(self,'work'):self.work.close()
         self.arrays.clear()
         self.intern_cache.clear()
 
@@ -172,167 +160,159 @@ class RefinementStore:
         release_all((self._close_connection, lambda: cleanup_directory(temp)))
 
     def _work(self, size, dtype=None):
-        self.serial += 1
-        if not size:
-            return np.empty(0, dtype=dtype or self.dtype)
-        path = Path(self.temp.name) / f"array-{self.serial}.bin"
-        result = np.memmap(path, mode="w+", dtype=dtype or self.dtype, shape=(size,))
+        result=self.work.array(size,dtype or self.dtype)
         self.maps.append(result)
         return result
 
-    def _write_array(self, config, kind, depth, array):
-        for part, start in enumerate(range(0, len(array), self.block)):
-            values = array[start:start + self.block]
-            self.db.execute("INSERT INTO arrays VALUES(?,?,?,?,?,?,?,?)",
-                            (config, kind, depth, part, start, len(values), array.dtype.str, values.tobytes()))
+    def _write_array(self,config,kind,depth,array):
+        from mipframe.store.artifacts import sha256
+        from mipframe.data.runtime import DiskReservation
+        directory=cache_directory(self.owner)/'derived'
+        directory.mkdir(exist_ok=True)
+        import uuid
+        name=f'{config}-{kind}-{depth}-{uuid.uuid4().hex}.npy'
+        path=directory/name
+        staged=directory/(name+'.tmp')
+        reservation=DiskReservation(self.work)
+        try:
+            reservation.add(array.nbytes+256)
+            with staged.open('wb') as out:np.save(out,array,allow_pickle=False)
+            staged.replace(path)
+            self.db.execute('INSERT OR REPLACE INTO array_artifacts VALUES(?,?,?,?,?,?,?)',
+                            (config,kind,depth,name,array.dtype.str,len(array),sha256(path,work=self.work)))
+            self._pending_artifacts.append((path,reservation))
+        except BaseException:
+            staged.unlink(missing_ok=True);path.unlink(missing_ok=True);reservation.close()
+            raise
 
-    def array(self, config, kind, depth):
-        self.guard()
-        key = config, kind, depth
+    def _finish_artifacts(self,published):
+        pending,self._pending_artifacts=self._pending_artifacts,[]
+        for path,reservation in pending:
+            if not published:path.unlink(missing_ok=True)
+            reservation.close()
+
+    def array(self,config,kind,depth):
+        self.guard();key=config,kind,depth
         if key not in self.arrays:
-            m = self.owner.model
-            size = len(m.col_idx) if kind == "edge" else len(m.variables) if kind == "var" else len(m.rows)
-            dtype = np.dtype("<i8") if kind == "edge" else self.dtype
-            result = self._work(size, dtype)
-            seen = 0
-            for start, n, stored_dtype, data in self.db.execute(
-                "SELECT start,n,dtype,data FROM arrays WHERE config=? AND kind=? AND depth=? ORDER BY part", key,
-            ):
-                if start != seen or stored_dtype != dtype.str or len(data) != n * dtype.itemsize or start + n > size:
-                    raise MIPFrameError("Invalid refinement color array")
-                result[start:start+n] = np.frombuffer(data, dtype=dtype)
-                seen += n
-            if seen != size:
-                raise MIPFrameError("Incomplete refinement color array")
-            result.flags.writeable = False
-            self.arrays[key] = result
+            record=self.db.execute('SELECT path,dtype,n,checksum FROM array_artifacts WHERE config=? AND kind=? AND depth=?',key).fetchone()
+            if record is None:raise MIPFrameError('Missing derived array artifact')
+            name,dtype,n,checksum=record
+            from mipframe.store.artifacts import sha256
+            if Path(name).name!=name or sha256(cache_directory(self.owner)/'derived'/name,work=self.work)!=checksum:
+                raise MIPFrameError('Invalid derived array checksum')
+            result=np.load(cache_directory(self.owner)/'derived'/name,mmap_mode='r',allow_pickle=False)
+            if result.dtype.str!=dtype or len(result)!=n:raise MIPFrameError('Invalid derived array dimensions')
+            self.maps.append(result);self.arrays[key]=result
         return self.arrays[key]
 
-    def role(self, value):
-        """Signed integer label; magnitude IDs identify exact rational values."""
-        magnitude = abs(value)
-        text = str(magnitude)
-        ident = self.role_cache.get(text)
-        if ident is None:
-            row = self.db.execute("SELECT id FROM roles WHERE value=?", (text,)).fetchone()
-            ident = row[0] if row else self.db.execute("INSERT INTO roles(value) VALUES(?)", (text,)).lastrowid
-            self.role_cache[text] = ident
-            if len(self.role_cache) > self.cache_limit:
-                self.role_cache.popitem(last=False)
-        else:
-            self.role_cache.move_to_end(text)
-        return ident if value > 0 else -ident
+    def _load_roles(self):
+        if getattr(self,'_roles_loaded',False):return
+        from mipframe.data.intern import BytePool
+        self._role_pool=BytePool(self.work.fork());self._roles_loaded=True
+        if self.db.execute("SELECT 1 FROM array_artifacts WHERE config=0 AND kind='roles_offsets' AND depth=0").fetchone():
+            offsets=self.array(0,'roles_offsets',0);lengths=self.array(0,'roles_lengths',0);data=self.array(0,'roles_bytes',0)
+            for start,length in zip(offsets,lengths):
+                raw=data[int(start):int(start+length)].tobytes();self._role_pool.intern((raw,))
 
-    def role_value(self, ident):
-        self.guard()
-        ident = int(ident)
-        magnitude = abs(ident)
-        if magnitude not in self.value_cache:
-            self.value_cache[magnitude] = Fraction(self.db.execute("SELECT value FROM roles WHERE id=?", (magnitude,)).fetchone()[0])
-            if len(self.value_cache) > self.cache_limit:
-                self.value_cache.popitem(last=False)
-        self.value_cache.move_to_end(magnitude)
-        return self.value_cache[magnitude] if ident > 0 else -self.value_cache[magnitude]
+    def role(self,value):
+        self._load_roles();ident=self._role_pool.intern((str(abs(value)).encode('ascii'),))+1
+        return ident if value>0 else -ident
 
-    def _intern(self, config, kind, depth, header, tokens=()):
-        """Compare canonical binary chunks exactly, including on hash collisions."""
-        header = _json(header)
-        # Most low-degree nodes share a handful of short, identical signatures.
-        # Cache their complete keys (not hashes), within the workspace budget.
-        tokens = iter(tokens)
-        prefix = list(islice(tokens, 11))
-        cache_key = None
-        if len(prefix) <= 10 and len(header) <= 256:
-            data = b''.join(TOKEN.pack(int(a), int(b), int(n)) for a, b, n in prefix)
-            cache_key = (config, kind, depth, header, data)
-            if cache_key in self.intern_cache:
-                self.intern_cache.move_to_end(cache_key)
-                return self.intern_cache[cache_key]
+    def role_value(self,ident):
+        self.guard();self._load_roles();key=abs(int(ident))
+        if key not in self.role_cache:
+            self.role_cache[key]=Fraction(self._role_pool.value(key-1).decode('ascii'))
+            if len(self.role_cache)>self.cache_limit:self.role_cache.popitem(last=False)
+        value=self.role_cache[key]
+        return value if ident>0 else -value
 
-        def remember(color):
-            if cache_key is not None:
-                self.intern_cache[cache_key] = color
-                if len(self.intern_cache) > self.cache_limit:
-                    self.intern_cache.popitem(last=False)
-            return color
+    def _intern(self,config,kind,depth,header,tokens=()):
+        from mipframe.data.intern import BytePool
+        namespace=config,kind,depth
+        if namespace not in self._interned:self._interned[namespace]=BytePool(self.work.fork())
+        raw=(str(header) if type(header) is int else _json(header)).encode('utf-8')
+        def chunks():
+            yield struct.pack('>Q',len(raw));yield raw
+            for a,b,n in tokens:yield TOKEN.pack(int(a),int(b),int(n))
+        return self._interned[namespace].intern(chunks())
 
-        digest = _new_hash()
-        digest.update(header.encode())
-        self.db.execute("DELETE FROM candidate")
-        buffer = bytearray()
-        part = total = 0
-        for a, b, count in chain(prefix, tokens):
-            buffer.extend(TOKEN.pack(int(a), int(b), int(count)))
-            total += 1
-            if len(buffer) == KEY_CHUNK * TOKEN.size:
-                data = bytes(buffer)
-                self.db.execute("INSERT INTO candidate VALUES(?,?)", (part, data))
-                digest.update(data)
-                buffer.clear()
-                part += 1
-        if buffer:
-            data = bytes(buffer)
-            self.db.execute("INSERT INTO candidate VALUES(?,?)", (part, data))
-            digest.update(data)
-        hashed = digest.digest()
-        for color, in self.db.execute(
-            "SELECT color FROM definitions WHERE config=? AND kind=? AND depth=? AND digest=? AND header=? ORDER BY color",
-            (config, kind, depth, hashed, header),
-        ):
-            saved = self.db.execute("SELECT data FROM key_chunks WHERE config=? AND kind=? AND depth=? AND color=? ORDER BY part",
-                                    (config, kind, depth, color))
-            candidate = self.db.execute("SELECT data FROM candidate ORDER BY part")
-            if all(a == b for a, b in zip_longest(saved, candidate)):
-                return remember(color)
-        key = config, kind, depth
-        if key not in self.counts:
-            self.counts[key] = self.db.execute("SELECT count(*) FROM definitions WHERE config=? AND kind=? AND depth=?", key).fetchone()[0]
-        color = self.counts[key]
-        self.counts[key] += 1
-        self.db.execute("INSERT INTO definitions VALUES(?,?,?,?,?,?,?)", (*key, color, header, hashed, total))
-        self.db.execute("INSERT INTO key_chunks SELECT ?,?,?,?,part,data FROM candidate", (*key, color))
-        return remember(color)
+    def _flush_definitions(self):
+        # One manifest per typed vector, never one SQL row per color.
+        self._load_roles()
+        from mipframe.data.buffers import Buffer
+        for name,buffer in (('bytes',self._role_pool.data),('offsets',self._role_pool.offsets),('lengths',self._role_pool.lengths)):
+            # Retain the mutable pool for subsequent rounds; publish a bounded copy.
+            with self.work.fork() as scratch:
+                out=Buffer(scratch,buffer.dtype)
+                for start in range(0,len(buffer),self.block):out.extend(buffer[start:start+self.block])
+                self._write_array(0,'roles_'+name,0,out.finish())
+        for (config,kind,depth),pool in self._interned.items():
+            for name,buffer in (('signature_bytes',pool.data),('signature_offsets',pool.offsets),('signature_lengths',pool.lengths)):
+                array=buffer.finish();self._write_array(config,kind+'_'+name,depth,array)
+            pool.work.close()
+        self._interned.clear()
 
-    def tokens(self, config, kind, depth, color):
-        self.guard()
-        for data, in self.db.execute("SELECT data FROM key_chunks WHERE config=? AND kind=? AND depth=? AND color=? ORDER BY part",
-                                     (config, kind, depth, int(color))):
-            self.guard()
-            yield from TOKEN.iter_unpack(data)
+    def _signature_parts(self,config,kind,depth,color):
+        key=config,kind,depth
+        if key in self._interned:
+            pool=self._interned[key]
+            return pool.data,int(pool.offsets[color]),int(pool.lengths[color])
+        offsets=self.array(config,kind+'_signature_offsets',depth)
+        lengths=self.array(config,kind+'_signature_lengths',depth)
+        return self.array(config,kind+'_signature_bytes',depth),int(offsets[color]),int(lengths[color])
 
-    def token_count(self, config, kind, depth, color):
-        self.guard()
-        return self.db.execute("SELECT n_tokens FROM definitions WHERE config=? AND kind=? AND depth=? AND color=?",
-                               (config, kind, depth, int(color))).fetchone()[0]
+    def _signature_header(self,config,kind,depth,color):
+        data,start,_=self._signature_parts(config,kind,depth,color)
+        length=struct.unpack('>Q',bytes(int(data[i]) for i in range(start,start+8)))[0]
+        return json.loads(bytes(int(data[i]) for i in range(start+8,start+8+length)))
 
-    def _aggregate(self, blocks, upper_bound):
-        """Canonical RLE with bounded NumPy sorting, or SQLite external sorting."""
-        if upper_bound <= min(32, self.memory // 128):
-            # NumPy's structured sort setup dominates columns with 2–4 edges.
-            counts = {}
-            for data in blocks:
-                for a, b in data:
-                    pair = int(a), int(b)
-                    counts[pair] = counts.get(pair, 0) + 1
-            for (a, b), n in sorted(counts.items()):
-                yield a, b, n
-        elif upper_bound <= self.memory // 128:
-            pieces = list(blocks)
-            if not pieces:
-                return
-            data = np.concatenate(pieces)
-            unique, counts = np.unique(data, axis=0, return_counts=True)
-            for pair, count in zip(unique, counts):
-                yield int(pair[0]), int(pair[1]), int(count)
-        else:
-            self.db.execute("DELETE FROM scratch")
-            for data in blocks:
-                self.db.executemany("INSERT INTO scratch VALUES(?,?)",
-                                    ((int(a), int(b)) for a, b in data))
-            yield from self.db.execute("SELECT a,b,count(*) FROM scratch GROUP BY a,b ORDER BY a,b")
+    def tokens(self,config,kind,depth,color):
+        self.guard();data,start,length=self._signature_parts(config,kind,depth,int(color))
+        header=struct.unpack('>Q',bytes(int(data[i]) for i in range(start,start+8)))[0]
+        for pos in range(start+8+header,start+length,TOKEN.size):
+            yield TOKEN.unpack(bytes(int(data[i]) for i in range(pos,pos+TOKEN.size)))
+
+    def token_count(self,config,kind,depth,color):
+        data,start,length=self._signature_parts(config,kind,depth,int(color))
+        header=struct.unpack('>Q',bytes(int(data[i]) for i in range(start,start+8)))[0]
+        return (length-8-header)//TOKEN.size
+
+    def _aggregate(self,blocks,upper_bound):
+        from mipframe.data.sorting import pair_counts
+        if upper_bound<=8:
+            yield from pair_counts(self.work,blocks,upper_bound)
+            return
+        with self.work.fork() as scratch:
+            yield from pair_counts(scratch,blocks,upper_bound)
+
+    def base(self,config,kind,ident):
+        return self._signature_header(config,kind,0,int(self.array(config,kind,0)[ident]))
+
+    def row_info(self,config,row):
+        m=self.owner.model
+        scale=self.role_value(self.array(config,'row_scale_role',-1)[row])
+        _,_,lo_id,hi_id,_=m.rows[row]
+        lo,hi=m.num(lo_id),m.num(hi_id)
+        if scale<0:lo,hi=None if hi is None else -hi,None if lo is None else -lo
+        lo=None if lo is None else lo/abs(scale)
+        hi=None if hi is None else hi/abs(scale)
+        return scale,lo,hi,lo==hi==0
 
     def _row_tokens(self, row, edge, old_vars, reverse=False):
         m = self.owner.model
+        if hasattr(m,'f'):
+            scale=self.role_value(self.array(self._active_config,'row_scale_role',-1)[row])
+            template=self._active_template
+            def logical():
+                buffer=[]
+                for v,c in m.iter_terms(row):
+                    coefficient=c/scale
+                    role=self.role(Fraction(1 if coefficient>0 else -1) if template else coefficient)
+                    buffer.append((-role if reverse else role,int(old_vars[v])))
+                    if len(buffer)>=self.block:
+                        yield np.asarray(buffer,dtype=np.int64);buffer=[]
+                if buffer:yield np.asarray(buffer,dtype=np.int64)
+            return self._aggregate(logical(),m.degree('row',row))
         start, stop = int(m.row_ptr[row]), int(m.row_ptr[row+1])
         def blocks():
             for begin in range(start, stop, self.block):
@@ -345,11 +325,24 @@ class RefinementStore:
 
     def _var_tokens(self, var, edge, old_pos, old_neg):
         m = self.owner.model
+        if hasattr(m,'f'):
+            scales=self.array(self._active_config,'row_scale_role',-1)
+            def logical():
+                buffer=[]
+                for row,c in m.iter_column(var):
+                    coefficient=c/self.role_value(scales[row])
+                    role=self.role(Fraction(1 if coefficient>0 else -1) if self._active_template else coefficient)
+                    buffer.append((role,int(old_pos[row])))
+                    if old_neg[row]>=0:buffer.append((-role,int(old_neg[row])))
+                    if len(buffer)>=self.block:
+                        yield np.asarray(buffer,dtype=np.int64);buffer=[]
+                if buffer:yield np.asarray(buffer,dtype=np.int64)
+            return self._aggregate(logical(),2*m.degree('var',var))
         start, stop = int(m.col_ptr[var]), int(m.col_ptr[var+1])
         def blocks():
             for begin in range(start, stop, self.block):
                 positions = m.col_positions[begin:min(begin+self.block, stop)]
-                rows = np.searchsorted(m.row_ptr, positions, side="right") - 1
+                rows = m.data.arrays["csc_row_ids"][begin:min(begin+self.block, stop)]
                 data = np.empty((len(rows), 2), dtype=np.int64)
                 data[:, 0], data[:, 1] = edge[positions], old_pos[rows]
                 yield data
@@ -363,19 +356,29 @@ class RefinementStore:
     def _prepare(self, config, policy):
         m = self.owner.model
         template = json.loads(self.db.execute("SELECT key FROM configs WHERE id=?", (config,)).fetchone()[0]).get("mode") == "template"
-        nr, nv = len(m.rows), len(m.variables)
+        nr, nv = m.capacity("row"), m.capacity("var")
         arrays = {kind: self._work(nv if kind == "var" else nr) for kind in ("row", "var", "pos", "neg")}
-        edge = self._work(len(m.col_idx), np.dtype("<i8"))
+        edge = self._work(0 if hasattr(m,"f") else m.nnz, np.dtype("<i8"))
+        scales = self._work(nr,np.dtype("<i8"))
+        scales[:] = 0
+        for array in arrays.values():array[:]=-1
         arrays["neg"][:] = -1
-        for row, lo_id, hi_id in m.db.execute("SELECT id,lo,hi FROM rows ORDER BY id"):
+
+        for row, _, lo_id, hi_id, _ in m.rows:
             lo, hi = m.num(lo_id), m.num(hi_id)
             relation = _sense(lo, hi)
-            start, stop = int(m.row_ptr[row]), int(m.row_ptr[row+1])
-            scale = Fraction(0)
-            for begin in range(start, stop, self.block):
-                for ident in np.unique(m.coeff_id[begin:min(begin+self.block, stop)]):
-                    scale = max(scale, abs(m.num(int(ident))))
-            scale = scale or Fraction(1)
+            scale = 0
+            if hasattr(m,'f'):
+                for _,value in m.iter_terms(row):scale=max(scale,abs(value))
+            else:
+                start, stop = int(m.row_ptr[row]), int(m.row_ptr[row+1])
+                if stop-start<=4:
+                    for ident in m.coeff_id[start:stop]:scale=max(scale,abs(m.num(int(ident))))
+                else:
+                    for begin in range(start, stop, self.block):
+                        for ident in np.unique(m.coeff_id[begin:min(begin+self.block, stop)]):
+                            scale = max(scale, abs(m.num(int(ident))))
+            scale = scale or 1
             if relation == ">=":
                 scale = -scale
                 lo, hi, relation = None, -lo, "<="
@@ -383,46 +386,59 @@ class RefinementStore:
                 scale = -scale
                 lo, hi = -hi, -lo
             # Bounds above already have their direction transformed; divide by |scale|.
-            lo = None if lo is None else lo / abs(scale)
-            hi = None if hi is None else hi / abs(scale)
+            # Preserve exact quotients, but avoid constructing Fraction(1)
+            # and Fraction(0) for each incidence of unit-scaled rows.
+            if abs(scale)!=1:
+                lo = None if lo is None else Fraction(lo) / abs(scale)
+                hi = None if hi is None else Fraction(hi) / abs(scale)
             rhs_class = [number_class(lo, policy), number_class(hi, policy)] if relation in ("range", "free") else number_class(hi, policy)
             base = [relation, rhs_class]
             dual = relation == "=" and hi == 0
-            self.db.execute("INSERT INTO row_data VALUES(?,?,?,?,?,?,?)", (config, row, _json(base), str(scale),
-                            None if lo is None else str(lo), None if hi is None else str(hi), int(dual)))
+
             arrays["row"][row] = self._intern(config, "row", 0, base)
             state = self._intern(config, "state", 0, base)
             arrays["pos"][row] = state
             if dual:
                 arrays["neg"][row] = state
-            for begin in range(start, stop, self.block):
-                end = min(begin+self.block, stop)
-                ids, inverse = np.unique(m.coeff_id[begin:end], return_inverse=True)
-                def label(ident):
-                    value = m.num(int(ident))/scale
-                    return self.role(Fraction(1 if value > 0 else -1) if template else value)
-                labels = np.array([label(ident) for ident in ids], dtype=np.int64)
-                edge[begin:end] = labels[inverse]
-        for var, kind, lo, hi, obj in m.db.execute("SELECT id,kind,lo,hi,obj FROM variables ORDER BY id"):
+            scales[row]=self.role(scale)
+            def label_value(value):
+                if template:return self.role(1 if (value>0)==(scale>0) else -1)
+                value=value if scale==1 else -value if scale==-1 else Fraction(value)/scale
+                return self.role(value)
+            if hasattr(m,'f'):
+                for _,value in m.iter_terms(row):label_value(value)
+            else:
+                if stop-start<=4:
+                    for pos in range(start,stop):edge[pos]=label_value(m.num(int(m.coeff_id[pos])))
+                else:
+                    for begin in range(start, stop, self.block):
+                        end = min(begin+self.block, stop)
+                        ids, inverse = np.unique(m.coeff_id[begin:end], return_inverse=True)
+                        labels = np.array([label_value(m.num(int(ident))) for ident in ids], dtype=np.int64)
+                        edge[begin:end] = labels[inverse]
+        for var, _, kind, lo, hi, obj, _ in m.variables:
             base = [kind, bound_class(m.num(lo), m.num(hi)), number_class(m.num(obj))]
-            self.db.execute("INSERT INTO var_data VALUES(?,?,?)", (config, var, _json(base)))
+
             arrays["var"][var] = self._intern(config, "var", 0, base)
         self._write_array(config, "edge", -1, edge)
+        self._write_array(config,"row_scale_role",-1,scales)
         for kind, array in arrays.items():
             self._write_array(config, kind, 0, array)
         self.db.execute("UPDATE configs SET depth=0 WHERE id=?", (config,))
-        return {("edge", -1): edge, **{(kind, 0): array for kind, array in arrays.items()}}
+        return {("edge", -1): edge, ("row_scale_role",-1):scales, **{(kind, 0): array for kind, array in arrays.items()}}
 
     def _round(self, config, depth):
         settings = json.loads(self.db.execute("SELECT key FROM configs WHERE id=?", (config,)).fetchone()[0])
+        self._active_config=config
+        self._active_template=settings.get("mode")=="template"
         if settings.get("mode") == "template":
             return self._template_round(config, depth, Fraction(settings["multiplicity_ratio"]))
         m = self.owner.model
         edge = self.array(config, "edge", -1)
         old_row, old_var, old_pos, old_neg = (self.array(config, kind, depth-1) for kind in ("row", "var", "pos", "neg"))
-        arrays = {kind: self._work(len(m.variables) if kind == "var" else len(m.rows)) for kind in ("row", "var", "pos", "neg")}
-        arrays["neg"][:] = -1
-        for row in range(len(m.rows)):
+        arrays = {kind: self._work(m.capacity("var") if kind == "var" else m.capacity("row")) for kind in ("row", "var", "pos", "neg")}
+        for array in arrays.values():array[:]=-1
+        for row in m.entity_ids("row"):
             pos = self._intern(config, "state", depth, int(old_pos[row]), self._row_tokens(row, edge, old_var))
             arrays["pos"][row] = pos
             states = [pos]
@@ -431,59 +447,65 @@ class RefinementStore:
                 arrays["neg"][row] = neg
                 states.append(neg)
             arrays["row"][row] = self._intern(config, "row", depth, [int(old_row[row]), sorted(states)])
-        for var in range(len(m.variables)):
+        for var in m.entity_ids("var"):
             arrays["var"][var] = self._intern(config, "var", depth, int(old_var[var]), self._var_tokens(var, edge, old_pos, old_neg))
         for kind, array in arrays.items():
             self._write_array(config, kind, depth, array)
         self.db.execute("UPDATE configs SET depth=? WHERE id=?", (depth, config))
         return {(kind, depth): array for kind, array in arrays.items()}
 
-    def _template_partition(self, config, kind, depth, nodes, size, ratio):
-        """Two external passes: skeletons, then per-role multiplicity modes.
-
-        Tokens store mode numbers, not observed counts. Observed ranges are
-        separate metadata and never feed the next refinement round.
-        """
-        for table in ("template_nodes", "template_tokens", "template_modes"):
-            self.db.execute(f"DELETE FROM {table}")
-        for ident, old, tokens in nodes:
-            self.db.executemany("INSERT INTO template_tokens VALUES(?,?,?,?)",
-                                ((ident, a, b, n) for a, b, n in tokens))
-            skeleton = self.db.execute("SELECT a,b,1 FROM template_tokens WHERE id=? ORDER BY a,b", (ident,))
-            coarse = self._intern(config, kind + "_coarse", depth, int(old), skeleton)
-            self.db.execute("INSERT INTO template_nodes VALUES(?,?,NULL)", (ident, coarse))
-        previous_role, previous_n, mode = None, None, 0
-        counts = self.db.execute("""SELECT DISTINCT s.coarse,t.a,t.b,t.n
-            FROM template_tokens t JOIN template_nodes s ON s.id=t.id
-            ORDER BY s.coarse,t.a,t.b,t.n""")
-        for coarse, a, b, n in counts:
-            role = coarse, a, b
-            if role != previous_role:
-                mode = 1
-            elif n * ratio.denominator > previous_n * ratio.numerator:
-                mode += 1
-            self.db.execute("INSERT INTO template_modes VALUES(?,?,?,?,?)", (*role, n, mode))
-            previous_role, previous_n = role, n
-        result = self._work(size)
-        result[:] = -1
-        for ident, coarse in self.db.execute("SELECT id,coarse FROM template_nodes ORDER BY id"):
-            tokens = self.db.execute("""SELECT t.a,t.b,m.mode FROM template_tokens t
-                JOIN template_modes m ON m.coarse=? AND m.a=t.a AND m.b=t.b AND m.n=t.n
-                WHERE t.id=? ORDER BY t.a,t.b""", (coarse, ident))
-            color = self._intern(config, kind, depth, coarse, tokens)
-            result[ident] = color
-            self.db.execute("UPDATE template_nodes SET color=? WHERE id=?", (color, ident))
-        self.db.execute("""INSERT INTO template_ranges
-            SELECT ?,?,?,s.color,t.a,t.b,min(t.n),max(t.n)
-            FROM template_tokens t JOIN template_nodes s ON s.id=t.id
-            GROUP BY s.color,t.a,t.b""", (config, kind, depth))
+    def _template_partition(self,config,kind,depth,nodes,size,ratio):
+        from mipframe.data.buffers import Buffer
+        from mipframe.data.sorting import lexorder
+        with self.work.fork() as scratch:
+            nodes_buf=Buffer(scratch,'<i8');coarse_buf=Buffer(scratch,'<i8');offsets=Buffer(scratch,'<u8');offsets.append(0)
+            aa=Buffer(scratch,'<i8');bb=Buffer(scratch,'<i8');nn=Buffer(scratch,'<i8')
+            for ident,old,tokens in nodes:
+                start=len(aa)
+                for a,b,n in tokens:aa.append(a);bb.append(b);nn.append(n)
+                coarse=self._intern(config,kind+'_coarse',depth,int(old),((aa[j],bb[j],1) for j in range(start,len(aa))))
+                nodes_buf.append(ident);coarse_buf.append(coarse);offsets.append(len(aa))
+            node=nodes_buf.finish();coarse=coarse_buf.finish();off=offsets.finish();a=aa.finish();b=bb.finish();n=nn.finish()
+            token_color=scratch.array(len(a),'<i8')
+            for i in range(len(node)):token_color[int(off[i]):int(off[i+1])]=coarse[i]
+            order=lexorder(scratch,(token_color,a,b,n));modes=scratch.array(len(a),'<i8')
+            role=None;previous=None;mode=0
+            for j in order:
+                key=(int(token_color[j]),int(a[j]),int(b[j]));value=int(n[j])
+                if key!=role:role=key;previous=None;mode=0
+                if previous is None or value*ratio.denominator>previous*ratio.numerator:mode+=1
+                previous=value;modes[j]=mode
+            scratch.release(order)
+            nodeorder=lexorder(scratch,(node,));result=self._work(size);result[:]=-1
+            for i in nodeorder:
+                tokens=((int(a[j]),int(b[j]),int(modes[j])) for j in range(int(off[i]),int(off[i+1])))
+                color=self._intern(config,kind,depth,int(coarse[i]),tokens)
+                result[node[i]]=color;token_color[int(off[i]):int(off[i+1])]=color
+            order=lexorder(scratch,(token_color,a,b))
+            dtype=np.dtype([(name,'<i8') for name in ('color','a','b','lo','hi')]);out=Buffer(scratch,dtype)
+            key=None;lo=hi=0
+            for j in order:
+                current=(int(token_color[j]),int(a[j]),int(b[j]));value=int(n[j])
+                if current!=key:
+                    if key is not None:out.append((*key,lo,hi))
+                    key=current;lo=hi=value
+                else:lo=min(lo,value);hi=max(hi,value)
+            if key is not None:out.append((*key,lo,hi))
+            self._write_array(config,kind+'_ranges',depth,out.finish())
         return result
 
     def multiplicity_range(self, config, kind, depth, color, a, b):
         self.guard()
-        return self.db.execute("""SELECT lo,hi FROM template_ranges
-            WHERE config=? AND kind=? AND depth=? AND color=? AND a=? AND b=?""",
-            (config, kind, depth, int(color), a, b)).fetchone()
+        values=self.array(config,kind+'_ranges',depth)
+        key=(int(color),int(a),int(b));lo,hi=0,len(values)
+        while lo<hi:
+            mid=(lo+hi)//2;record=values[mid]
+            if (int(record['color']),int(record['a']),int(record['b']))<key:lo=mid+1
+            else:hi=mid
+        if lo==len(values):return None
+        record=values[lo]
+        if (int(record['color']),int(record['a']),int(record['b']))!=key:return None
+        return int(record['lo']),int(record['hi'])
 
     def _template_round(self, config, depth, ratio):
         m = self.owner.model
@@ -491,29 +513,27 @@ class RefinementStore:
         old_row, old_var, old_pos, old_neg = (self.array(config, kind, depth-1)
                                              for kind in ("row", "var", "pos", "neg"))
         def states():
-            for row in range(len(m.rows)):
+            for row in m.entity_ids("row"):
                 yield 2*row, old_pos[row], self._row_tokens(row, edge, old_var)
                 if old_neg[row] >= 0:
                     yield 2*row+1, old_neg[row], self._row_tokens(row, edge, old_var, True)
         start = len(self.maps)
-        state = self._template_partition(config, "state", depth, states(), 2*len(m.rows), ratio)
-        arrays = {kind: self._work(len(m.rows)) for kind in ("row", "pos", "neg")}
+        state = self._template_partition(config, "state", depth, states(), 2*m.capacity("row"), ratio)
+        arrays = {kind: self._work(m.capacity("row")) for kind in ("row", "pos", "neg")}
         arrays["pos"][:] = state[::2]
         arrays["neg"][:] = state[1::2]
         # The intermediate state buffer is not a published color array.
         if len(self.maps) > start and self.maps[start] is state:
-            path = Path(state.filename)
-            state._mmap.close()
+            self.work.release(state)
             self.maps.pop(start)
-            path.unlink(missing_ok=True)
-        for row in range(len(m.rows)):
+        for row in m.entity_ids("row"):
             colors = [int(arrays["pos"][row])]
             if arrays["neg"][row] >= 0:
                 colors.append(int(arrays["neg"][row]))
             arrays["row"][row] = self._intern(config, "row", depth, [int(old_row[row]), sorted(colors)])
         nodes = ((var, old_var[var], self._var_tokens(var, edge, old_pos, old_neg))
-                 for var in range(len(m.variables)))
-        arrays["var"] = self._template_partition(config, "var", depth, nodes, len(m.variables), ratio)
+                 for var in m.entity_ids("var"))
+        arrays["var"] = self._template_partition(config, "var", depth, nodes, m.capacity("var"), ratio)
         for kind, array in arrays.items():
             self._write_array(config, kind, depth, array)
         self.db.execute("UPDATE configs SET depth=? WHERE id=?", (depth, config))
@@ -532,9 +552,8 @@ class RefinementStore:
             if id(array) in retained:
                 keep.append(array)
             else:
-                path = Path(array.filename)
-                array._mmap.close()
-                path.unlink(missing_ok=True)
+                if id(array) in self.work._allocations:self.work.release(array)
+                elif hasattr(array,'_mmap'):array._mmap.close()
         self.maps = keep
 
     def compute(self, key, depth):
@@ -546,9 +565,13 @@ class RefinementStore:
                 self.db.execute("BEGIN")
                 config = self.db.execute("INSERT INTO configs(key,depth) VALUES(?,-1)", (key,)).lastrowid
                 arrays = self._prepare(config, json.loads(key)["rhs"])
+                self._flush_definitions()
                 self.db.commit()
+                self._finish_artifacts(True)
             except BaseException:
                 self.db.rollback()
+                self._finish_artifacts(False)
+                self._interned.clear();self._pending_definitions.clear();self._token_data.clear()
                 self.counts.clear()
                 self.role_cache.clear()
                 self.intern_cache.clear()
@@ -563,9 +586,13 @@ class RefinementStore:
             try:
                 self.db.execute("BEGIN")
                 arrays = self._round(config, layer)
+                self._flush_definitions()
                 self.db.commit()
+                self._finish_artifacts(True)
             except BaseException:
                 self.db.rollback()
+                self._finish_artifacts(False)
+                self._interned.clear();self._pending_definitions.clear();self._token_data.clear()
                 self.counts.clear()
                 self.intern_cache.clear()
                 self._discard_work(start)

@@ -70,7 +70,7 @@ def evaluate(source, out):
         checked = call("verify", ir.verify)
         if checked["status"] != "PASS":
             raise RuntimeError("Numerical verification failed")
-        ir.write_lp(out / "roundtrip.lp")
+        ir.write(out / "roundtrip.lp")
         with saved_model(out / "roundtrip.lp", out / "roundtrip_ir") as reread:
             equal_models(ir.model, reread.model)
         (out / "summary.md").write_text(md)

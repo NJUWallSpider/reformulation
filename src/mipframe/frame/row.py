@@ -225,7 +225,7 @@ class Row(Entity):
         MIPFRAME HELP END
         """
         m = self._owner.model
-        return int(m.row_ptr[self.id + 1] - m.row_ptr[self.id])
+        return m.degree("row",self.id)
 
     @property
     def terms(self) -> TermFrame:
@@ -253,30 +253,11 @@ class Row(Entity):
     def _statistics(self):
         m = self._owner.model
         if self._stats is None:
-            start, stop = int(m.row_ptr[self.id]), int(m.row_ptr[self.id + 1])
-            seen = set()
-            lower = upper = None
-            types = Counter()
-            for ptr in range(start, stop):
-                ident = int(m.coeff_id[ptr])
-                if ident not in seen:
-                    seen.add(ident)
-                    value = m.num(ident)
-                    lower = value if lower is None else min(lower, value)
-                    upper = value if upper is None else max(upper, value)
-            # Small SQL batches avoid constructing a model-sized variable map.
-            for begin in range(start, stop, 900):
-                ids = [int(v) for v in m.col_idx[begin : min(begin + 900, stop)]]
-                marks = ",".join("?" for _ in ids)
-                from mipframe.frame.sources import binary
-
-                for kind, lo, hi in m.db.execute(
-                    f"SELECT kind,lo,hi FROM variables WHERE id IN ({marks})", ids
-                ):
-                    bound_lo = -inf if lo is None else m.num(lo)
-                    bound_hi = inf if hi is None else m.num(hi)
-                    types["B" if binary(kind, bound_lo, bound_hi) else kind] += 1
-            self._stats = (lower, upper, len(seen), dict(types))
+            values=set();types=Counter()
+            for var,coef in m.iter_terms(self.id):
+                values.add(coef)
+                types[m.variable_type(var)] += 1
+            self._stats=(min(values,default=None),max(values,default=None),len(values),dict(types))
         return self._stats
 
     @property
@@ -327,17 +308,8 @@ class Row(Entity):
 
     def _named_terms(self):
         m = self._owner.model
-        start, stop = int(m.row_ptr[self.id]), int(m.row_ptr[self.id + 1])
-        for begin in range(start, stop, 900):
-            ids = [int(v) for v in m.col_idx[begin : min(begin + 900, stop)]]
-            marks = ",".join("?" for _ in ids)
-            names = dict(
-                m.db.execute(
-                    f"SELECT id, name FROM variables WHERE id IN ({marks})", ids
-                )
-            )
-            for ptr, ident in enumerate(ids, begin):
-                yield names[ident], ident, ptr
+        for ident, coef in m.iter_terms(self.id):
+            yield m.name('var',ident),ident,coef
 
     def formula(self, *, order: str = "abs_coef", max_terms: int = 16) -> Formula:
         """
@@ -362,8 +334,8 @@ class Row(Entity):
                 count, self._named_terms(), key=lambda term: (term[0], term[1])
             )
             terms = [
-                (ident, m.num(int(m.coeff_id[ptr])), name)
-                for name, ident, ptr in chosen
+                (ident, coef, name)
+                for name, ident, coef in chosen
             ]
         else:
             source = m.iter_terms(self.id)
@@ -372,7 +344,7 @@ class Row(Entity):
                 if order == "abs_coef"
                 else list(islice(source, count))
             )
-            terms = [(ident, coef, m.variables[ident][1]) for ident, coef in chosen]
+            terms = [(ident, coef, m.name('var',ident)) for ident, coef in chosen]
         parts = []
         for _, coef, name in terms:
             # Quote names with formula delimiters so the preview stays readable.

@@ -39,7 +39,7 @@ def run(count):
             assert peak-baseline<=8,(baseline,peak)
             del report,view,relation
             views.clear();reports.clear()
-            assert m._diagnostic_store.db.execute('SELECT count(*) FROM diagnostic_records').fetchone()[0]==0
+            assert m._diagnostic_store.record_count==0
             remaining=fds();assert remaining<=baseline+2,(baseline,remaining)
         assert not errors,errors
         print(json.dumps(dict(count=count,baseline=baseline,peak=peak,remaining=remaining,automatic_gc=gc.isenabled())))

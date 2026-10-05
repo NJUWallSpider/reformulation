@@ -12,6 +12,8 @@ def explain(frame):
         f"Frame · key={frame.key} · rows={count if count is not None else 'unknown'}"
     ]
     lines.extend(frame._search_display())
+    stats=getattr(frame,'_last_execution_stats',getattr(frame,'_algorithm_info',{}).get('resources'))
+    if stats:lines.append("last execution: "+", ".join(f"{k}={v}" for k,v in stats.items()))
     lines.append("schema: " + ", ".join(f"{n}: {t}" for n, t in frame.schema.items()))
     lines.append("models: " + ", ".join(sorted(frame.models)))
     blocking = {"join", "group", "sort", "distinct", "slice", "sample"}
@@ -27,6 +29,13 @@ def explain(frame):
         source = f._query.spec
         operator = source.get("kind", "source") if f._op == "source" else f._op
         flags = []
+        from mipframe.frame.planner import backend
+        chosen, reason = backend(f, tuple(f.schema))
+        flags.append(chosen + ': ' + reason)
+        if f._op=='source':
+            flags.append('source storage: typed columns' if hasattr(f,'_typed_relation') or hasattr(f,'_array_columns') else 'source storage: streaming adapter')
+            if hasattr(f,'_index'):flags.append('selection storage: '+type(f._index).__name__)
+        flags.append('spill backend: mmap')
         if source.get("kind") == "algorithm":
             info = getattr(f, "_algorithm_info", {})
             operator = source["algorithm"]
@@ -38,7 +47,7 @@ def explain(frame):
                 for name, columns in info.get("columns", {}).items()
             )
         if f._op in blocking:
-            flags.append("blocking, SQLite spill")
+            flags.append("blocking, " + chosen)
         if f._op == "join" or f._params.get("barrier"):
             flags.append("full validation barrier")
         if source.get("kind") == "terms":

@@ -30,7 +30,7 @@ def test_read_builds_exact_ir(tmp_path):
         assert model.objective.coefficients == {0: Fraction(1, 10), 1: Fraction(2)}
         assert not (model.model.path / "analysis.sqlite").exists()
         assert model.verify().status == "PROVED"
-        model.write_lp(tmp_path / "out.lp")
+        model.write(tmp_path / "out.lp")
         assert not (model.model.path / "analysis.sqlite").exists()
         with pytest.raises(IndexError):
             model.vars.iloc[2]
@@ -48,7 +48,7 @@ def test_lifecycle_and_native_snapshot(tmp_path):
     model = mf.read(input_path)
     source = model.model.path
     arrays = [
-        getattr(model.model, name)._mmap
+        model.model.data.maps[name]._mmap
         for name in ("row_ptr", "col_idx", "coeff_id", "col_ptr", "col_positions")
     ]
     rows = model.rows
@@ -116,7 +116,9 @@ def test_failures_cleanup(monkeypatch, tmp_path):
         def fail(*args, **kwargs):
             raise OSError("snapshot failure")
 
-        monkeypatch.setattr(shutil, "copy2", fail)
+        from mipframe.store import native7
+        # Exercise failure of either clone or stream-copy through the common seam.
+        monkeypatch.setattr(native7, "copy_artifact", fail)
         with pytest.raises(OSError, match="snapshot failure"):
             model.save(tmp_path / "failed")
         assert not (tmp_path / "failed").exists()
@@ -134,7 +136,7 @@ def test_format_and_dimensions(tmp_path):
     import numpy as np
 
     np.save(saved / "row_ptr.npy", np.array([0]))
-    with pytest.raises(mf.MIPFrameError, match="Corrupt native model"):
+    with pytest.raises(mf.MIPFrameError, match="native"):
         mf.load(saved)
 
 
@@ -144,7 +146,7 @@ def test_examples(script):
 
 
 def test_public_surface():
-    assert mf.__version__ == "1.0.0"
+    assert mf.__version__ == "1.2.0"
     assert not hasattr(mf, "IR") and not hasattr(mf.Model, "build")
     assert not hasattr(mf.Model, "summary")
     from importlib.util import find_spec

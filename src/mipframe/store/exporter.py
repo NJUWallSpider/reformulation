@@ -9,9 +9,10 @@ from mipframe.store.integrity import require_integrity as verify
 
 
 def _export(
-    m, path, rename_vars=None, rename_rows=None, row_order=None, reverse_terms=False
+    m, path, rename_vars=None, rename_rows=None, row_order=None, reverse_terms=False, _charge=None
 ):
-    verify(m)
+    m.guard()
+    if not hasattr(m,"f"):verify(m)
 
     def name(v):
         if rename_vars:
@@ -33,17 +34,24 @@ def _export(
         if not count:
             f.write(" 0")
 
-    with open(path, "w") as f:
+    class ChargedWriter:
+        def __init__(self,stream):self.stream=stream
+        def write(self,text):
+            _charge.add(len(text.encode('utf8')))
+            return self.stream.write(text)
+
+    with open(path, "w",encoding='utf8') as stream:
+        f=stream if _charge is None else ChargedWriter(stream)
         f.write(
             "Minimize\n obj:" if m.manifest["sense"] == "min" else "Maximize\n obj:"
         )
-        vs = reversed(m.variables) if reverse_terms else m.variables
+        vs = reversed(list(m.variables)) if reverse_terms else m.variables
         terms(f, ((v[0], m.num(v[5])) for v in vs))
         c = m.num(m.manifest["objective_constant"])
         if c:
             f.write((" +" if c > 0 else " -") + decimal(abs(c)))
         f.write("\nSubject To\n")
-        for r in row_order if row_order is not None else range(len(m.rows)):
+        for r in row_order if row_order is not None else (m.entity_ids('row') if hasattr(m,'entity_ids') else range(len(m.rows))):
             meta = m.rows[r]
             lo, hi = m.num(meta[2]), m.num(meta[3])
             label = rename_rows[r] if rename_rows else meta[1]

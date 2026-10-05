@@ -31,18 +31,7 @@ def exact_binary(op, a, b):
     from mipframe.linear.scalar import ExactArithmeticError
     raise ExactArithmeticError(f'Indeterminate exact arithmetic: {a} {op} {b}')
 
-class MIPFrameError(ValueError):
-    """
-    MIPFRAME HELP BEGIN
-    Diagnostic exception; inspect original message and any attached complete Report.
-
-    Full contract: mf.help("api.MIPFrameError")
-    MIPFRAME HELP END
-    """
-    def __init__(self, *args):
-        super().__init__(*args)
-        from mipframe._help.diagnostics import annotate
-        annotate(self)
+from mipframe.core.errors import MIPFrameError
 
 def compare_numeric_text(a, b):
     """Compare exact SQLite scalars without constructing temporary Fractions.

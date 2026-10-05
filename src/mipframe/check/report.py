@@ -5,30 +5,10 @@ from mipframe._help.diagnostics import hint as _help_hint
 from mipframe.store.numbers import MIPFrameError
 
 
-class CardinalityError(MIPFrameError):
-    """
-    MIPFRAME HELP BEGIN
-    Diagnostic exception; inspect original message and any attached complete Report.
-
-    Full contract: mf.help("api.CardinalityError")
-    MIPFRAME HELP END
-    """
-    def __init__(self, message, report=None):
-        super().__init__(message)
-        self.report = report
+from mipframe.core.errors import CardinalityError
 
 
-class ValidationError(MIPFrameError):
-    """
-    MIPFRAME HELP BEGIN
-    Diagnostic exception; inspect original message and any attached complete Report.
-
-    Full contract: mf.help("api.ValidationError")
-    MIPFRAME HELP END
-    """
-    def __init__(self, report):
-        super().__init__("Validation failed: " + str(report.summary))
-        self.report = report
+from mipframe.core.errors import ValidationError
 
 
 class Report:
@@ -36,7 +16,7 @@ class Report:
     One live immutable report for data assertions and mathematical certificates.
 
     MIPFRAME HELP BEGIN
-    Immutable checker outcome with scope, dependencies and complete pageable evidence.
+    Structural and integrity diagnostic result; mathematical checkers return ProofRef, BatchProof or PointReport.
 
     Full contract: mf.help("api.Report")
     MIPFRAME HELP END
@@ -330,6 +310,46 @@ class Report:
         MIPFRAME HELP END
         """
         from mipframe.check.serialization import replay
+
+        if isinstance(spec_or_path, (str, __import__('pathlib').Path)) and __import__('pathlib').Path(spec_or_path).is_dir():
+            from mipframe.check.artifact import read_bundle
+            spec,tree=read_bundle(spec_or_path)
+            try:return cls.replay(spec,models=models,relations=relations,memory_mb=memory_mb,disk_mb=disk_mb)
+            finally:
+                for array in tree.maps:array._mmap.close()
+        if isinstance(spec_or_path, (str, __import__('pathlib').Path)):
+            import json
+            try:
+                candidate = json.loads(__import__('pathlib').Path(spec_or_path).read_text())
+            except json.JSONDecodeError:
+                candidate = None
+            if isinstance(candidate, dict) and candidate.get('schema', '').startswith('mipframe-'):
+                spec_or_path = candidate
+        if isinstance(spec_or_path, dict) and spec_or_path.get('schema') in ('mipframe-point-1','mipframe-point-2'):
+            from fractions import Fraction
+            matching = [m for m in models if m.uid == spec_or_path.get('snapshot')]
+            if len(matching) != 1:
+                raise ValueError('Missing point snapshot binding')
+            class PointInput:
+                def items(self):
+                    if spec_or_path['schema']=='mipframe-point-1':
+                        return ((int(v),Fraction(x)) for v,x in spec_or_path['values'].items())
+                    ids,values=spec_or_path['ids'],spec_or_path['values']
+                    if len(ids)!=len(values):raise ValueError('Point artifact lengths differ')
+                    return zip(ids,values)
+            return matching[0].check.solution(PointInput(),memory_mb=memory_mb,disk_mb=disk_mb)
+
+        if isinstance(spec_or_path, dict) and spec_or_path.get('schema') == 'mipframe-proof-ref-2':
+            from mipframe.check.compact import ProofRef
+            batch=cls.replay(spec_or_path['batch'],models=models,memory_mb=memory_mb,disk_mb=disk_mb)
+            return ProofRef(batch,spec_or_path['index'])
+
+        if isinstance(spec_or_path, dict) and spec_or_path.get('schema') == 'mipframe-certificate-2':
+            from mipframe.check.compact import BatchProof
+            matching = [m for m in models if m.uid == spec_or_path.get('snapshot')]
+            if len(matching) != 1:
+                raise ValueError('Missing certificate snapshot binding')
+            return BatchProof.replay(spec_or_path, model=matching[0],memory_mb=memory_mb,disk_mb=disk_mb)
 
         return replay(
             spec_or_path,

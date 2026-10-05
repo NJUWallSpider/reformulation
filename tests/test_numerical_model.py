@@ -55,7 +55,7 @@ def test_renaming_permutation_and_index_mapping(test1, tmp_path):
     order = list(range(len(m.rows)))
     rng.shuffle(order)
     path = tmp_path / "shuffled.lp"
-    test1.write_lp(
+    test1.write(
         path, rename_vars=vn, rename_rows=rn, row_order=order, reverse_terms=True
     )
     with mf.read(path) as other:

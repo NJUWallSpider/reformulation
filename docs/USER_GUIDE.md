@@ -15,10 +15,10 @@ m.uid, m.version, m.source, m.stage
 m.shape, m.nnz
 ```
 
-read/load 同步准备默认 IR 和 indexed；后续 `m.indexed()` 直接取得结果。
+read/load 只准备廉价 scan；`m.indexed()`、family 和 topology 首次显式访问时计算。
 自定义选区或签名配置在显式请求时计算。展示不运行新的结构搜索，不隐式生成稠密矩阵。
-独立 read 分配不同 uid；save/load 保留 uid/version。Native v3 保存完整精确值，
-不依赖原 LP/MPS 文件仍存在。旧 v2 需要从 LP/MPS 重新导入。
+独立 read 分配不同 uid；save/load 保留 uid/version。Native v6 保存共享基础数组、增量与证明依赖，
+不依赖原 LP/MPS 文件仍存在。v3/v4 需要从 LP/MPS 重新导入。
 
 ```python
 saved = m.save("model.native")
@@ -73,7 +73,15 @@ family.related("parameters").where(basis="canonical")
 family.related("histogram").where(basis="canonical")
 ```
 
-IR schema 0.3 保存摘要、ID、深度和配置。`m.family()` 返回单行 Frame；
+IR schema 0.4 默认只导出 scan：尺寸、域和界、行列度、数值、local shapes、名字模板与目标。
+`m.ir.structure`、`m.ir.topology`、`m.ir.objective["role_support"]` 和 `m.ir.indexed`
+保持旧访问方式，但首次访问才计算。`to_dict/to_json(include_analysis=True)` 显式计算并导出分析。
+`m.ir.row_shapes()` 返回完整精确行型 Frame；`.where(...).rows.terms` 导航原始系数。
+`m.ir.name_templates("row"|"var")` 返回精确模板目录，`.related("slots")` 返回整数槽统计。
+scan 的高基数频次带误差界，宽行指纹标为 candidate，名字仅为 lexical hypothesis。
+默认 top 8 和 6,000 字符上限不改变缓存；默认展示/导出不会隐式启动分析。
+
+`m.family()` 返回单行 Frame；
 `.rows` 或 `.vars` 返回该族的原始成员。族筛选后关联成员和统计也随之收缩。
 默认行族和变量族都为深度 2；IR 中解释行模板的变量角色仍为深度 1，
 因为深度 d 的行使用深度 d−1 的变量角色。
@@ -189,8 +197,9 @@ O.verify().require()
 ## 资源和导出
 
 repr 只读有界前缀，未知总数显示 total not computed；count/len 显式求精确总量。
-查询默认工作预算 128 MiB，最低 16 KiB；解析最低 32 MiB。阻塞操作精确溢写
-SQLite。预算不代表整个 Python 进程的内存上限。
+查询默认工作预算 128 MiB，最低 16 KiB；解析最低 32 MiB。模型操作选择数组后端；通用关系可显式 fallback 到 SQLite。
+数组与精确 sparse 工作区支持 mmap/外部归并。完整预算覆盖尚未完成，详见
+[RUNTIME_V5_STATUS.md](RUNTIME_V5_STATUS.md)。预算不代表整个 Python 进程的内存上限。
 
 ```python
 records = Q.to_records()             # 默认最多 128 MiB，超限报错
@@ -217,13 +226,12 @@ restored = mf.frame_from_spec(spec, models={m.uid: m})
 
 Use `row.expr`, variable arithmetic, or `m.linexpr(...)` to build exact affine
 expressions. `<=`, `>=` and `.eq()` create unproved Claims. The six `m.check`
-primitives verify explicit evidence and return the same Report type used by Frame
-and indexed checks. See [the complete guide](CHECK.md) for conditional proofs,
-integer scope, local enumeration, point verification, and certificate replay.
+primitives verify explicit evidence and return compact `BatchProof` / `ProofRef`
+objects. Frame and indexed diagnostics still use `Report`; point checks use
+`PointReport`. See [API migration](API_MIGRATION.md) for serialization changes.
 
-Verification uses `Report`; `.ok`, `.summary`,
-`.violations` and `.require()` continue to work. Reports have no implicit truth
-value. Use `.status` to distinguish `REFUTED` from `INCONCLUSIVE`. Var handles are
+Use `.ok`, `.summary`, `.require()` and `.status`; proof objects have no implicit
+truth value. Var handles are
 now hashable by snapshot identity for substitution mappings, while `x == y` still
 compares entity identity. Mathematical equality uses `x.eq(y)`.
 
@@ -232,7 +240,7 @@ compares entity identity. Mathematical equality uses `x.eq(y)`.
 Use `candidate = m.edit().build()` to create an independent descendant; declare
 changes on the Edit before building it. The default `prepare="logical"` validates
 the edit but defers structural IR/indexed analysis until requested; use
-`prepare="indexed"` for eager preparation. `read()` and `load()` stay eager.
+`prepare="indexed"` for explicit eager analysis. `read()` and `load()` prepare only the scan.
 Source entities and existing proofs are
 never mutated. Bound Frames align by typed keys, not positions. The detailed
 [Edit guide](EDIT.md) covers bulk rows, auxiliary variables, strict `because`

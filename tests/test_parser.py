@@ -35,7 +35,7 @@ End
     assert m.num(m.variables[z][3])==0 and m.num(m.variables[z][4])==1
     assert m.row(m.row_names['two_sided'])=={x:F(1),y:F(2)}
     assert len(m.rows)==5 and ir.verify().status=='PROVED'
-    out=tmp_path/'round.lp';ir.write_lp(out)
+    out=tmp_path/'round.lp';ir.write(out)
     with read(out) as new:
         assert new.objective.constant == F('3.125')
 
@@ -146,7 +146,7 @@ end
     assert m.num(m.rows[1][2]) == 2
     assert m.num(m.rows[2][3]) == 4
     out = tmp_path / 'highs_roundtrip.lp'
-    ir.write_lp(out)
+    ir.write(out)
     with read(out) as rebuilt:
         assert rebuilt.verify().status == 'PROVED'
         for name in ('x', 'y', 'z'):

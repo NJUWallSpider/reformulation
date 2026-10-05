@@ -15,7 +15,7 @@ edit.add_row(r.ub_claim, name="verified_copy", because=proof)
 m2 = edit.build()
 assert m2.diff(m).semantic["lp"] == "SAME"
 m2.save(output_dir / "snapshot.native")
-m2.write_lp(output_dir / "candidate.lp")
+m2.write(output_dir / "candidate.lp")
 mf.audit.roundtrip(m2, output_dir / "candidate.lp").require()
 ```
 

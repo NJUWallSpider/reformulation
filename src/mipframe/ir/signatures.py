@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from fractions import Fraction
 from itertools import islice
 import json
-import sqlite3
 from mipframe.frame.entity import RowFrame
 from mipframe.frame.entity import _text
 from mipframe.options import options
@@ -34,12 +33,17 @@ class _Refinement:
             self._family_stores[key] = _StructuralFamilyStore(self, entities, depth)
         return self._family_stores[key]
 
-def refinement(owner, *, depth=2, mode='template', coefficient=None, rhs='sign', objective='sign', memory_mb=128, multiplicity_ratio=2):
+def refinement(owner, *, depth=2, mode='template', coefficient=None, rhs='sign', objective='sign', memory_mb=128, disk_mb=None, multiplicity_ratio=2):
+    from mipframe.core.resources import resource_limits
+    memory,disk_limit=resource_limits(memory_mb,disk_mb)
     key = validate(depth, coefficient, rhs, objective, memory_mb, mode, multiplicity_ratio)
     owner.model
     store = getattr(owner, '_refinement_store', None)
-    if store is None:
-        store = RefinementStore(owner, memory_mb)
+    if store is None or store.work.memory!=memory or store.work.disk_limit!=disk_limit:
+        # A cache result can retain its original lease. A new resource request
+        # loads the committed immutable artifacts into a fresh workspace rather
+        # than merely changing a block-size hint on the old ledger.
+        store = RefinementStore(owner, memory_mb,disk_mb)
         owner._refinement_store = store
     store.set_memory(memory_mb)
     config = store.compute(key, depth)
@@ -133,9 +137,7 @@ class _Signature:
     def base(self):
         store = self.result._store
         store.guard()
-        table = "row_data" if self.kind == "row" else "var_data"
-        values = json.loads(store.db.execute(f"SELECT base FROM {table} WHERE config=? AND id=?",
-                                             (self.result._config, self.ident)).fetchone()[0])
+        values=store.base(self.result._config,self.kind,self.ident)
         return tuple(tuple(value) if isinstance(value, list) else value for value in values)
 
     @property
@@ -171,49 +173,20 @@ class _Signature:
     def _repr_pretty_(self, printer, cycle):
         printer.text(repr(self))
 
-class _StructuralFamilyStore:
-    def __init__(self, result, frame, depth):
+from mipframe.ir.families import Partition
+
+
+class _StructuralFamilyStore(Partition):
+    def __init__(self,result,frame,depth):
+        import numpy as np
         result._check_depth(depth)
-        self.result, self.owner, self.depth = result, frame._owner, depth
-        self.kind = "row" if isinstance(frame, RowFrame) else "var"
-        self.db = sqlite3.connect("")
-        try:
-            self.db.executescript("""
-                PRAGMA cache_size=-2048;
-                CREATE TABLE families(fid INTEGER PRIMARY KEY,color INTEGER UNIQUE,n INTEGER,first_row INTEGER,position INTEGER UNIQUE,nnz_lo INTEGER,nnz_hi INTEGER);
-                CREATE TABLE members(fid INTEGER,ordinal INTEGER,row_id INTEGER,PRIMARY KEY(fid,ordinal),UNIQUE(row_id));
-                CREATE TABLE role_order(ordinal INTEGER PRIMARY KEY,position INTEGER UNIQUE);
-            """)
-            colors = result._store.array(result._config, self.kind, depth)
-            m = self.owner.model
-            ptr = m.row_ptr if self.kind == "row" else m.col_ptr
-            for ident in frame.ids:
-                color = int(colors[ident])
-                fid = color + 1
-                degree = int(ptr[ident+1]-ptr[ident])
-                self.db.execute("INSERT OR IGNORE INTO families VALUES(?,?,0,?,NULL,?,?)", (fid, color, ident, degree, degree))
-                count = self.db.execute("SELECT n FROM families WHERE fid=?", (fid,)).fetchone()[0]
-                cursor = self.db.execute("INSERT OR IGNORE INTO members VALUES(?,?,?)", (fid, count, ident))
-                if cursor.rowcount:
-                    self.db.execute("UPDATE families SET n=n+1,first_row=min(first_row,?),nnz_lo=min(nnz_lo,?),nnz_hi=max(nnz_hi,?) WHERE fid=?", (ident, degree, degree, fid))
-            for pos, (fid,) in enumerate(self.db.execute("SELECT fid FROM families ORDER BY n DESC,first_row")):
-                self.db.execute("UPDATE families SET position=? WHERE fid=?", (pos, fid))
-            if self.kind == "var":
-                for ordinal, (position,) in enumerate(self.db.execute("SELECT position FROM families ORDER BY color")):
-                    self.db.execute("INSERT INTO role_order VALUES(?,?)", (ordinal, position))
-            self.total = self.db.execute("SELECT count(*) FROM families").fetchone()[0]
-            self.db.commit()
-            self.db.execute("PRAGMA query_only=ON")
-            result._store.family_stores.add(self)
-        except BaseException:
-            self.db.close()
-            raise
+        self.result,self.owner,self.depth=result,frame._owner,depth
+        self.kind='row' if isinstance(frame,RowFrame) else 'var'
+        colors=result._store.array(result._config,self.kind,depth)
+        self.work=result._store.work.fork()
+        self._build(frame.ids,(colors[int(i)] for i in frame.ids),range(len(colors)))
+        result._store.family_stores.add(self)
 
-    def __del__(self):
-        if hasattr(self, "db"):
-            self.db.close()
-
-    def record(self, position):
-        self.owner.model
-        fid, ident, count = self.db.execute("SELECT fid,first_row,n FROM families WHERE position=?", (position,)).fetchone()
-        return fid, _Signature(self.result, self.kind, ident, self.depth), count
+    def record(self,position):
+        fid,_,count,ident,_=self.find('position',position)
+        return fid,_Signature(self.result,self.kind,ident,self.depth),count

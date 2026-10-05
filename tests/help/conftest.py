@@ -19,6 +19,8 @@ def recipe_env(tmp_path):
     opened=[]
     def make(ident):
         env={'mf':mf,'output_dir':tmp_path}
+        if ident=='quickstart':
+            return env
         if ident in ('roles','coordinates','decomposition','templates','epigraph'):
             m=model(tmp_path,' a: x + y = 1\n b: z + w = 1\n c: x + z = 1\n d: y + w = 1',
                     ' 0 <= x <= 1\n 0 <= y <= 1\n 0 <= z <= 1\n 0 <= w <= 1', 'x y z w')

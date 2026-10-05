@@ -9,12 +9,17 @@ class SparseStore:
         self._store = store
 
     def guard(self):
-        if self._store.db is None:
-            raise MIPFrameError("Model is closed")
+        self._store.guard()
 
     def blocks(self, axis, source, block_size):
         self.guard()
         m = self._store
+        if hasattr(m,'f'):
+            from itertools import islice
+            entries=iter(m.iter_terms(source) if axis=='row' else m.iter_column(source))
+            while batch:=list(islice(entries,block_size)):
+                yield np.asarray([i for i,c in batch],dtype=np.int64), None
+            return
         ptr = m.row_ptr if axis == "row" else m.col_ptr
         start, end = int(ptr[source]), int(ptr[source + 1])
         for begin in range(start, end, block_size):
@@ -28,7 +33,7 @@ class SparseStore:
             targets = (
                 m.col_idx[begin:stop]
                 if axis == "row"
-                else np.searchsorted(m.row_ptr, positions, side="right") - 1
+                else m.csc_row_ids[begin:stop]
             )
             yield targets, positions
 

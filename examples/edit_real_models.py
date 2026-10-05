@@ -55,7 +55,7 @@ def exercise(path, *, native=None):
                         assert loaded.diff(candidate).semantic["mip"] == "SAME"
                     # The assign LP fixture is exactly representable as finite decimals.
                     if path.suffix.lower() == ".lp":
-                        restored.write_lp(out / "restored.lp")
+                        restored.write(out / "restored.lp")
                         mf.audit.roundtrip(restored, out / "restored.lp").require()
     print(f"Passed: {path}", flush=True)
 

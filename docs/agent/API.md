@@ -183,11 +183,11 @@ See also: concept.proofs, concept.exact
 
 Report [api.Report]
 
-Immutable checker outcome with scope, dependencies and complete pageable evidence.
+Structural and integrity diagnostic result; mathematical checkers return ProofRef, BatchProof or PointReport.
 
 Report [type]
 
-When to use: Immutable checker outcome with scope, dependencies and complete pageable evidence.
+When to use: Structural and integrity diagnostic result; mathematical checkers return ProofRef, BatchProof or PointReport.
 
 Returns: A public domain type. Obtain live handles through their owning Model or query.
 
@@ -393,13 +393,13 @@ read [api.read]
 
 Import an LP/MPS file into a new independent exact snapshot.
 
-read(path: 'str | os.PathLike', *, format: 'str | None' = None, memory_mb: 'float' = 128, **format_options) -> "'Model'"
+read(path: 'str | os.PathLike', *, format: 'str | None' = None, memory_mb: 'float' = 128, disk_mb: 'float | None' = None, **format_options) -> "'Model'"
 
 When to use: Import an LP/MPS file into a new independent exact snapshot.
 
 Inputs: Path; optional explicit format and parser options. MPS accepts mps_format="auto" (default), "fixed" or "free", and explicit rhs/bounds/ranges vector names.
 
-Returns: Model with default IR and indexed prepared.
+Returns: Model with a cached level-0 scan; structural analyses are explicit.
 
 Establishes: Independent read calls receive independent uid. MPS auto checks complete record boundaries; padded free-format names and exact numbers are not truncated into fixed-width fields.
 
@@ -416,11 +416,11 @@ See also: concept.identity
 
 load [api.load]
 
-Load native v3 with retained uid/version and validated saved analyses.
+Load validated native v7 numerical content and a cheap scan; saved analyses restore on explicit access.
 
-load(directory: 'str | os.PathLike') -> "'Model'"
+load(directory: 'str | os.PathLike', *, memory_mb=128, disk_mb=None) -> "'Model'"
 
-When to use: Load native v3 with retained uid/version and validated saved analyses.
+When to use: Load validated native v7 numerical content and a cheap scan; saved analyses restore on explicit access.
 
 Inputs: Native directory.
 
@@ -428,7 +428,7 @@ Returns: Model.
 
 Does not establish: No model change or additional mathematical conclusion is implied.
 
-Failures: Old or corrupt formats are rejected; reimport old models from LP/MPS.
+Failures: Old or corrupt numerical formats are rejected; reimport old models from LP/MPS. Saved analysis caches are validated on explicit analysis access.
 
 See also: concept.identity
 
@@ -550,29 +550,29 @@ See also: concept.identity
 
 Model.diff [api.Model.diff]
 
-Compare the current snapshot with its direct parent or identical snapshot.
+Read an ancestor delta directly, or explicitly compare unrelated numerical models.
 
 Model.diff(source, *, verify='auto', memory_mb=128, disk_mb=None)
 
-When to use: Compare the current snapshot with its direct parent or identical snapshot.
+When to use: Read an ancestor delta directly, or explicitly compare unrelated numerical models.
 
-Returns: ModelDiff; unrelated snapshots are rejected.
+Returns: ModelDiff for an ancestor (including self); NumericDiff for unrelated snapshots, with equivalence UNKNOWN.
 
 Does not establish: No model change or additional mathematical conclusion is implied.
 
-Live results require all referenced snapshots to remain open. Explicit records are detached. verify="auto" reuses a process-local verified source/target receipt when available, otherwise replays lineage and checks target facts. verify="replay" always performs that independent verification. Diff Frames and degree statistics are materialized on access; native files never grant a live receipt.
+Direct-parent and multi-generation diff use retained deltas. Unrelated snapshots are compared numerically with mathematical equivalence UNKNOWN. No certificate replay occurs; the compatibility verify argument does not trigger an audit. Use Model.audit for explicit replay.
 
-See also: concept.identity
+See also: api.ModelDiff, api.NumericDiff, concept.identity
 
 ## api.Model.save
 
 Model.save [api.Model.save]
 
-Atomically save a new native v3 directory.
+Atomically save a new native v7 directory.
 
-Model.save(directory: 'str | PathLike') -> 'Path'
+Model.save(directory: 'str | PathLike', *, memory_mb=128, disk_mb=None) -> 'Path'
 
-When to use: Atomically save a new native v3 directory.
+When to use: Atomically save a new native v7 directory.
 
 Returns: Saved path; existing destinations are rejected.
 
@@ -582,21 +582,23 @@ Live results require all referenced snapshots to remain open. Explicit records a
 
 See also: concept.identity
 
-## api.Model.write_lp
+## api.Model.write
 
-Model.write_lp [api.Model.write_lp]
+Model.write [api.Model.write]
 
-Atomically export exact LP where decimal representation is lossless.
+Atomically serialize an exact snapshot to MPS or LP.
 
-Model.write_lp(path: 'str | PathLike', **options) -> 'None'
+Model.write(path, *, format=None, strategy='auto', audit='readback', memory_mb=128, disk_mb=None, **options)
 
-When to use: Atomically export exact LP where decimal representation is lossless.
+When to use: Atomically serialize an exact snapshot to MPS or LP.
 
-Returns: Output path; unsupported coefficients/free rows fail without publishing a partial file.
+Inputs: Fresh path, format inferred from suffix, strategy auto/patch/canonical, audit readback or None.
+
+Returns: Receipt with actual writer, digest and phase timings.
 
 Does not establish: No model change or additional mathematical conclusion is implied.
 
-Live results require all referenced snapshots to remain open. Explicit records are detached.
+Patch supports row deletion, fixed substitution, row/variable bounds and integrality relaxation when an indexed MPS source is retained. Strict patch rejects unsupported edits. Auto falls back to canonical. Readback verifies numerical output and grants no proof authority. Both writers reject nonterminating decimal rationals. Existing output files are never overwritten.
 
 See also: concept.identity
 
@@ -800,13 +802,13 @@ See also: concept.identity
 
 Model.ir [api.Model.ir]
 
-Factual compressed IR; prepared by read/load, or lazily on first access after a logical Edit build.
+Cheap numerical scan; prepared by read/load, or lazily after a logical Edit build. Structural properties compute on explicit access.
 
 Model.ir [property]
 
-When to use: Factual compressed IR; prepared by read/load, or lazily on first access after a logical Edit build.
+When to use: Cheap numerical scan; prepared by read/load, or lazily after a logical Edit build. Structural properties compute on explicit access.
 
-Returns: Factual compressed IR; prepared by read/load, or lazily on first access after a logical Edit build.
+Returns: Cheap numerical scan; prepared by read/load, or lazily after a logical Edit build. Structural properties compute on explicit access.
 
 Does not establish: No model change or additional mathematical conclusion is implied.
 
@@ -1310,11 +1312,11 @@ Frame.to_records [api.Frame.to_records]
 
 Export independent records within the materialization budget.
 
-Frame.to_records(*, memory_mb=None)
+Frame.to_records(*, memory_mb=None, disk_mb=None, materialize_mb=None)
 
 When to use: Export independent records within the materialization budget.
 
-Inputs: Optional memory_mb.
+Inputs: Optional memory_mb, disk_mb and materialize_mb (independent output limit).
 
 Returns: Detached Ref identities and exact scalar values.
 
@@ -1336,11 +1338,11 @@ Frame.iter_batches [api.Frame.iter_batches]
 
 Stream complete schema-carrying detached batches.
 
-Frame.iter_batches(batch_size=65536, *, memory_mb=None)
+Frame.iter_batches(batch_size=65536, *, memory_mb=None, disk_mb=None)
 
 When to use: Stream complete schema-carrying detached batches.
 
-Inputs: Positive batch_size and optional memory_mb.
+Inputs: Positive batch_size and optional memory_mb/disk_mb.
 
 Returns: Iterator; interrupted/closed live queries raise instead of silently ending.
 
@@ -1362,7 +1364,7 @@ Frame.write [api.Frame.write]
 
 Atomically write a complete relation.
 
-Frame.write(path, *, format=None)
+Frame.write(path, *, format=None, memory_mb=None, disk_mb=None)
 
 When to use: Atomically write a complete relation.
 
@@ -1388,7 +1390,7 @@ Frame.to_spec [api.Frame.to_spec]
 
 Serialize a versioned query AST.
 
-Frame.to_spec()
+Frame.to_spec(*, memory_mb=None, disk_mb=None, materialize_mb=None)
 
 When to use: Serialize a versioned query AST.
 
@@ -1440,7 +1442,7 @@ Frame.count [api.Frame.count]
 
 Compute an exact record count.
 
-Frame.count()
+Frame.count(*, memory_mb=None, disk_mb=None)
 
 When to use: Compute an exact record count.
 
@@ -1489,11 +1491,11 @@ Frame.from_records [api.Frame.from_records]
 
 Create a typed relation from explicit records.
 
-Frame.from_records(records, *, schema, key=None, models=(), memory_mb=None)
+Frame.from_records(records, *, schema, key=None, models=(), memory_mb=None, disk_mb=None)
 
 When to use: Create a typed relation from explicit records.
 
-Inputs: Records plus declared schema; optional key/models and memory_mb.
+Inputs: Records plus declared schema; optional key/models and memory_mb/disk_mb.
 
 Returns: Ordinary Frame. Ref identity must be valid; this does not create a Model.
 
@@ -1675,7 +1677,7 @@ RowFrame.project [api.RowFrame.project]
 
 Map each source to exactly one neighbor in every named target domain.
 
-RowFrame.project(*, memory_mb=128, **bindings)
+RowFrame.project(*, memory_mb=128, disk_mb=None, **bindings)
 
 When to use: Map each source to exactly one neighbor in every named target domain.
 
@@ -1823,7 +1825,7 @@ VarFrame.project [api.VarFrame.project]
 
 Map each source to exactly one neighbor in every named target domain.
 
-VarFrame.project(*, memory_mb=128, **bindings)
+VarFrame.project(*, memory_mb=128, disk_mb=None, **bindings)
 
 When to use: Map each source to exactly one neighbor in every named target domain.
 
@@ -3217,19 +3219,21 @@ ops.graph.transitive_reduction [api.ops.graph.transitive_reduction]
 
 Reduce a DAG while preserving reachability.
 
-ops.graph.transitive_reduction(E, *, tail='u', head='v', vertices=None, memory_mb=128, max_output_rows=1000000, disk_mb=None)
+ops.graph.transitive_reduction(E, *, tail='u', head='v', vertices=None, witnesses=False, edge_id=None, max_witness_edges=10000000, memory_mb=128, max_output_rows=1000000, disk_mb=None)
 
 When to use: Reduce a DAG while preserving reachability.
 
-Inputs: Frame with compatible nonmissing endpoint columns; optional declared vertices.
+Inputs: DAG edge Frame; witnesses=False retains Frame return. witnesses=True adds edge_id, memory_mb, disk_mb, max_output_rows and max_witness_edges controls.
 
-Returns: Original input schema and all parallel source records for retained endpoint pairs.
+Returns: Frame or TransitiveReductionResult(kept, removed, witnesses, stats).
 
 Establishes: Rejects cycles/self-loops. This is not a proof that original constraints can be deleted.
 
 Does not establish: No model change or additional mathematical conclusion is implied.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. max_output_rows defaults to 1,000,000; exceeding it fails the whole call. None explicitly removes that limit.
+Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. max_output_rows defaults to 1,000,000; exceeding it fails the whole call. None explicitly removes that limit. Complete path output requires work proportional to its total length.
+
+Parallel retained endpoint pairs preserve every original record. Every removed record receives a complete path using only retained representatives. Components choose packed bitsets or bounded traversal; witness fallback shares BFS by endpoint. Total witness output is bounded separately. witnesses.as_linear_certificate(target="row",source="row",side="ub") gathers typed row IDs and shares offsets; m.check.linear_many(cert) verifies actual mathematics.
 
 See also: recipe.network, recipe.closure
 
@@ -3690,7 +3694,7 @@ equality = expr.eq(1)
 Build expressions from variable arithmetic, row.expr or m.linexpr. Use mf.q("1/2") for fractional scalars.
 Create target inequalities with <= or >= and equalities with .eq(); Claim and Report have no implicit truth value.
 LinExpr.le(U) and LinExpr.ge(L) are equivalent method forms of <= and >=.
-For trusted sources use row.lb_claim, row.ub_claim, var.lb_claim or var.ub_claim, or a compatible proved Report.
+For trusted sources use row.lb_claim, row.ub_claim, var.lb_claim or var.ub_claim, or a compatible proved ProofRef.
 Verify a target with m.check before passing its proof to an Edit. Direct Claim constructor arguments are not the expression-building interface.
 
 See also: api.LinExpr, api.Model.linexpr, api.Checker.linear, concept.proofs, error.expressions
@@ -3952,13 +3956,13 @@ Checker.cases [api.Checker.cases]
 
 Discharge an exhaustive finite integer split over one variable.
 
-Checker.cases(target, *, var, cases, memory_mb=128, disk_mb=None, domain='auto')
+Checker.cases(target, *, var, cases, domain='auto', memory_mb=128, disk_mb=None)
 
 When to use: Discharge an exhaustive finite integer split over one variable.
 
-Inputs: Exact claims, original source sides or previously verified Reports; see signature.
+Inputs: Exact claims, original source sides or previously verified ProofRefs; see signature.
 
-Returns: Report with complete scope, dependencies and evidence.
+Returns: ProofRef with status, conclusion, scope, dependencies and evidence; not a diagnostic Report.
 
 Establishes: Every branch proves the same exact target; only its matching equality assumption is removed. Remaining assumptions are unioned. The result is integer-only.
 
@@ -3966,12 +3970,12 @@ Does not establish: No solver call, multiplier search, automatic condition disch
 
 Failures: Invalid sources, missing input, bad multipliers, cross-snapshot input or unsupported domains raise; they are not INCONCLUSIVE.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
-var is a same-snapshot Var or VarRef with integer kind and finite model bounds. cases maps exact integer values to verified exact PROVED Reports with the same target relation, constant and coefficients.
+var is a same-snapshot Var or VarRef with integer kind and finite model bounds. cases maps exact integer values to verified exact PROVED ProofRefs with the same target relation, constant and coefficients.
 Keys must exactly cover ceil(lb)..floor(ub); duplicates after normalization, empty domains, floats and booleans are rejected. Coverage never uses branch assumptions.
 Each branch must assume a*y+b==0 for this variable and value. Remove matching equalities only; preserve the union of every other explicit or inherited assumption. Nested calls can discharge multiple variables.
-domain="auto" and "integer" produce integer proofs; "relaxation" is rejected. Missing/invalid branches raise, not REFUTED. Infeasible Reports cannot substitute for target proofs.
+domain="auto" and "integer" produce integer proofs; "relaxation" is rejected. Missing/invalid branches raise, not REFUTED. Contradiction proofs cannot substitute for proofs of the requested target.
 Use ordinary linear checks to align stronger or differently scaled conclusions first. Branches may contain continuous variables. Results support Edit.because only when no assumptions remain; all model fact dependencies and integer-domain coverage bounds remain auditable.
 The cases and discharged evidence Frames record branch parent indices and removed assumptions. Replay rechecks all branches and coverage.
 
@@ -3983,13 +3987,13 @@ Checker.identity [api.Checker.identity]
 
 Check an exact affine identity or explicit equality combination.
 
-Checker.identity(left, right, *, using=(), assume=(), memory_mb=128, disk_mb=None, domain='auto')
+Checker.identity(left, right=0, *, using=(), assume=(), memory_mb=128, disk_mb=None)
 
 When to use: Check an exact affine identity or explicit equality combination.
 
-Inputs: Exact claims, original source sides or previously verified Reports; see signature.
+Inputs: Exact claims, original source sides or previously verified ProofRefs; see signature.
 
-Returns: Report with complete scope, dependencies and evidence.
+Returns: ProofRef with status, conclusion, scope, dependencies and evidence; not a diagnostic Report.
 
 Establishes: No-premise coefficient mismatch refutes identity; insufficient specified premises yield INCONCLUSIVE.
 
@@ -3997,7 +4001,7 @@ Does not establish: No solver call, multiplier search, automatic condition disch
 
 Failures: Invalid sources, missing input, bad multipliers, cross-snapshot input or unsupported domains raise; they are not INCONCLUSIVE.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
 Without premises, compare the exact affine expressions. With using, verify the supplied equality combination.
 
@@ -4009,13 +4013,13 @@ Checker.linear [api.Checker.linear]
 
 Verify that supplied sources imply the target inequality or equality.
 
-Checker.linear(target, *, using=(), residual='exact', assume=(), memory_mb=128, disk_mb=None, domain='auto')
+Checker.linear(target, *, using=(), residual='exact', assume=(), domain='auto', memory_mb=128, disk_mb=None)
 
 When to use: Verify that supplied sources imply the target inequality or equality.
 
-Inputs: Exact claims, original source sides or previously verified Reports; see signature.
+Inputs: Exact claims, original source sides or previously verified ProofRefs; see signature.
 
-Returns: Report with complete scope, dependencies and evidence.
+Returns: ProofRef with status, conclusion, scope, dependencies and evidence; not a diagnostic Report.
 
 Establishes: Inequality multipliers nonnegative; equality multipliers may have either sign. bounds compensates exact residuals using required bounds.
 
@@ -4023,7 +4027,7 @@ Does not establish: No solver call, multiplier search, automatic condition disch
 
 Failures: Invalid sources, missing input, bad multipliers, cross-snapshot input or unsupported domains raise; they are not INCONCLUSIVE.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
 Equality targets use equality-only sources, or explicit using={"le": ..., "ge": ...} certificates. residual="bounds" compensates coefficient residuals with original variable bounds.
 
@@ -4035,13 +4039,13 @@ Checker.infeasible [api.Checker.infeasible]
 
 Verify an explicit contradiction certificate.
 
-Checker.infeasible(*, using=(), residual='exact', assume=(), memory_mb=128, disk_mb=None, domain='auto')
+Checker.infeasible(*, using=(), assume=(), residual='exact', memory_mb=128, disk_mb=None)
 
 When to use: Verify an explicit contradiction certificate.
 
-Inputs: Exact claims, original source sides or previously verified Reports; see signature.
+Inputs: Exact claims, original source sides or previously verified ProofRefs; see signature.
 
-Returns: Report with complete scope, dependencies and evidence.
+Returns: ProofRef with status, conclusion, scope, dependencies and evidence; not a diagnostic Report.
 
 Establishes: PROVED means contradiction in the recorded scope; failure to find contradiction is INCONCLUSIVE, never feasible.
 
@@ -4049,7 +4053,7 @@ Does not establish: No solver call, multiplier search, automatic condition disch
 
 Failures: Invalid sources, missing input, bad multipliers, cross-snapshot input or unsupported domains raise; they are not INCONCLUSIVE.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
 Supply a contradiction combination explicitly. Single-variable assumptions tighten bounds or substitute values and remain recorded in the conditional scope.
 
@@ -4061,13 +4065,13 @@ Checker.round [api.Checker.round]
 
 Round a proved bound on a model-integer-valued expression.
 
-Checker.round(target, *, from_, memory_mb=128, disk_mb=None, domain='auto')
+Checker.round(target, *, from_, domain='auto', memory_mb=128, disk_mb=None)
 
 When to use: Round a proved bound on a model-integer-valued expression.
 
-Inputs: Exact claims, original source sides or previously verified Reports; see signature.
+Inputs: Exact claims, original source sides or previously verified ProofRefs; see signature.
 
-Returns: Report with complete scope, dependencies and evidence.
+Returns: ProofRef with status, conclusion, scope, dependencies and evidence; not a diagnostic Report.
 
 Establishes: Same nonconstant integer coefficients and integer variables required; floor upper / ceil lower; scope becomes integer.
 
@@ -4075,7 +4079,7 @@ Does not establish: No solver call, multiplier search, automatic condition disch
 
 Failures: Invalid sources, missing input, bad multipliers, cross-snapshot input or unsupported domains raise; they are not INCONCLUSIVE.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
 The target must keep the same nonconstant integer-valued expression as the proved source bound. Round upper bounds down and lower bounds up.
 
@@ -4087,13 +4091,13 @@ Checker.enumerate [api.Checker.enumerate]
 
 Verify a claim on a finite local integer domain.
 
-Checker.enumerate(target, *, vars, using=(), assume=(), max_states=100000, time_limit=None, memory_mb=128, disk_mb=None, domain='auto')
+Checker.enumerate(target, *, memory_mb=128, disk_mb=None, **kwargs)
 
 When to use: Verify a claim on a finite local integer domain.
 
-Inputs: Exact claims, original source sides or previously verified Reports; see signature.
+Inputs: Exact claims, original source sides or previously verified ProofRefs; see signature.
 
-Returns: Report with complete scope, dependencies and evidence.
+Returns: ProofRef with status, conclusion, scope, dependencies and evidence; not a diagnostic Report.
 
 Establishes: Exhaustion proves; a local counterexample refutes only this local proposition; budget exhaustion yields INCONCLUSIVE.
 
@@ -4101,7 +4105,7 @@ Does not establish: No solver call, multiplier search, automatic condition disch
 
 Failures: Invalid sources, missing input, bad multipliers, cross-snapshot input or unsupported domains raise; they are not INCONCLUSIVE.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
 vars must contain every remaining variable after substitutions; continuous or unbounded integer domains are unsupported.
 
@@ -4113,13 +4117,13 @@ Checker.solution [api.Checker.solution]
 
 Validate a complete exact point against the mathematical integer model, including integrality, original bounds and both row sides.
 
-Checker.solution(values, *, value='value', missing='error', memory_mb=128, disk_mb=None, domain='auto')
+Checker.solution(values, *, memory_mb=128, disk_mb=None, **kwargs)
 
 When to use: Validate a complete exact point against the mathematical integer model, including integrality, original bounds and both row sides.
 
 Inputs: Exact Frame(var,value) or Var/VarRef mapping from this snapshot. missing="error" requires every variable; missing="zero" explicitly fills absent values.
 
-Returns: Report with complete scope, dependencies and evidence.
+Returns: PointReport with feasibility status, objective summary and violation evidence; not an implication proof.
 
 Establishes: Returns all violations or feasibility with exact objective. No optimality conclusion.
 
@@ -4127,7 +4131,7 @@ Does not establish: No solver call, multiplier search, automatic condition disch
 
 Failures: Invalid sources, missing input, bad multipliers, cross-snapshot input or unsupported domains raise; they are not INCONCLUSIVE.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
 missing="error" requires all model variables; missing="zero" is explicit. Inputs from a solver are not silently rounded.
 domain="auto" and domain="integer" both enforce the original integer domains; domain="relaxation" is rejected. For fractional LP points, use m.matrix.activity(values) plus exact checks of both row sides and every variable bound. Verify complete variable coverage, including variables absent from all rows; see limitation.fractional-point.
@@ -4138,45 +4142,44 @@ See also: concept.proofs, concept.conditions, limitation.fractional-point
 
 Checker.linear_many [api.Checker.linear_many]
 
-Batch explicit linear certificates in shared paged working storage.
+Check compact custom targets and ragged explicit witnesses.
 
-Checker.linear_many(*, targets, terms, using=(), reports=None, residual='exact', domain='auto', memory_mb=128, disk_mb=None)
+Checker.linear_many(certificate=None, *, targets=None, witnesses=None, terms=None, using=(), reports=None, residual='exact', domain='auto', **options)
 
-When to use: Batch explicit linear certificates in shared paged working storage.
+When to use: Check compact custom targets and ragged explicit witnesses.
 
-Inputs: Exact claims, original source sides or previously verified Reports; see signature.
+Inputs: targets=mf.Targets(...), witnesses=mf.CertificateBatch(...), residual="exact" or "bounds".
 
-Returns: Report with complete scope, dependencies and evidence.
+Returns: BatchProof.
 
-Establishes: Targets keyed by strings; for_target returns one checked conclusion. Overall PROVED requires all targets proved.
+Establishes: All targets must be proved for overall PROVED. Compact Targets use distinct nonnegative integer IDs; Frame adapters retain their external target keys for for_target(key).
 
 Does not establish: No solver call, multiplier search, automatic condition discharge or model edit.
 
 Failures: Invalid sources, missing input, bad multipliers, cross-snapshot input or unsupported domains raise; they are not INCONCLUSIVE.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
-targets has target/relation/rhs, with unique string target IDs; terms has target/var/coef.
-using has target and exactly one source field row/var/proof per record, plus side and multiplier (direction for equality target sides).
-Reference columns use m.rows.schema["row"] or m.vars.schema["var"]. A proof source is a string key in the explicit reports mapping.
-Use residual="bounds" for bound compensation. This Frame-native entry point has no assume parameter; use check.linear_batch().add(..., assume=...) for per-target assumptions and ordinary Claim/Report inputs.
-The result shares paged storage across targets; inspect evidence and use for_target(target_id) for one conclusion. require() on the batch requires every target to be PROVED.
+Targets(ids, kind="row", sides="ub") reads existing rows. kind="var" additionally needs rhs. kind="affine" needs rhs, offsets, variables and coefficients. IDs are distinct nonnegative integers. CertificateBatch(offsets,sources,multipliers=1,sides="ub",kinds="row") describes one source slice per target; kinds may be row or var. Finite equality sources use side="eq" and allow signed multipliers. Inequality multipliers must be nonnegative. Unit path witnesses can use CertificateBatch.paths(paths).
+The positional certificate form accepts a snapshot-bound LinearCertificate from graph witnesses; do not mix it with separate targets/witnesses/terms/using.
+For the Frame adapter, targets has target/relation/rhs with unique string keys, terms has target/var/coef, and using has target, exactly one row/var/proof source, side and multiplier. Row/var columns retain same-snapshot Ref types; proof keys refer to ProofRefs in reports. Frame direction must be main; use scalar linear for directional equalities. There is no assume argument here: use linear_batch with a common assumption scope or scalar linear for separate branches.
+Frames compile once at the boundary; prefer linear_rows for existing row targets. No SQL runs in the checker.
 
-See also: concept.proofs, concept.conditions, api.Checker.linear_batch, api.Frame.schema, api.Report.for_target, concept.report-resources
+See also: api.Targets, api.CertificateBatch, api.BatchProof.for_target, api.Checker.linear_rows, api.Checker.linear_batch
 
 ## api.Checker.linear_batch
 
 Checker.linear_batch [api.Checker.linear_batch]
 
-Build a batch of linear certificates with scalar arguments and per-target assumptions.
+Compile scalar Claim inputs into one compact batch.
 
-Checker.linear_batch(*, residual='exact', domain='auto', memory_mb=128, disk_mb=None)
+Checker.linear_batch(**kwargs)
 
-When to use: Build a batch of linear certificates with scalar arguments and per-target assumptions.
+When to use: Compile scalar Claim inputs into one compact batch.
 
-Inputs: residual="exact" or "bounds"; domain="auto", "relaxation" or "integer"; memory_mb and disk_mb apply to the whole batch.
+Inputs: residual="exact"/"bounds", domain="auto"/"integer"/"relaxation", memory_mb/disk_mb. All targets require one shared assumption scope.
 
-Returns: LinearBatch context manager. add stages each check; run verifies all targets and returns a Report.
+Returns: LinearBatch; run returns BatchProof.
 
 Establishes: Consumes inputs incrementally in shared storage. No caller-authored schemas or reports mapping are required.
 
@@ -4184,7 +4187,7 @@ Does not establish: No multiplier search, condition discharge, enumeration batch
 
 Failures: Unsupported methods or options raise. Invalid inputs, cancellation and resource failures abort unpublished work.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
 Illustrative example (requires caller-provided inputs):
 with m.check.linear_batch(residual="bounds") as batch:
@@ -4193,9 +4196,7 @@ with m.check.linear_batch(residual="bounds") as batch:
     report = batch.run()
 report.require()
 
-The example requires finite upper bounds on the selected rows. Replace targets and sources with the actual propositions and certificates to verify.
-Prefer this builder for ordinary Python loops. If targets/terms/using are already Frames, use linear_many instead.
-The returned report remains usable after leaving the with block. Use report.for_target(key) for one conclusion, including its explicit and inherited assumptions.
+All targets in a builder must have the same explicit assumption scope. For different case branches, use scalar checks and cases(). Existing-row workloads should use linear_rows to avoid target expression duplication.
 
 See also: api.LinearBatch.add, api.LinearBatch.run, api.LinearBatch.close, api.Checker.linear_many, concept.report-resources, concept.conditions
 
@@ -4209,15 +4210,19 @@ LinearBatch.add(*, key, target, using=(), assume=())
 
 When to use: Stage one keyed target with the same using and assume arguments as check.linear.
 
-Inputs: A unique nonempty string key, Claim target, original source Claims or verified Reports, optional exact multipliers and assumptions. Equality certificates also accept using={"le": ..., "ge": ...}.
+Inputs: Unique key, Claim target, explicit using sources and optional assumptions shared by the batch.
 
 Returns: The builder for chaining. No proof is published by add.
 
-Establishes: Consumes generators and copies mathematical inputs into shared paged staging now; does not retain a list of target expressions. Parent proof dependencies remain live.
+Establishes: Copies canonical sparse target data. No per-target Report is constructed.
 
 Does not establish: No model change or additional mathematical conclusion is implied.
 
-Failures: Duplicate keys, invalid sources and staging failures abort and close the builder. A closed or already-run builder rejects further additions.
+Failures: Duplicate keys and differing assumptions raise. On a staging error, leave the context or close the builder and start a fresh batch. A closed or already-run builder rejects further additions.
+
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
+
+Directional equality is available in the scalar linear API. Use separate batches for separate assumption scopes.
 
 See also: api.Checker.linear_batch, api.Checker.linear, api.LinearBatch.run, concept.conditions
 
@@ -4231,17 +4236,19 @@ LinearBatch.run()
 
 When to use: Verify every staged linear target and seal the builder.
 
-Returns: Report with evidence["results"] and for_target(key). An empty batch is PROVED.
+Returns: BatchProof; empty batches are PROVED.
 
-Establishes: Overall PROVED requires every target proved. Insufficient certificates yield per-target INCONCLUSIVE. All assumptions and domains remain attached to their own conclusions.
+Establishes: All successes are stored as status bytes; for_target creates a lazy ProofRef.
 
 Does not establish: No model change or additional mathematical conclusion is implied.
 
 Failures: Errors or cancellation publish no partial result. run may be called only once.
 
-Successful run transfers result storage to the Report. The result, subreports and evidence views survive builder.close() or context exit while their source models remain open.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
-See also: api.Report.for_target, api.Report.require, api.Report.replay, concept.report-resources
+Results survive builder context exit. Conditions remain attached and cannot authorize edits until explicitly discharged.
+
+See also: api.BatchProof.for_target, api.BatchProof.require, api.BatchProof.replay, concept.report-resources
 
 ## api.LinearBatch.close
 
@@ -4255,9 +4262,11 @@ When to use: Release unpublished batch work and close the builder.
 
 Returns: None.
 
-Establishes: Idempotent. Reports already returned by run remain valid.
+Establishes: Idempotent. BatchProof results already returned by run remain valid.
 
 Does not establish: No model change or additional mathematical conclusion is implied.
+
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
 See also: api.Checker.linear_batch, api.LinearBatch.run, concept.report-resources
 
@@ -4523,7 +4532,7 @@ Edit.add_row [api.Edit.add_row]
 
 Stage a new row with a new identity.
 
-Edit.add_row(expr, *, lb=<unchanged>, ub=<unchanged>, name=None, because=None)
+Edit.add_row(expr, *, name=None, lb=None, ub=None, because=None)
 
 When to use: Stage a new row with a new identity.
 
@@ -4535,9 +4544,9 @@ Establishes: All operations are source-relative and simultaneous. Each staging c
 
 Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
 
-Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
+Failures: Malformed or foreign evidence and structural conflicts raise. build permits missing evidence and marks preservation UNKNOWN; commit rejects uncovered or ungrounded operations.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
 Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
 Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
@@ -4564,9 +4573,9 @@ Establishes: All operations are source-relative and simultaneous. Each staging c
 
 Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
 
-Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
+Failures: Malformed or foreign evidence and structural conflicts raise. build permits missing evidence and marks preservation UNKNOWN; commit rejects uncovered or ungrounded operations.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
 Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
 Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
@@ -4593,9 +4602,9 @@ Establishes: All operations are source-relative and simultaneous. Each staging c
 
 Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
 
-Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
+Failures: Malformed or foreign evidence and structural conflicts raise. build permits missing evidence and marks preservation UNKNOWN; commit rejects uncovered or ungrounded operations.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
 Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
 Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
@@ -4610,7 +4619,7 @@ Edit.drop_rows [api.Edit.drop_rows]
 
 Stage deletion of source rows.
 
-Edit.drop_rows(R, *, because=None)
+Edit.drop_rows(rows, *, because=None)
 
 When to use: Stage deletion of source rows.
 
@@ -4622,9 +4631,9 @@ Establishes: All operations are source-relative and simultaneous. Each staging c
 
 Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
 
-Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
+Failures: Malformed or foreign evidence and structural conflicts raise. build permits missing evidence and marks preservation UNKNOWN; commit rejects uncovered or ungrounded operations.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
 Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
 Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
@@ -4639,7 +4648,7 @@ Edit.drop_vars [api.Edit.drop_vars]
 
 Remove only finally unreferenced variables.
 
-Edit.drop_vars(V)
+Edit.drop_vars(vars)
 
 When to use: Remove only finally unreferenced variables.
 
@@ -4651,9 +4660,9 @@ Establishes: All operations are source-relative and simultaneous. Each staging c
 
 Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
 
-Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
+Failures: Malformed or foreign evidence and structural conflicts raise. build permits missing evidence and marks preservation UNKNOWN; commit rejects uncovered or ungrounded operations.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
 Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
 Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
@@ -4668,7 +4677,7 @@ Edit.set_row_bounds [api.Edit.set_row_bounds]
 
 Change source row bounds without changing its expression.
 
-Edit.set_row_bounds(R, *, lb=<unchanged>, ub=<unchanged>, because=None)
+Edit.set_row_bounds(rows, *, lb=None, ub=None, because=None)
 
 When to use: Change source row bounds without changing its expression.
 
@@ -4680,9 +4689,9 @@ Establishes: All operations are source-relative and simultaneous. Each staging c
 
 Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
 
-Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
+Failures: Malformed or foreign evidence and structural conflicts raise. build permits missing evidence and marks preservation UNKNOWN; commit rejects uncovered or ungrounded operations.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
 Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
 Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
@@ -4697,7 +4706,7 @@ Edit.set_var_bounds [api.Edit.set_var_bounds]
 
 Change source variable bounds.
 
-Edit.set_var_bounds(V, *, lb=<unchanged>, ub=<unchanged>, because=None)
+Edit.set_var_bounds(vars, *, lb=None, ub=None, because=None)
 
 When to use: Change source variable bounds.
 
@@ -4709,9 +4718,9 @@ Establishes: All operations are source-relative and simultaneous. Each staging c
 
 Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
 
-Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
+Failures: Malformed or foreign evidence and structural conflicts raise. build permits missing evidence and marks preservation UNKNOWN; commit rejects uncovered or ungrounded operations.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
 Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
 Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
@@ -4726,7 +4735,7 @@ Edit.fix [api.Edit.fix]
 
 Set both source variable bounds to one exact value.
 
-Edit.fix(V, value, *, because=None)
+Edit.fix(vars, value, *, because=None)
 
 When to use: Set both source variable bounds to one exact value.
 
@@ -4738,9 +4747,9 @@ Establishes: All operations are source-relative and simultaneous. Each staging c
 
 Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
 
-Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
+Failures: Malformed or foreign evidence and structural conflicts raise. build permits missing evidence and marks preservation UNKNOWN; commit rejects uncovered or ungrounded operations.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
 Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
 Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
@@ -4755,11 +4764,11 @@ Edit.set_domains [api.Edit.set_domains]
 
 Set the canonical variable domain.
 
-Edit.set_domains(V, *, kind)
+Edit.set_domains(vars, *, kind, because=None)
 
 When to use: Set the canonical variable domain.
 
-Inputs: Source variables; kind C/I or key-aligned value Frame.
+Inputs: Source variables or IDs; kind is the scalar string C or I. Split selections into separate calls for different domains; a value Frame is not accepted.
 
 Returns: New staging result, Formula summary or independent Model as appropriate.
 
@@ -4767,9 +4776,9 @@ Establishes: All operations are source-relative and simultaneous. Each staging c
 
 Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
 
-Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
+Failures: Malformed or foreign evidence and structural conflicts raise. build permits missing evidence and marks preservation UNKNOWN; commit rejects uncovered or ungrounded operations.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
 Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
 Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
@@ -4784,7 +4793,7 @@ Edit.set_objective [api.Edit.set_objective]
 
 Replace the entire objective independent of staging order.
 
-Edit.set_objective(expr, *, sense)
+Edit.set_objective(expr, *, sense='min')
 
 When to use: Replace the entire objective independent of staging order.
 
@@ -4796,9 +4805,9 @@ Establishes: All operations are source-relative and simultaneous. Each staging c
 
 Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
 
-Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
+Failures: Malformed or foreign evidence and structural conflicts raise. build permits missing evidence and marks preservation UNKNOWN; commit rejects uncovered or ungrounded operations.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
 Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
 Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
@@ -4825,9 +4834,9 @@ Establishes: All operations are source-relative and simultaneous. Each staging c
 
 Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
 
-Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
+Failures: Malformed or foreign evidence and structural conflicts raise. build permits missing evidence and marks preservation UNKNOWN; commit rejects uncovered or ungrounded operations.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
 Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
 Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
@@ -4840,28 +4849,25 @@ See also: recipe.edits, concept.conditions
 
 Edit.summary [api.Edit.summary]
 
-Validate and summarize the staged plan without building a Model.
+Read edit counts and certificate-derived semantics without global analysis.
 
 Edit.summary()
 
-When to use: Validate and summarize the staged plan without building a Model.
+When to use: Read edit counts and certificate-derived semantics without global analysis.
 
 Inputs: No arguments; reports whether build is possible.
 
-Returns: New staging result, Formula summary or independent Model as appropriate.
+Returns: dict with counts and semantic relationships.
 
 Establishes: All operations are source-relative and simultaneous. Each staging call is atomic; conflicting writes are rejected.
 
 Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
 
-Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
+Failures: Malformed or foreign evidence and structural conflicts raise. build permits missing evidence and marks preservation UNKNOWN; commit rejects uncovered or ungrounded operations.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
-Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
-Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
-For deleting facts, proof chains must close to final retained source facts; self-proof and ungrounded cycles fail.
-Use native save to retain lineage; historical saved status is not a new live proof.
+Does not flatten the matrix, run semantic SQL, materialize Reports or replay certificates. Complete model statistics are explicit requests.
 
 See also: recipe.edits, concept.conditions
 
@@ -4869,28 +4875,25 @@ See also: recipe.edits, concept.conditions
 
 Edit.build [api.Edit.build]
 
-Atomically build an independent exact snapshot; structural analyses are lazy by default.
+Build a cheap overlay, including experimental unproved changes.
 
 Edit.build(*, allow_infeasible=False, prepare='logical')
 
-When to use: Atomically build an independent exact snapshot; structural analyses are lazy by default.
+When to use: Build a cheap overlay, including experimental unproved changes.
 
-Inputs: allow_infeasible=False rejects directly visible impossible bounds/empty rows. prepare="logical" defers IR/indexed; prepare="indexed" prepares both before returning.
+Inputs: prepare="logical" by default; "indexed" explicitly computes structural analyses.
 
-Returns: New staging result, Formula summary or independent Model as appropriate.
+Returns: Model overlay.
 
 Establishes: All operations are source-relative and simultaneous. Each staging call is atomic; conflicting writes are rejected.
 
 Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
 
-Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
+Failures: Malformed or foreign evidence and structural conflicts raise. build permits missing evidence and marks preservation UNKNOWN; commit rejects uncovered or ungrounded operations.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
-Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
-Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
-For deleting facts, proof chains must close to final retained source facts; self-proof and ungrounded cycles fail.
-Use native save to retain lineage; historical saved status is not a new live proof.
+Missing or ungrounded evidence yields UNKNOWN semantic preservation. Build never silently performs proof search. Use commit() when equivalence is required. Parent closure does not invalidate a child snapshot.
 
 See also: recipe.edits, concept.conditions
 
@@ -4912,9 +4915,9 @@ Establishes: All operations are source-relative and simultaneous. Each staging c
 
 Does not establish: Without evidence, no equivalence is asserted. New rows cannot serve as source facts before an intermediate build.
 
-Failures: Supplied because must be proved, exact, unconditional, same-snapshot and cover the change; invalid evidence is never silently ignored.
+Failures: Malformed or foreign evidence and structural conflicts raise. build permits missing evidence and marks preservation UNKNOWN; commit rejects uncovered or ungrounded operations.
 
-Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
 Successful build seals the Edit. Failure publishes no model; source and previous results remain intact.
 Changed variable coordinates have no automatic projection-equivalence claim. LP and MIP semantic inclusions are reported separately.
@@ -4957,7 +4960,7 @@ Establishes: Rendering uses completed summaries and does not run discovery.
 
 Does not establish: The summary does not embed the full numerical model, member lists or parameter histograms. Structural groups do not prove mathematical equivalence.
 
-IR schema 0.3 retains IDs, depths, scopes and configurations. Access detailed objects through m.rows, m.vars, m.matrix and m.families(). For a family use m.family(id, depth=depth); for indexed tensors and operators use m.indexed().tensor(id) or .operator(id).
+IR schema 0.4 defaults to level-0 scan only. Counts, degrees, bounds and numeric extrema are exact; bounded high-cardinality histograms carry error bounds. Wide-row fingerprints are candidates, and lexical templates are hypotheses. Default Mapping iteration and exports do not traverse lazy fields. structure/topology/indexed and objective role_support retain lazy lookup compatibility. Use row_shapes() and name_templates() for exact full directories with selected members. Display limits do not rescan or truncate cached machine summaries; scan computation itself has a separate budget.
 
 See also: api.Model.ir, api.Model.family, api.Model.indexed
 
@@ -4965,11 +4968,11 @@ See also: api.Model.ir, api.Model.family, api.Model.indexed
 
 CompressedIR.to_dict [api.CompressedIR.to_dict]
 
-Export the complete factual IR summary with exact numbers.
+Export a detached scan; include_analysis=True explicitly computes analyses.
 
-CompressedIR.to_dict()
+CompressedIR.to_dict(*, include_analysis=False)
 
-When to use: Export the complete factual IR summary with exact numbers.
+When to use: Export a detached scan; include_analysis=True explicitly computes analyses.
 
 Returns: Independent dict; rational values remain Fractions.
 
@@ -4977,7 +4980,7 @@ Establishes: The exported data outlives the model and is not truncated by displa
 
 Does not establish: The summary does not embed the full numerical model, member lists or parameter histograms. Structural groups do not prove mathematical equivalence.
 
-IR schema 0.3 retains IDs, depths, scopes and configurations. Access detailed objects through m.rows, m.vars, m.matrix and m.families(). For a family use m.family(id, depth=depth); for indexed tensors and operators use m.indexed().tensor(id) or .operator(id).
+IR schema 0.4 defaults to level-0 scan only. Counts, degrees, bounds and numeric extrema are exact; bounded high-cardinality histograms carry error bounds. Wide-row fingerprints are candidates, and lexical templates are hypotheses. Default Mapping iteration and exports do not traverse lazy fields. structure/topology/indexed and objective role_support retain lazy lookup compatibility. Use row_shapes() and name_templates() for exact full directories with selected members. Display limits do not rescan or truncate cached machine summaries; scan computation itself has a separate budget.
 
 See also: api.Model.ir, api.Model.family, api.Model.indexed
 
@@ -4985,11 +4988,11 @@ See also: api.Model.ir, api.Model.family, api.Model.indexed
 
 CompressedIR.to_json [api.CompressedIR.to_json]
 
-Export the complete factual IR summary as JSON.
+Export scan JSON; include_analysis=True explicitly computes analyses.
 
-CompressedIR.to_json(*, indent=2)
+CompressedIR.to_json(*, indent=2, include_analysis=False)
 
-When to use: Export the complete factual IR summary as JSON.
+When to use: Export scan JSON; include_analysis=True explicitly computes analyses.
 
 Returns: JSON string; rational values are encoded as strings.
 
@@ -4997,9 +5000,49 @@ Establishes: The exported data outlives the model and is not truncated by displa
 
 Does not establish: The summary does not embed the full numerical model, member lists or parameter histograms. Structural groups do not prove mathematical equivalence.
 
-IR schema 0.3 retains IDs, depths, scopes and configurations. Access detailed objects through m.rows, m.vars, m.matrix and m.families(). For a family use m.family(id, depth=depth); for indexed tensors and operators use m.indexed().tensor(id) or .operator(id).
+IR schema 0.4 defaults to level-0 scan only. Counts, degrees, bounds and numeric extrema are exact; bounded high-cardinality histograms carry error bounds. Wide-row fingerprints are candidates, and lexical templates are hypotheses. Default Mapping iteration and exports do not traverse lazy fields. structure/topology/indexed and objective role_support retain lazy lookup compatibility. Use row_shapes() and name_templates() for exact full directories with selected members. Display limits do not rescan or truncate cached machine summaries; scan computation itself has a separate budget.
 
 See also: api.Model.ir, api.Model.family, api.Model.indexed
+
+## api.CompressedIR.row_shapes
+
+CompressedIR.row_shapes [api.CompressedIR.row_shapes]
+
+Compute a full exact local row-shape Frame.
+
+CompressedIR.row_shapes()
+
+When to use: Compute a full exact local row-shape Frame.
+
+Returns: A cached navigable Frame requiring an open model.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Resources: Explicit exact analysis may use disk-backed working storage.
+
+Group raw sense, exact bounds, nnz and coefficient multiset, without normalization or adjacent roles. Filter with where; rows returns original members and related("coefficients") returns full multiplicities. Directory IDs are model-local and independent of scan preview positions. Keep group_key for navigation.
+
+See also: api.Model.ir, api.Frame.related
+
+## api.CompressedIR.name_templates
+
+CompressedIR.name_templates [api.CompressedIR.name_templates]
+
+Compute a full exact lexical-template Frame.
+
+CompressedIR.name_templates(kind='row')
+
+When to use: Compute a full exact lexical-template Frame.
+
+Returns: A cached navigable Frame requiring an open model.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Resources: Explicit exact analysis may use disk-backed working storage.
+
+kind is row or var. Tokenize integer slots preserving delimiters. Filter templates; rows/vars returns original members and related("slots") gives exact minimum, maximum and distinct counts. Names are lexical hypotheses, not structural evidence. Keep group_key for navigation.
+
+See also: api.Model.ir, api.Frame.related
 
 ## api.IndexedResult.tensors
 
@@ -5437,7 +5480,7 @@ Lineage.proof [api.Lineage.proof]
 
 Replay stored lineage evidence with explicitly bound source snapshots.
 
-Lineage.proof(ident, *, models, memory_mb=128, disk_mb=None)
+Lineage.proof(ident, *, models, **options)
 
 When to use: Replay stored lineage evidence with explicitly bound source snapshots.
 
@@ -5983,7 +6026,7 @@ Model.indexed [api.Model.indexed]
 
 Retrieve or discover indexed coordinates with explicit structural configuration.
 
-Model.indexed(*, rows=None, vars=None, depth=2, method='template', memory_mb=128, **options)
+Model.indexed(*, rows=None, vars=None, depth=2, method='template', memory_mb=128, disk_mb=None, **options)
 
 When to use: Retrieve or discover indexed coordinates with explicit structural configuration.
 
@@ -6111,6 +6154,985 @@ Advanced feature analysis [api.analysis]
 
 Explicit feature rules returning Frames.
 
+When to use: Explicit feature rules returning Frames.
+
 Use analysis.families or analysis.signatures with an explicit method. The Model family methods default to template structural.
 
 See also: api.analysis.families, api.analysis.signatures, concept.families
+
+## api.CertificateBatch
+
+CertificateBatch [api.CertificateBatch]
+
+Immutable ragged source arrays for exact certificate execution.
+
+CertificateBatch(offsets: object, sources: object, multipliers: object = 1, sides: object = 'ub', kinds: object = 'row', *, memory_mb: float = 128, disk_mb: object = None) -> None
+
+When to use: Immutable ragged source arrays for exact certificate execution.
+
+Inputs: offsets has target_count+1 entries, starts at 0, is nondecreasing and ends at len(sources). sources contains nonnegative entity IDs. multipliers, sides and kinds are scalars or source-aligned arrays.
+
+Returns: Compact certificate input; not a proof.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Illustrative example (requires caller-provided inputs):
+witnesses = mf.CertificateBatch(offsets=[0, 2], sources=[a.id, b.id])
+
+Public original-fact sources use kinds="row"/"var" and sides="lb"/"ub"/"eq". Inequality multipliers must be nonnegative; equality multipliers may be signed. Slice offsets[i]:offsets[i+1] supplies target i. Use scalar/Frame adapters for proof or assumption sources; their indices require adapter-managed bindings.
+
+See also: api.CertificateBatch.paths, api.Checker.linear_many
+
+## api.CertificateBatch.paths
+
+CertificateBatch.paths [api.CertificateBatch.paths]
+
+Compile source row-ID paths with unit multipliers and upper sides.
+
+CertificateBatch.paths(paths, *, memory_mb=128, disk_mb=None)
+
+When to use: Compile source row-ID paths with unit multipliers and upper sides.
+
+Inputs: One iterable of source row IDs per target, in target order. Empty paths are allowed.
+
+Returns: CertificateBatch with multipliers=1, sides="ub", kinds="row".
+
+Does not establish: A path is an unchecked witness. The linear checker must verify the original coefficients and bounds.
+
+Illustrative example (requires caller-provided inputs):
+witnesses = mf.CertificateBatch.paths([[a.id, b.id]])
+
+See also: api.Checker.linear_rows, api.CertificateBatch
+
+## api.Targets
+
+Targets [api.Targets]
+
+Existing entity targets or custom CSR affine targets.
+
+Targets(ids: object, kind: str = 'row', sides: object = 'ub', rhs: object = (), offsets: object = (), variables: object = (), coefficients: object = (), *, memory_mb: float = 128, disk_mb: object = None) -> None
+
+When to use: Existing entity targets or custom CSR affine targets.
+
+Inputs: Distinct nonnegative integer ids in target order. kind="row" uses existing rows and their selected sides. kind="var" uses variable IDs and explicit rhs. kind="affine" uses target labels plus rhs and CSR arrays.
+
+Returns: Compact target data; constructing it does not prove the claims.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Illustrative example (requires caller-provided inputs):
+targets = mf.Targets([r.id], kind="row", sides="ub")
+
+sides is lb/ub/eq, scalar or target-aligned. rhs is exact and scalar or target-aligned. For affine targets, offsets starts at 0, has len(ids)+1 entries and ends at len(variables)==len(coefficients); each slice contains its variable IDs and exact coefficients. kind="integrality" is used by specialized integrality proofs, not the linear certificate API.
+
+See also: api.Checker.linear_many, api.Checker.linear_rows
+
+## api.BatchProof
+
+BatchProof [api.BatchProof]
+
+Immutable checked batch with lazy target presentation.
+
+BatchProof [type]
+
+When to use: Immutable checked batch with lazy target presentation.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs
+
+## api.ProofRef
+
+ProofRef [api.ProofRef]
+
+A checked result position in a BatchProof.
+
+ProofRef [type]
+
+When to use: A checked result position in a BatchProof.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Scalar mathematical checkers and BatchProof.for_target return this view. Inspect status, conclusion, scope, dependencies and evidence; there is no explain() or instance replay() method. Replay its to_spec()/write() output with mf.Report.replay(spec_or_path, models=[m]); use BatchProof.replay only for whole-batch artifacts.
+
+See also: concept.proofs, api.Report.replay, api.BatchProof
+
+## api.ProofSelection
+
+ProofSelection [api.ProofSelection]
+
+Immutable selected positions in a BatchProof.
+
+ProofSelection [type]
+
+When to use: Immutable selected positions in a BatchProof.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs
+
+## api.BatchProof.target_ids
+
+BatchProof.target_ids [api.BatchProof.target_ids]
+
+Read compact integer target IDs in batch order.
+
+BatchProof.target_ids [property]
+
+When to use: Read compact integer target IDs in batch order.
+
+Returns: Immutable integer array; scalar/Frame adapters use positional internal IDs. Use the supplied external keys with for_target/select.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs, api.ProofRef
+
+## api.BatchProof.ok
+
+BatchProof.ok [api.BatchProof.ok]
+
+Test whether every target is PROVED.
+
+BatchProof.ok [property]
+
+When to use: Test whether every target is PROVED.
+
+Returns: bool; an empty batch is successful.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs, api.ProofRef
+
+## api.BatchProof.status
+
+BatchProof.status [api.BatchProof.status]
+
+Read the aggregate proof status.
+
+BatchProof.status [property]
+
+When to use: Read the aggregate proof status.
+
+Returns: PROVED if all pass; otherwise REFUTED if any refutation exists, or INCONCLUSIVE.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs, api.ProofRef
+
+## api.BatchProof.summary
+
+BatchProof.summary [api.BatchProof.summary]
+
+Read batch operation, target count and failure count.
+
+BatchProof.summary [property]
+
+When to use: Read batch operation, target count and failure count.
+
+Returns: dict; enumeration results add scope-specific statistics.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs, api.ProofRef
+
+## api.BatchProof.scope
+
+BatchProof.scope [api.BatchProof.scope]
+
+Read the snapshot, exact arithmetic, domain and assumption count.
+
+BatchProof.scope [property]
+
+When to use: Read the snapshot, exact arithmetic, domain and assumption count.
+
+Returns: dict; assumptions remain conditional and cannot authorize an edit.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs, api.ProofRef
+
+## api.BatchProof.require
+
+BatchProof.require [api.BatchProof.require]
+
+Require every target to be proved.
+
+BatchProof.require()
+
+When to use: Require every target to be proved.
+
+Returns: The same BatchProof, or ValidationError carrying this batch.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs, api.ProofRef
+
+## api.BatchProof.for_target
+
+BatchProof.for_target [api.BatchProof.for_target]
+
+Select one conclusion by its target key.
+
+BatchProof.for_target(key)
+
+When to use: Select one conclusion by its target key.
+
+Returns: Lazy ProofRef; integer ID for compact inputs, supplied external key for scalar/Frame adapters.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs, api.ProofRef
+
+## api.BatchProof.select
+
+BatchProof.select [api.BatchProof.select]
+
+Select several conclusions by their target keys.
+
+BatchProof.select(ids)
+
+When to use: Select several conclusions by their target keys.
+
+Returns: ProofSelection usable directly as Edit because evidence; key rules match for_target.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs, api.ProofRef
+
+## api.BatchProof.round_many
+
+BatchProof.round_many [api.BatchProof.round_many]
+
+Round proved variable bounds using model integrality.
+
+BatchProof.round_many(*, vars=None, ub=None, lb=None, memory_mb=128, disk_mb=None)
+
+When to use: Round proved variable bounds using model integrality.
+
+Inputs: A batch with kind="var" targets. vars optionally selects variable IDs; exactly one of ub or lb supplies requested exact bounds, scalar or aligned with vars.
+
+Returns: A new integer-domain BatchProof; source assumptions and dependencies are retained.
+
+Establishes: Requires model-integer variables and matching source/target sides. Floors source upper bounds or ceils lower bounds. A requested bound is PROVED only if the source was PROVED and its rounded bound implies the request.
+
+Does not establish: No model mutation. Integer-only evidence does not establish a relaxation bound.
+
+Failures: Affine/row targets, continuous variables, mismatched directions or specifying both/neither side raise. An unsupported stronger requested bound is INCONCLUSIVE.
+
+Illustrative example (requires caller-provided inputs):
+# Requires an integer variable x with a finite model upper bound.
+bounds = m.check.bound(vars=[x.id], values=[x.ub], side="ub").require()
+rounded = bounds.round_many(ub=x.ub // 1).require()
+
+See also: concept.proofs, api.ProofRef
+
+## api.BatchProof.to_spec
+
+BatchProof.to_spec [api.BatchProof.to_spec]
+
+Materialize an exact certificate graph for replay.
+
+BatchProof.to_spec(*, materialize_mb=None)
+
+When to use: Materialize an exact certificate graph for replay.
+
+Returns: Detached dictionary within materialize_mb; use write for large certificates.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs, api.ProofRef
+
+## api.BatchProof.write
+
+BatchProof.write [api.BatchProof.write]
+
+Export an exact certificate graph to an artifact directory.
+
+BatchProof.write(path, *, memory_mb=128, disk_mb=None)
+
+When to use: Export an exact certificate graph to an artifact directory.
+
+Returns: Saved path; serialized status does not grant live proof authority.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs, api.ProofRef
+
+## api.BatchProof.replay
+
+BatchProof.replay [api.BatchProof.replay]
+
+Bind a saved batch certificate to a model and rerun its checks.
+
+BatchProof.replay(spec, *, model, memory_mb=128, disk_mb=None)
+
+When to use: Bind a saved batch certificate to a model and rerun its checks.
+
+Returns: Fresh BatchProof. For ProofRef or PointReport artifacts use Report.replay(spec_or_path, models=[m]); never trusts stored status.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs, api.ProofRef
+
+## api.ProofRef.ok
+
+ProofRef.ok [api.ProofRef.ok]
+
+Read a selected checked result: ok.
+
+ProofRef.ok [property]
+
+When to use: Read a selected checked result: ok.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs
+
+## api.ProofRef.status
+
+ProofRef.status [api.ProofRef.status]
+
+Read a selected checked result: status.
+
+ProofRef.status [property]
+
+When to use: Read a selected checked result: status.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs
+
+## api.ProofRef.scope
+
+ProofRef.scope [api.ProofRef.scope]
+
+Read a selected checked result: scope.
+
+ProofRef.scope [property]
+
+When to use: Read a selected checked result: scope.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs
+
+## api.ProofRef.conclusion
+
+ProofRef.conclusion [api.ProofRef.conclusion]
+
+Read a selected checked result: conclusion.
+
+ProofRef.conclusion [property]
+
+When to use: Read a selected checked result: conclusion.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs
+
+## api.ProofRef.require
+
+ProofRef.require [api.ProofRef.require]
+
+Read a selected checked result: require.
+
+ProofRef.require()
+
+When to use: Read a selected checked result: require.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs
+
+## api.ProofRef.method
+
+ProofRef.method [api.ProofRef.method]
+
+Read a selected checked result: method.
+
+ProofRef.method [property]
+
+When to use: Read a selected checked result: method.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs
+
+## api.ProofRef.summary
+
+ProofRef.summary [api.ProofRef.summary]
+
+Read a selected checked result: summary.
+
+ProofRef.summary [property]
+
+When to use: Read a selected checked result: summary.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs
+
+## api.ProofRef.dependencies
+
+ProofRef.dependencies [api.ProofRef.dependencies]
+
+Read a selected checked result: dependencies.
+
+ProofRef.dependencies [property]
+
+When to use: Read a selected checked result: dependencies.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs
+
+## api.ProofRef.evidence
+
+ProofRef.evidence [api.ProofRef.evidence]
+
+Read a selected checked result: evidence.
+
+ProofRef.evidence [property]
+
+When to use: Read a selected checked result: evidence.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs
+
+## api.ProofRef.counterexample
+
+ProofRef.counterexample [api.ProofRef.counterexample]
+
+Read a selected checked result: counterexample.
+
+ProofRef.counterexample [property]
+
+When to use: Read a selected checked result: counterexample.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs
+
+## api.ProofRef.to_spec
+
+ProofRef.to_spec [api.ProofRef.to_spec]
+
+Read a selected checked result: to_spec.
+
+ProofRef.to_spec()
+
+When to use: Read a selected checked result: to_spec.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs
+
+## api.ProofRef.write
+
+ProofRef.write [api.ProofRef.write]
+
+Read a selected checked result: write.
+
+ProofRef.write(path, *, memory_mb=128, disk_mb=None)
+
+When to use: Read a selected checked result: write.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.proofs
+
+## api.Checker.linear_rows
+
+Checker.linear_rows [api.Checker.linear_rows]
+
+Check existing row IDs directly from ragged source witnesses.
+
+Checker.linear_rows(**kwargs)
+
+When to use: Check existing row IDs directly from ragged source witnesses.
+
+Inputs: targets=row IDs, witnesses=CertificateBatch or paths, side="ub"/"lb"/"eq", residual="exact"/"bounds".
+
+Returns: BatchProof.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Illustrative example (requires caller-provided inputs):
+proof = m.check.linear_rows(targets=dropped_ids, witnesses=retained_paths).require()
+final = m.edit().drop_rows(dropped_ids, because=proof).commit()
+
+See also: api.CertificateBatch, api.Edit.commit
+
+## api.Checker.bound
+
+Checker.bound [api.Checker.bound]
+
+Check direct variable-bound implications in a batch.
+
+Checker.bound(*, vars, values, side='ub')
+
+When to use: Check direct variable-bound implications in a batch.
+
+Inputs: vars=integer IDs, values=exact bounds, side="ub" or "lb".
+
+Returns: BatchProof.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.BatchProof.round_many
+
+## api.Checker.affine_integrality
+
+Checker.affine_integrality [api.Checker.affine_integrality]
+
+Check integer affine definitions independently of the target integer declaration.
+
+Checker.affine_integrality(*, vars, rows)
+
+When to use: Check integer affine definitions independently of the target integer declaration.
+
+Inputs: vars=defined variable IDs, rows=matching equality definition IDs.
+
+Returns: BatchProof usable for set_domains(...,kind="C",because=proof).
+
+Establishes: After normalization, constant and coefficients must be integers; all other variables must be integer. Dependencies survive into commit.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.Edit.set_domains
+
+## api.Checker.one_hot_affine
+
+Checker.one_hot_affine [api.Checker.one_hot_affine]
+
+Validate shared one-hot affine structure once, then check bound exclusions.
+
+Checker.one_hot_affine(*, groups)
+
+When to use: Validate shared one-hot affine structure once, then check bound exclusions.
+
+Inputs: groups=[(onehot_row_id, [(definition_row_id, defined_var_id), ...]), ...].
+
+Returns: Shared checker with bound_exclusions() -> BatchProof and expand_exclusions() -> reference expansion.
+
+Establishes: Checks complete disjoint one-hot groups, binary domains, normalized affine definitions and coverage. Does not assume business-specific names.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Illustrative example (requires caller-provided inputs):
+shared = m.check.one_hot_affine(groups=groups)
+zero = shared.bound_exclusions().require()
+tightened = m.edit().set_var_bounds(zero.target_ids, ub=0, because=zero).commit()
+
+See also: api.Edit.substitute_fixed
+
+## api.Edit.commit
+
+Edit.commit [api.Edit.commit]
+
+Require grounded MIP equivalence and objective-value preservation before building an overlay.
+
+Edit.commit()
+
+When to use: Require grounded MIP equivalence and objective-value preservation before building an overlay.
+
+Establishes: Checks target coverage and dependency closure rooted in final retained facts. Cyclic row deletion and cyclic integrality relaxation fail.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.Edit.build, api.Edit.summary
+
+## api.Edit.substitute_fixed
+
+Edit.substitute_fixed [api.Edit.substitute_fixed]
+
+Substitute finite fixed values and retain an exact lifting map.
+
+Edit.substitute_fixed(vars=None, *, because=None, drop_trivial_rows=True)
+
+When to use: Substitute finite fixed values and retain an exact lifting map.
+
+Inputs: vars=None freezes source variables with equal finite effective bounds; explicit selections are validated atomically. because supplements bound lineage. drop_trivial_rows defaults True.
+
+Establishes: Shifts all retained row bounds and objective constant; removes columns. A child diff exposes lifting.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Compiles selected CSC incidence once. Zero values do not decode coefficients. Affected empty rows are checked exactly; contradictions reject build/commit/write unless build(allow_infeasible=True). Coordinates are PROJECTED. Proved MIP fixedness grants EQUIVALENT_UNDER_EXTENSION, while LP scope follows its evidence. Objective representation gains constant_delta, with value offset zero after lifting. Edits remain source-relative; new rows cannot mention substituted variables.
+
+See also: api.Edit.commit
+
+## api.Model.audit
+
+Model.audit [api.Model.audit]
+
+Explicitly replay a persisted proof-carrying delta and compare numerical output.
+
+Model.audit(*, source, bundle=None, artifact=None)
+
+When to use: Explicitly replay a persisted proof-carrying delta and compare numerical output.
+
+Inputs: source=bound root Model; optional bundle path and artifact MPS path.
+
+Returns: Fresh audit receipt; historical status fields are ignored.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.Model.write
+
+## api.Model.content_hash
+
+Model.content_hash [api.Model.content_hash]
+
+Explicitly compute a numerical fingerprint; snapshot construction does not compute it.
+
+Model.content_hash [property]
+
+When to use: Explicitly compute a numerical fingerprint; snapshot construction does not compute it.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: concept.identity
+
+## api.LinearCertificate
+
+LinearCertificate [api.LinearCertificate]
+
+Snapshot-bound typed input to the exact linear checker; never a proof.
+
+LinearCertificate [type]
+
+When to use: Snapshot-bound typed input to the exact linear checker; never a proof.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.Checker.linear_many
+
+## api.TransitiveReductionResult
+
+TransitiveReductionResult [api.TransitiveReductionResult]
+
+Complete retained and removed edge views, ragged retained-edge witnesses and execution statistics.
+
+TransitiveReductionResult [type]
+
+When to use: Complete retained and removed edge views, ragged retained-edge witnesses and execution statistics.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit. max_output_rows defaults to 1,000,000; exceeding it fails the whole call. None explicitly removes that limit.
+
+See also: api.ops.graph.transitive_reduction
+
+## api.PatchPlan
+
+PatchPlan [api.PatchPlan]
+
+Immutable MPS serialization plan with support reasons and physical record actions.
+
+PatchPlan [type]
+
+When to use: Immutable MPS serialization plan with support reasons and physical record actions.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.Model.write
+
+## api.PatchNotSupportedError
+
+PatchNotSupportedError [api.PatchNotSupportedError]
+
+Strict patch output cannot represent this edit or source format.
+
+PatchNotSupportedError [type]
+
+When to use: Strict patch output cannot represent this edit or source format.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.Model.write
+
+## api.SubstitutionInfeasibleError
+
+SubstitutionInfeasibleError [api.SubstitutionInfeasibleError]
+
+An affected empty row excludes activity zero.
+
+SubstitutionInfeasibleError [type]
+
+When to use: An affected empty row excludes activity zero.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.Edit.substitute_fixed
+
+## api.Model.patch_plan
+
+Model.patch_plan [api.Model.patch_plan]
+
+Plan source patch support without sealing an edit or replaying proofs.
+
+Model.patch_plan(*, format='mps', memory_mb=128, disk_mb=None)
+
+When to use: Plan source patch support without sealing an edit or replaying proofs.
+
+Returns: PatchPlan: STREAM_PATCH or CANONICAL_REQUIRED.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+
+See also: api.Model.write
+
+## api.Model.lift
+
+Model.lift [api.Model.lift]
+
+Restore fixed variables to the direct parent or a requested ancestor.
+
+Model.lift(solution, *, ancestor=None)
+
+When to use: Restore fixed variables to the direct parent or a requested ancestor.
+
+Inputs: Complete snapshot-qualified exact solution values.
+
+Returns: Frame(var,value). Does not check feasibility.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.Edit.substitute_fixed
+
+## api.Edit.patch_plan
+
+Edit.patch_plan [api.Edit.patch_plan]
+
+Plan source patch support without sealing an edit or replaying proofs.
+
+Edit.patch_plan(*, format='mps')
+
+When to use: Plan source patch support without sealing an edit or replaying proofs.
+
+Returns: PatchPlan: STREAM_PATCH or CANONICAL_REQUIRED.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Resources: Working memory defaults to 128 MiB (minimum 16 KiB). Disk spill is exact; the budget is not a process RSS limit.
+
+See also: api.Model.write
+
+## api.Edit.lift
+
+Edit.lift [api.Edit.lift]
+
+Restore fixed variables to the direct parent or a requested ancestor.
+
+Edit.lift(solution, *, ancestor=None)
+
+When to use: Restore fixed variables to the direct parent or a requested ancestor.
+
+Inputs: Complete snapshot-qualified exact solution values.
+
+Returns: Frame(var,value). Does not check feasibility.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.Edit.substitute_fixed
+
+## api.Edit.write
+
+Edit.write [api.Edit.write]
+
+Validate the final edit, write and audit atomically, then seal on success.
+
+Edit.write(path, *, format=None, strategy='auto', audit='readback', **options)
+
+When to use: Validate the final edit, write and audit atomically, then seal on success.
+
+Inputs: Fresh path; strategy auto/patch/canonical; audit readback or None.
+
+Returns: Write receipt.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.Edit.commit, api.Model.write
+
+## api.WriteReceipt
+
+WriteReceipt [api.WriteReceipt]
+
+Immutable numerical artifact readback receipt with writer, digest and phase timings.
+
+WriteReceipt [type]
+
+When to use: Immutable numerical artifact readback receipt with writer, digest and phase timings.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.Model.write
+
+## api.PointReport
+
+PointReport [api.PointReport]
+
+Exact point-feasibility result returned by m.check.solution().
+
+PointReport [type]
+
+When to use: Exact point-feasibility result returned by m.check.solution().
+
+Returns: A result handle; obtain it through Checker.solution, not its constructor.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+status is PROVED or REFUTED; ok is a bool. summary includes the exact objective and violations; scope records integer-model feasibility. require() raises ValidationError on failure. evidence contains violating_rows and violating_vars Frames. This type has no implication conclusion or explain() method and cannot authorize Edit because. close() releases its point and diagnostic storage; finish consuming evidence before closing.
+
+See also: api.Checker.solution, api.PointReport.evidence, api.PointReport.close
+
+## api.PointReport.require
+
+PointReport.require [api.PointReport.require]
+
+Require exact integer-model point feasibility.
+
+PointReport.require()
+
+When to use: Require exact integer-model point feasibility.
+
+Returns: The same PointReport, or ValidationError carrying it.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.PointReport, api.Checker.solution
+
+## api.PointReport.evidence
+
+PointReport.evidence [api.PointReport.evidence]
+
+Inspect every violated row side, variable bound and integrality condition.
+
+PointReport.evidence [property]
+
+When to use: Inspect every violated row side, variable bound and integrality condition.
+
+Returns: Mapping with violating_rows and violating_vars Frames; requires an open model and point result.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.PointReport, api.Checker.solution
+
+## api.PointReport.to_spec
+
+PointReport.to_spec [api.PointReport.to_spec]
+
+Materialize the exact point for later validation.
+
+PointReport.to_spec(*, materialize_mb=None)
+
+When to use: Materialize the exact point for later validation.
+
+Returns: Detached dictionary within materialize_mb; no saved verdict is trusted.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.PointReport, api.Checker.solution
+
+## api.PointReport.write
+
+PointReport.write [api.PointReport.write]
+
+Write the exact point as a portable artifact.
+
+PointReport.write(path, *, memory_mb=128, disk_mb=None)
+
+When to use: Write the exact point as a portable artifact.
+
+Returns: Saved path; replay with Report.replay(path, models=[m]) reruns the point checker.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.PointReport, api.Checker.solution
+
+## api.PointReport.close
+
+PointReport.close [api.PointReport.close]
+
+Release retained point and violation storage.
+
+PointReport.close()
+
+When to use: Release retained point and violation storage.
+
+Returns: None; consume or detach needed evidence first.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.PointReport, api.Checker.solution
+
+## api.NumericDiff
+
+NumericDiff [api.NumericDiff]
+
+Numerical comparison of unrelated model snapshots returned by Model.diff().
+
+NumericDiff [type]
+
+When to use: Numerical comparison of unrelated model snapshots returned by Model.diff().
+
+Returns: A comparison handle; obtain it from target.diff(source).
+
+Does not establish: Names are a comparison alignment, not cross-snapshot Ref identity or a mathematical equivalence proof.
+
+Matches rows and variables by name for numerical comparison. rows_added/rows_changed and vars_added/vars_changed contain target IDs; rows_dropped and vars_dropped contain source IDs. numerically_equal also checks objective sense and constant. semantic stays UNKNOWN even when numerical values match. This is distinct from the ancestor ModelDiff and has no nnz_before/nnz_after or degree-statistics interface.
+
+See also: api.Model.diff, api.ModelDiff
+
+## api.OneHotAffine
+
+OneHotAffine [api.OneHotAffine]
+
+Validated shared one-hot affine structure returned by Checker.one_hot_affine().
+
+OneHotAffine [type]
+
+When to use: Validated shared one-hot affine structure returned by Checker.one_hot_affine().
+
+Returns: Shared checker; obtain it through m.check.one_hot_affine(groups=...).
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.Checker.one_hot_affine, api.OneHotAffine.bound_exclusions, api.OneHotAffine.expand_exclusions
+
+## api.OneHotAffine.bound_exclusions
+
+OneHotAffine.bound_exclusions [api.OneHotAffine.bound_exclusions]
+
+Prove that options violating a defined variable bound are zero.
+
+OneHotAffine.bound_exclusions()
+
+When to use: Prove that options violating a defined variable bound are zero.
+
+Returns: Integer-domain BatchProof of option upper bounds equal to zero; may be empty.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.Checker.one_hot_affine, api.Edit.set_var_bounds
+
+## api.OneHotAffine.expand_exclusions
+
+OneHotAffine.expand_exclusions [api.OneHotAffine.expand_exclusions]
+
+Expand exclusions into explicit linear certificates and rounding.
+
+OneHotAffine.expand_exclusions()
+
+When to use: Expand exclusions into explicit linear certificates and rounding.
+
+Returns: Integer-domain BatchProof; an explicit reference calculation that can be more expensive than bound_exclusions.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Failures: A degenerate inconsistent affine range requires a separate contradiction certificate.
+
+See also: api.OneHotAffine.bound_exclusions, api.BatchProof.round_many

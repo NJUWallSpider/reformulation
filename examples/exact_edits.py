@@ -24,14 +24,15 @@ def main():
             second.drop_rows(copy, because=proof)
             restored = second.build()
             try:
-                assert restored.version == source.version
+                assert restored.shape == source.shape and restored.nnz == source.nnz
                 with TemporaryDirectory() as tmp:
                     restored.save(Path(tmp) / "native")
                     lp = Path(tmp) / "restored.lp"
-                    restored.write_lp(lp)
+                    restored.write(lp)
                     mf.audit.roundtrip(restored, lp).require()
                     with mf.load(Path(tmp) / "native") as loaded:
-                        assert loaded.diff(candidate).semantic["mip"] == "SAME"
+                        assert loaded.diff(source).semantic["mip"] == "UNKNOWN"
+                        assert loaded.audit(source=source)["status"] == "PROVED"
                 print("Verified add/drop, native reload and exact LP audit passed.")
             finally:
                 restored.close()

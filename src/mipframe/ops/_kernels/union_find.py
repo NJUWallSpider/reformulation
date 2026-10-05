@@ -1,39 +1,20 @@
-"""Deterministic union-find with resident arrays or a paged SQLite state."""
+"""Deterministic union-find with budgeted arrays."""
 
 import numpy as np
 
 
 class DSU:
-    def __init__(self, n, ctx=None):
-        self.ctx = ctx
-        self.memory = ctx is None or ctx.reserve(n * 17)
-        if self.memory:
-            self.p = np.arange(n, dtype=np.int64)
-            self.rank = np.zeros(n, dtype=np.int8)
-            self.minimum = np.arange(n, dtype=np.int64)
-        else:
-            self.table = ctx.raw_table(
-                "id INTEGER PRIMARY KEY,p INTEGER,r INTEGER,minimum INTEGER"
-            )
-            for i in range(n):
-                ctx.execute(f"INSERT INTO {self.table} VALUES(?,?,0,?)", (i, i, i))
-        if ctx:
-            ctx.paths.add("array union-find" if self.memory else "paged union-find")
-
-    def state(self, x):
-        if self.memory:
-            return int(self.p[x]), int(self.rank[x]), int(self.minimum[x])
-        return self.ctx.execute(
-            f"SELECT p,r,minimum FROM {self.table} WHERE id=?", (x,)
-        ).fetchone()
-
-    def update(self, x, p, r, m):
-        if self.memory:
-            self.p[x], self.rank[x], self.minimum[x] = p, r, m
-        else:
-            self.ctx.execute(
-                f"UPDATE {self.table} SET p=?,r=?,minimum=? WHERE id=?", (p, r, m, x)
-            )
+    def __init__(self,n,ctx=None):
+        from mipframe.data.runtime import WorkContext
+        self.work=ctx.work if ctx is not None else WorkContext()
+        self.p=self.work.array(n,'<i8');self.rank=self.work.array(n,'i1',zero=True)
+        self.minimum=self.work.array(n,'<i8')
+        block=max(1,self.work.memory//128)
+        for start in range(0,n,block):self.p[start:start+block]=np.arange(start,min(n,start+block))
+        self.minimum[:]=self.p
+        if ctx is not None:ctx.paths.add('array union-find')
+    def state(self,x):return int(self.p[x]),int(self.rank[x]),int(self.minimum[x])
+    def update(self,x,p,r,m):self.p[x],self.rank[x],self.minimum[x]=p,r,m
 
     def find(self, x):
         while True:

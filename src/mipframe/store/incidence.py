@@ -44,37 +44,11 @@ class Target:
         fs = getattr(idx, "store", None)
         if hasattr(fs, "result"):
             global_store = fs.result._family_stores.get((kind, fs.depth))
-            row = fs.db.execute(
-                "SELECT color,n FROM families WHERE fid=?", (idx.fid,)
-            ).fetchone()
+            record=fs.find('color',idx.fid-1)
+            row=(record[4],record[2])
             if fs is global_store and idx.ordinals == range(row[1]):
                 self.colors = fs.result._store.array(fs.result._config, kind, fs.depth)
                 self.color = row[0]
-
-    def prepared(self, store):
-        if (
-            self.colors is not None
-            or isinstance(self.ids, range)
-            or (
-                hasattr(self.ids, "store")
-                and getattr(self.ids, "unique", False)
-                and getattr(self.ids, "positions", None) is None
-            )
-        ):
-            return self
-        result = object.__new__(Target)
-        result.frame, result.colors = self.frame, None
-        table = store.table("ordinal INTEGER PRIMARY KEY, id INTEGER UNIQUE")
-        store.db.executemany(
-            f"INSERT OR IGNORE INTO {table}(id) VALUES(?)",
-            ((int(i),) for i in self.ids),
-        )
-        from mipframe.store.query_store import SQLIndex
-
-        result.ids = SQLIndex(
-            store, f"SELECT id FROM {table} ORDER BY ordinal", unique=True
-        )
-        return result
 
     def mask(self, ids):
         self.frame._owner.model

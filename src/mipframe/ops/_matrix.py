@@ -13,75 +13,49 @@ def compute(ctx, selection, values, value, missing, transpose):
     if getattr(selection, "_entity_axis", None) != axis:
         raise SchemaError("Wrong output axis")
     owner = selection._owner
-    table, schema = ctx.stage_checked(
-        values, (input_axis, value), unique=(input_axis,), nonnull=(input_axis,)
-    )
-    if not ref_type(owner, input_axis).compatible(schema[input_axis]):
-        raise SchemaError("Input vector uses the wrong axis or snapshot")
-    if schema[value].kind not in ("int", "number"):
-        raise SchemaError("Vector values must be exact numbers")
-    count = owner.shape[0 if transpose else 1]
-    bad = f"SELECT c0,c1 FROM {table} WHERE c0<0 OR c0>=? OR c1 IS NULL OR c1 IN ('inf','-inf') ORDER BY ordinal"
-    if ctx.execute(f"SELECT 1 FROM ({bad}) LIMIT 1", (count,)).fetchone():
-        ctx.invalid(
-            "Invalid vector ID, missing value, or nonfinite value",
-            schema,
-            ctx.rows(bad, schema, (count,)),
-        )
-    ctx.execute(f"CREATE UNIQUE INDEX {table}_input ON {table}(c0)")
-    required = ctx.raw_table("id INTEGER PRIMARY KEY")
-    m = owner.model
-    block = max(1, ctx.memory // 128)
-    axis_table, _ = ctx.stage_checked(selection, (axis,), nonnull=(axis,))
-
-    def source_ids():
-        return (
-            r[0] for r in ctx.execute(f"SELECT c0 FROM {axis_table} ORDER BY ordinal")
-        )
-
-    if missing == "error":
-        for source in source_ids():
-            for targets, _ in m.sparse.blocks(axis, source, block):
-                for target in targets:
-                    ctx.execute(
-                        f"INSERT OR IGNORE INTO {required} VALUES(?)", (int(target),)
-                    )
-        query = f"SELECT id FROM {required} r WHERE NOT EXISTS(SELECT 1 FROM {table} x WHERE x.c0=r.id) ORDER BY id"
-        if ctx.execute(f"SELECT 1 FROM ({query}) LIMIT 1").fetchone():
-            out = {input_axis: ref_type(owner, input_axis)}
-            ctx.invalid(
-                'Missing required vector values; use missing="zero" for a sparse vector',
-                out,
-                ctx.rows(query, out),
-            )
-    output = "value" if transpose else "activity"
-
+    from mipframe.frame.array_source import read_columns
+    from mipframe.data.batch import scalar
+    if not {input_axis,value}<=set(values.schema):
+        raise SchemaError('Missing vector axis or value column')
+    schema={n:values.schema[n] for n in (input_axis,value)}
+    if not ref_type(owner,input_axis).compatible(schema[input_axis]):
+        raise SchemaError('Input vector uses the wrong axis or snapshot')
+    if schema[value].kind not in ('int','number'):
+        raise SchemaError('Vector values must be exact numbers')
+    columns=read_columns(values,(input_axis,value),ctx).columns
+    from mipframe.data.ids import IDSet
+    from mipframe.data.relations import Relation,build,search_range
+    m=owner.model;live=IDSet(m.entity_ids(input_axis),work=ctx.work)
+    vector=Relation(columns,len(columns[input_axis]),ctx.work);order=vector.order((input_axis,))
+    def invalid():
+        for key,group in vector.groups((input_axis,)):
+            ident=key[0]
+            for at,i in enumerate(group):
+                number=scalar(columns[value][int(i)])
+                if ident is None or ident not in live or at>0 or number is None or number in (-float('inf'),float('inf')):
+                    yield {input_axis:ident,value:number}
+    bad=build(ctx.work,schema,invalid())
+    if len(bad):ctx.invalid('Invalid or duplicate vector ID, missing value, or nonfinite value',schema,bad.records())
+    def lookup(ident,default=0):
+        lo,hi=search_range(vector,order,(input_axis,),(ident,))
+        return default if lo==hi else scalar(columns[value][int(order[lo])])
+    ids=read_columns(selection,(axis,),ctx).columns[axis]
+    adjacent=m.iter_column if transpose else m.iter_terms
+    if missing=='error':
+        absent=IDSet((target for source in ids for target,_ in adjacent(int(source)) if lookup(target,None) is None),work=ctx.work)
+        if len(absent):ctx.invalid('Missing required vector values; use missing="zero" for a sparse vector',
+            {input_axis:ref_type(owner,input_axis)},({input_axis:i} for i in absent))
+    output='value' if transpose else 'activity'
     def records():
-        for source in source_ids():
-            total = Fraction(0)
-            for targets, positions in m.sparse.blocks(axis, source, block):
-                for target, pos in zip(targets, positions):
-                    item = ctx.execute(
-                        f"SELECT c1 FROM {table} WHERE c0=?", (int(target),)
-                    ).fetchone()
-                    if item is not None:
-                        scalar = Fraction(item[0])
-                        if scalar:
-                            total += m.num(int(m.coeff_id[int(pos)])) * scalar
-                            ctx.check_size(total)
-            yield {axis: int(source), output: total}
-
-    ctx.paths.add(
-        "CSC exact multiply-accumulate"
-        if transpose
-        else "CSR exact multiply-accumulate"
-    )
-    return ctx.publish(
-        {axis: ref_type(owner, axis), output: DType("number")},
-        records(),
-        key=(axis,),
-        domains={axis: selection},
-    )
+        for source in ids:
+            total=0
+            for target,coefficient in adjacent(int(source)):
+                total += coefficient*lookup(target)
+                ctx.check_size(total)
+            yield {axis:int(source),output:total}
+    ctx.paths.add('CSC exact multiply-accumulate' if transpose else 'CSR exact multiply-accumulate')
+    return ctx.publish({axis:ref_type(owner,axis),output:DType('number')},records(),
+                       key=(axis,),domains={axis:selection})
 
 
 @operation("matrix.activity")

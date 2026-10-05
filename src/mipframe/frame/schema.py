@@ -9,15 +9,7 @@ from math import isfinite
 from mipframe.store.numbers import MIPFrameError
 
 
-class SchemaError(MIPFrameError):
-    """
-    MIPFRAME HELP BEGIN
-    Diagnostic exception; inspect original message and any attached complete Report.
-
-    Full contract: mf.help("api.SchemaError")
-    MIPFRAME HELP END
-    """
-    pass
+from mipframe.core.errors import SchemaError
 
 
 @dataclass(frozen=True)
@@ -57,7 +49,8 @@ class Ref:
         """
         if (model.uid, model.version) != (self.uid, self.version):
             raise SchemaError("Reference and model snapshot differ")
-        return (model.rows if self.kind == "row" else model.vars).loc[self.id]
+        from mipframe.entity import bind_identity
+        return bind_identity(model,self.kind,self.id)
 
 
 @dataclass(frozen=True)

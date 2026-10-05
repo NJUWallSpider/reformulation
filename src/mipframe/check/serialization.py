@@ -32,9 +32,7 @@ def topology(root):
 
 def events(report):
     if getattr(report, "_batch", None) is not None:
-        from mipframe.check.batch import batch_events
-        yield from batch_events(report)
-        return
+        raise InvalidCertificateError("Legacy batch Report serialization is unsupported; export BatchProof instead")
     reports = topology(report)
     ids = {id(r): i for i, r in enumerate(reports)}
     yield dict(type="header", format="mipframe-proof", version=1, root=ids[id(report)])
@@ -65,49 +63,7 @@ def events(report):
         )
         if recipe["kind"] in ("frame", "indexed", "model_integrity", "execution", "algorithm_contract"):
             continue
-        ctx = r._store
-        for ident, rel, c, axis, entity, side in ctx.execute(
-            f"SELECT * FROM {ctx.claims} ORDER BY id"
-        ):
-            yield dict(
-                type="claim",
-                node=i,
-                id=ident,
-                relation=rel,
-                constant=c,
-                axis=axis,
-                entity=entity,
-                side=side,
-            )
-        for cl, v, c in ctx.execute(f"SELECT * FROM {ctx.terms} ORDER BY claim,v"):
-            yield dict(type="term", node=i, claim=cl, var=v, coef=c)
-        for (ident,) in ctx.execute(
-            f"SELECT claim FROM {ctx.assumptions} ORDER BY claim"
-        ):
-            yield dict(type="assumption", node=i, claim=ident)
-        for ident, d, cl, a, p in ctx.execute(
-            f"SELECT * FROM {ctx.sources} ORDER BY id"
-        ):
-            yield dict(
-                type="source",
-                node=i,
-                id=ident,
-                direction=d,
-                claim=cl,
-                multiplier=a,
-                parent=p,
-            )
-        if recipe["kind"] == "solution":
-            for row in r.evidence["values"]._raw(("var", "value"), ctx):
-                yield dict(
-                    type="value", node=i, var=row["var"], value=str(row["value"])
-                )
-        if recipe["kind"] == "enumerate":
-            for row in r.evidence["variables"]._raw(("var",), ctx):
-                yield dict(type="variable", node=i, var=row["var"])
-        if recipe["kind"] == "cases":
-            for row in r.evidence["cases"]._raw(("value", "parent"), ctx):
-                yield dict(type="case", node=i, value=str(row["value"]), parent=row["parent"])
+        raise InvalidCertificateError('Numerical proofs must use the compact CertificateBatch serializer')
 
 
 def report_spec(report):

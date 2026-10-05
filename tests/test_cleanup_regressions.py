@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 import mipframe as mf
-from mipframe.check.workspace import ProofWorkspace
+from mipframe.frame.executor import Context
 
 
 @pytest.fixture
@@ -61,23 +61,14 @@ def test_exact_sum_rejects_indeterminate_infinities():
 
 
 def test_workspace_reuses_indexes_across_joins_and_membership():
-    frame = mf.Frame.from_records([{'x':i} for i in range(5)], schema={'x':'int'})
-    frame = frame.distinct()
-    ctx = ProofWorkspace((), memory_mb=0.015625, max_output_rows=None)
-    try:
-        inventories = []
+    frame=mf.Frame.from_records(({'x':i} for i in range(5)),schema={'x':'int'}).distinct()
+    query=frame.join(frame,on='x',cardinality='1:1')
+    with Context(memory_mb=.015625) as ctx:
+        first,_=ctx.stage(query)
         for _ in range(25):
-            ctx.begin()
-            table, _ = ctx.stage(frame.join(frame, on='x', cardinality='1:1'))
-            assert ctx.execute(f'SELECT count(*) FROM {table}').fetchone()[0] == 5
-            assert ctx.contains(frame, 3) and not ctx.contains(frame, 8)
-            inventories.append(ctx.execute(
-                "SELECT type,name FROM sqlite_master WHERE type IN ('table','index') ORDER BY type,name"
-            ).fetchall())
-            ctx.reset()
-        assert all(items == inventories[0] for items in inventories)
-    finally:
-        ctx.close()
+            assert ctx.stage(query)[0] is first
+            assert len(first)==5 and ctx.contains(frame,3) and not ctx.contains(frame,8)
+        assert ctx.work.ledger.peak_resident<=16384
 
 
 @pytest.mark.parametrize('count', [0, 1, 3])
@@ -125,8 +116,9 @@ def test_verified_receipt_only_keeps_coordinate_maps(m):
     edit = m.edit()
     edit.add_row(m.vars.by_name('x') <= 3)
     with edit.build() as child:
-        receipt = child._verified_edit
-        for table in (receipt.rows, receipt.vars):
-            assert [r[1] for r in receipt.s.execute(f'PRAGMA table_info({table})')] == ['id', 'ns', 'old']
-        assert child.diff(m).rows_added.count() == 1
+        from mipframe.check.kernel import facts
+        assert facts(child)._base is facts(m)
+        assert child.model._arrays is None and child.model._db is None
+        assert child.lineage.mapping('var',source=m).count()==m.shape[1]
+        assert sum(len(d.add_rows) for d in child.diff(m).deltas) == 1
     edit.close()

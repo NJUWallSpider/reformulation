@@ -20,63 +20,40 @@ from mipframe.frame.executor import Context
 from mipframe.frame.materialized import stored_frame
 
 
-def from_records(records, *, schema, key=None, models=(), memory_mb=None):
+def from_records(records, *, schema, key=None, models=(), memory_mb=None, disk_mb=None):
     """
+    Create an exact typed relation, spilling only to array artifacts.
+
     MIPFRAME HELP BEGIN
     Create a typed relation from explicit records.
 
     Full contract: mf.help("api.Frame.from_records")
     MIPFRAME HELP END
     """
-    if isinstance(models, dict):
-        models = tuple(models.values())
-    schema = {n: t if isinstance(t, DType) else DType(t) for n, t in schema.items()}
-    ctx = Context(models, memory_mb)
+    models=tuple(models.values()) if isinstance(models,dict) else tuple(models)
+    schema={n:t if isinstance(t,DType) else DType(t) for n,t in schema.items()}
+    key=(key,) if isinstance(key,str) else tuple(key) if key is not None else None
+    if key is not None and not set(key)<=set(schema):raise SchemaError('Unknown key column')
+    ctx=Context(models,memory_mb,disk_mb)
+    def rows():
+        for record in records:
+            if set(record)!=set(schema):raise SchemaError('Record columns must match the declared schema')
+            row={n:normalize(record[n],t) for n,t in schema.items()}
+            for n,t in schema.items():
+                if t.kind=='ref' and row[n] is not None:
+                    for model in models:
+                        if model.uid==t.uid:
+                            if model.version!=t.version:raise SchemaError('Reference version mismatch')
+                            if row[n] not in model.model.entity_ids(t.axis):raise SchemaError('Reference ID outside the declared model axis')
+            yield row
     try:
-        table = ctx.table(schema)
-
-        def rows():
-            for record in records:
-                if set(record) != set(schema):
-                    raise SchemaError("Record columns must match the declared schema")
-                row = {n: normalize(record[n], t) for n, t in schema.items()}
-                for n, t in schema.items():
-                    if t.kind == "ref" and row[n] is not None:
-                        for model in models:
-                            if model.uid == t.uid:
-                                if model.version != t.version:
-                                    raise SchemaError("Reference version mismatch")
-                                total = len(
-                                    model.model.rows
-                                    if t.axis == "row"
-                                    else model.model.variables
-                                )
-                                if row[n] >= total:
-                                    raise SchemaError(
-                                        "Reference ID outside the declared model axis"
-                                    )
-                yield row
-
-        ctx.append(table, schema, rows())
+        from mipframe.data.relations import build
+        table=build(ctx.work,schema,rows())
         if key is not None:
-            key = (key,) if isinstance(key, str) else tuple(key)
-            if not set(key) <= set(schema):
-                raise SchemaError("Unknown key column")
-            columns = ",".join("c" + str(tuple(schema).index(n)) for n in key)
-            query = (
-                f"SELECT 1 FROM {table} GROUP BY {columns} HAVING count(*)>1 LIMIT 1"
-                if columns
-                else f"SELECT 1 FROM {table} LIMIT 1 OFFSET 1"
-            )
-            if ctx.execute(query).fetchone():
-                raise SchemaError("Declared key is not unique")
-        result = stored_frame(ctx, table, schema, key=key)
-        result._known_count = ctx.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
-        result._query.spec = {"kind": "relation", "relation": str(uuid.uuid4())}
-        return result
-    except BaseException:
-        ctx.close()
-        raise
+            for _,ids in table.groups(key):
+                if len(ids)>1:raise SchemaError('Declared key is not unique')
+        return stored_frame(ctx,table,schema,key=key)
+    except BaseException:ctx.close();raise
 
 
 def expression_spec(expr, frame_spec):
@@ -274,7 +251,7 @@ def frame_from_spec(spec, *, models, relations=None):
     return build(spec["plan"])
 
 
-def write(frame, path, *, format=None):
+def write(frame, path, *, format=None, memory_mb=None, disk_mb=None):
     path = Path(path)
     fmt = format or path.suffix.lstrip(".")
     if fmt not in ("jsonl", "parquet"):
@@ -297,8 +274,8 @@ def write(frame, path, *, format=None):
         if fmt == "jsonl":
             with temporary.open("w") as out:
                 out.write(json.dumps({"mipframe": metadata}) + "\n")
-                for batch in frame.iter_batches():
-                    for row in batch.to_records():
+                for batch in frame.iter_batches(memory_mb=memory_mb,disk_mb=disk_mb):
+                    for row in batch._records():
                         out.write(
                             json.dumps({n: encode(v) for n, v in row.items()}) + "\n"
                         )
@@ -330,9 +307,9 @@ def write(frame, path, *, format=None):
                 fields, metadata={b"mipframe": json.dumps(metadata).encode()}
             )
             with pq.ParquetWriter(temporary, schema) as writer:
-                for batch in frame.iter_batches():
+                for batch in frame.iter_batches(memory_mb=memory_mb,disk_mb=disk_mb):
                     values = []
-                    for raw in batch.to_records():
+                    for raw in batch._records():
                         row = {}
                         for n, v in raw.items():
                             t = frame.schema[n]

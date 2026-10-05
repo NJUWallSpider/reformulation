@@ -269,19 +269,17 @@ def test_empty_selection_has_empty_declared_relations(model):
 def test_numeric_predicates_avoid_unrequested_coefficient_distributions(model, monkeypatch):
     from contextlib import contextmanager
     import mipframe.ir.family_attributes as numeric
-    original = numeric.observations
-    queries = []
-    @contextmanager
-    def traced(*args, **kwargs):
-        with original(*args, **kwargs) as db:
-            db.set_trace_callback(queries.append)
-            yield db
-    monkeypatch.setattr(numeric, 'observations', traced)
+    original = numeric.Observations.distributions
+    requested=[]
+    def traced(self,orientation,kind,filters):
+        for record in original(self,orientation,kind,filters):
+            requested.append(record[1]);yield record
+    monkeypatch.setattr(numeric.Observations,'distributions',traced)
     source = model.row_families.related('parameters')
     filtered = source.where(mf.col('quantity').isin(('coefficient',)), basis='raw')
     actual = filtered.to_records()
     assert actual
-    assert not any('WITH present' in q or 'SELECT DISTINCT value FROM terms' in q for q in queries)
+    assert set(requested)=={'coefficient'}
     assert actual == [r for r in source.to_records() if r['basis'] == 'raw' and r['quantity'] == 'coefficient']
     restored = mf.frame_from_spec(json.loads(json.dumps(filtered.to_spec())), models={model.uid:model})
     assert restored.to_records() == actual
@@ -339,15 +337,8 @@ def test_pre_refactor_native_v3_and_membership_specifications(tmp_path):
     fixture = Path(__file__).parent / 'fixtures' / 'families-native-v3.zip'
     with zipfile.ZipFile(fixture) as archive:
         archive.extractall(tmp_path)
-    legacy = json.loads((tmp_path / 'queries.json').read_text())
-    with mf.load(tmp_path / 'native-v3') as m:
-        assert m.uid == legacy['uid']
-        for spec,expected in zip(legacy['specs'],legacy['expected']):
-            members = mf.frame_from_spec(spec,models={m.uid:m})
-            actual = [[r.row.id if 'row' in members.schema else r.var.id,r.family] for r in members]
-            assert actual == expected
-        m.indexed(depth=3).verify().require()
-        assert m.row_families.rows.count() == 3
+    with pytest.raises(mf.MIPFrameError,match='re-import'):
+        mf.load(tmp_path/'native-v3')
 
 
 def test_row_local_signatures_do_not_build_global_grouping(model,monkeypatch):

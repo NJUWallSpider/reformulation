@@ -45,13 +45,18 @@ class IROptions:
     """Independent budgets for compressed IR rendering (not machine data)."""
 
     def __init__(self):
+        self.max_local_shapes = 8
+        self.max_name_templates = 8
+        self.max_values = 8
+        self.max_histogram = 8
+        self.max_chars = 6000
         self.max_var_roles = 12
         self.max_row_families = 15
         self.max_attention = 6
         self.max_splits = 8
 
     def __setattr__(self, name, value):
-        if name not in {"max_var_roles", "max_row_families", "max_attention", "max_splits"}:
+        if name not in {"max_local_shapes", "max_name_templates", "max_values", "max_histogram", "max_chars", "max_var_roles", "max_row_families", "max_attention", "max_splits"}:
             raise AttributeError(name)
         if type(value) is not int:
             raise TypeError("IR display limits must be integers")
@@ -64,11 +69,18 @@ class QueryOptions:
     def __init__(self):
         self.memory_mb = 128
         self.materialize_mb = 128
+        self.disk_mb = None
 
     def __setattr__(self, name, value):
+        if name == 'disk_mb':
+            if value is not None:
+                from math import isfinite
+                if isinstance(value,bool) or not isinstance(value,(int,float)) or not isfinite(value) or value<=0:raise ValueError('disk_mb must be finite and positive')
+            object.__setattr__(self,name,value)
+            return
         if name not in ('memory_mb', 'materialize_mb'):
             raise AttributeError(name)
-        from mipframe.store.query_store import memory_bytes
+        from mipframe.core.resources import memory_bytes
         memory_bytes(value)
         object.__setattr__(self, name, value)
 

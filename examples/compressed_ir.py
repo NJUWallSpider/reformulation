@@ -1,17 +1,16 @@
-"""Read a factual model map, then drill down into one structural family."""
+"""Read a cheap scan, then explicitly query exact local shapes."""
 from pathlib import Path
-
 import mipframe as mf
 
 with mf.read(Path(__file__).parent / 'data' / 'tiny.lp') as model:
     print(model.ir.show())
     snapshot = model.ir.to_dict()
-    families = snapshot['structure']['row_families']
-    if families:
-        record = families[0]
-        rows = model.family(f"{record['id']}@{record['depth']}").rows
-        view = model.matrix.view(rows=rows, vars=rows.vars)
-        print(view.entries.head(5))
+    shapes = model.ir.row_shapes()
+    rows = shapes.head(1).rows
+    print(rows.terms.head(5))
+    print(model.ir.name_templates('var').related('slots'))
+    # These explicit accesses are lazy and do not alter the default snapshot.
+    model.ir.structure
+    assert model.ir.to_dict() == snapshot
 
-# This exact machine snapshot is independent of the closed model.
-assert snapshot['schema_version'] == '0.3'
+assert snapshot['schema_version'] == '0.4'

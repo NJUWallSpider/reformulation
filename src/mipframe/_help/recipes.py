@@ -1,5 +1,30 @@
 """Executable examples; inputs are set up by independent development fixtures."""
 
+QUICKSTART = r'''from pathlib import Path
+from tempfile import TemporaryDirectory
+import mipframe as mf
+
+with TemporaryDirectory() as directory:
+    source = Path(directory) / "input.lp"
+    source.write_text("\n".join([
+        "Minimize", " obj: x + y", "Subject To",
+        " keep: x + y <= 4", " redundant: x + y <= 4",
+        "Bounds", " 0 <= x <= 5", " 0 <= y <= 5", "End",
+    ]))
+    with mf.read(source) as m:
+        kept = m.rows.by_name("keep")
+        dropped = m.rows.by_name("redundant")
+        proof = m.check.linear_rows(
+            targets=[dropped.id], witnesses=[[kept.id]],
+        ).require()
+        with m.edit() as edit:
+            edit.drop_rows([dropped.id], because=proof)
+            with edit.commit() as final:
+                assert final.shape == (1, 2)
+                receipt = final.write(Path(directory) / "output.mps", audit="readback")
+                assert receipt.verified
+                print(receipt.writer, receipt.verified)'''
+
 
 def add_recipes(topic):
     def recipe(ident,title,when,inputs,pattern,code,establishes,limits,related):
@@ -9,6 +34,15 @@ def add_recipes(topic):
               body='\n\n'.join(['## When to use\n'+when+'\nInputs: '+inputs,
                     '## Primitive pattern\n'+pattern, '## Minimal code\n```python\n'+code+'\n```',
                     '## What it establishes\n'+establishes,'## What it does not establish\n'+limits]))
+
+    recipe('quickstart','Read, prove, commit and export a small model',
+      'Run a complete first example without an existing model or prepared witnesses.',
+      'Only mipframe and the Python standard library. All files are temporary and removed at context exit.',
+      'Import → select explicit rows → verify retained witness → commit → audited MPS write.',
+      QUICKSTART,
+      'The retained row implies the deleted row; commit checks grounded equivalence and readback checks the numerical output.',
+      'This example supplies its own witness. It does not discover redundant rows or solve the model.',
+      ('api.Checker.linear_rows','api.Edit.commit','api.Model.write'))
 
     recipe('roles','Inspect structural roles and raw coefficients',
       'A signature suggests repeated rows, but coefficients may vary.',
@@ -150,10 +184,10 @@ proof.require()
 proof.evidence
 with m.check.linear_batch(residual="bounds") as batch:
     batch.add(key="bound", target=target, using=[r.ub_claim])
-    batch.add(key="conditional", target=x <= 0, assume=[x.eq(0)])
     proofs = batch.run()
 proofs.require()
-assert proofs.for_target("conditional").scope["assumptions"] == 1''',
+conditional = m.check.linear(x <= 0, assume=[x.eq(0)], residual="bounds")
+assert conditional.scope["assumptions"] == 1''',
       'The exact supplied certificate implies the target within its recorded domain.',
       'No search for multipliers; failure is INCONCLUSIVE, not proof that the target is false.',
       ('api.Checker.linear','api.Checker.linear_batch','concept.proofs','concept.report-resources'))
@@ -232,7 +266,7 @@ edit.add_row(r.ub_claim, name="verified_copy", because=proof)
 m2 = edit.build()
 assert m2.diff(m).semantic["lp"] == "SAME"
 m2.save(output_dir / "snapshot.native")
-m2.write_lp(output_dir / "candidate.lp")
+m2.write(output_dir / "candidate.lp")
 mf.audit.roundtrip(m2, output_dir / "candidate.lp").require()''',
       'The redundant addition preserves the feasible set and the exported LP matches the target snapshot.',
       'Self-implication is valid for a redundant addition, not for deleting its own only source. No optimization improvement is established.',

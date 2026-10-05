@@ -64,7 +64,7 @@ def test_eager_schema_facts_exact_numerics(tmp_path):
     with read_text(tmp_path) as m:
         assert isinstance(m.__dict__['_ir'], CompressedIR)
         ir=m.ir
-        assert ir.schema_version=='0.3'
+        assert ir.schema_version=='0.4'
         assert ir.size == dict(variables=6,rows=5,nonzeros=6)
         assert ir.matrix['density']==Q(1,5)
         assert ir.matrix['row_nnz']['min']==0
@@ -89,9 +89,9 @@ def test_eager_schema_facts_exact_numerics(tmp_path):
         assert sum(ir.domains['bounds'].values())==6
         assert all(item['kind'] in ('fact','structural_abstraction') for item in ir.attention)
         assert isinstance(ir.show(),Formula)
-        assert 'link' not in str(ir.show())
+        assert 'link' in str(ir.show())  # representative original row
         assert 'signature_id' not in repr(ir)
-        assert 'depth=2' in repr(ir)
+        assert 'depth=2' not in repr(ir)
 
 
 def test_machine_export_independent_exact_json_and_lifecycle(tmp_path):
@@ -236,8 +236,8 @@ def test_empty_axes_and_uniform_objective(tmp_path,text,nr,nv,nz):
         else:
             assert ir.objective['kind']=='uniform'
             assert ir.objective['coefficient_profile']['value']==-1
-            assert 'constant(-1)' in repr(ir)
-        assert 'MIPFrame compressed IR' in repr(ir)
+            assert 'range -1 .. -1' in repr(ir)
+        assert 'MIPFrame scan' in repr(ir)
 
 
 def _fraction(n,d): return Q(n,d) if d else Q(0)
@@ -248,6 +248,7 @@ def test_save_load_stable_machine_ir_reuses_refinement(tmp_path,monkeypatch):
     for source in ('tiny.lp','tiny.mps'):
         with mf.read(Path(__file__).resolve().parents[1]/'examples'/'data'/source) as m:
             expected=m.ir.to_dict()
+            structure=m.ir.structure
             path=m.save(tmp_path/source)
         from mipframe.ir.refinement_store import RefinementStore
         with monkeypatch.context() as patch:
@@ -256,7 +257,7 @@ def test_save_load_stable_machine_ir_reuses_refinement(tmp_path,monkeypatch):
             with mf.load(path) as m:
                 assert isinstance(m.__dict__['_ir'],CompressedIR)
                 assert m.ir.to_dict()==expected
-                record = expected['structure']['row_families'][0]
+                record = structure['row_families'][0]
                 assert m.family(f"{record['id']}@{record['depth']}").rows.ids is not None
 
 
@@ -267,9 +268,9 @@ def test_display_budget_does_not_truncate_machine_ir(tmp_path,monkeypatch):
     text+='\n'.join(f'r{i}: '+ ' + '.join(f'{rng.choice([-1,1])}x{j}' for j in rng.sample(range(20),rng.randint(1,5))).replace('+ -','- ') + '<=1' for i in range(40))+'\nEnd\n'
     with read_text(tmp_path,text) as m:
         original=m.ir.to_dict()
-        assert len(original['structure']['row_families'])>3
-        monkeypatch.setattr(mf.options.ir,'max_row_families',3)
-        monkeypatch.setattr(mf.options.ir,'max_var_roles',2)
+        assert len(original['local_row_shapes']['items'])>3
+        monkeypatch.setattr(mf.options.ir,'max_local_shapes',3)
+        monkeypatch.setattr(mf.options.ir,'max_name_templates',0)
         monkeypatch.setattr(mf.options.ir,'max_splits',1)
         monkeypatch.setattr(mf.options.ir,'max_attention',0)
         monkeypatch.setattr(mf.options.display,'max_rows',1)
@@ -277,16 +278,16 @@ def test_display_budget_does_not_truncate_machine_ir(tmp_path,monkeypatch):
         from mipframe.store.model_store import NumericalStore
         monkeypatch.setattr(NumericalStore,'num',lambda *args:pytest.fail('rendering must not decode data'))
         text=str(m.ir.show())
-        assert 'showing 3 of ' in text and 'showing 2 of ' in text
-        assert 'families omitted → m.row_families' in text
-        assert 'shown families cover' in text and 'singleton families:' in text
-        assert 'items omitted' in text
+        assert 'showing 3 of ' in text and 'showing 0 of ' in text
+        assert '→ m.ir.row_shapes()' in text
+        assert '→ m.ir.name_templates' in text
+        assert 'Structure (template' not in text
         assert m.ir.to_dict()==original
         assert len(text.splitlines())<110
 
 
 def test_display_option_validation(monkeypatch):
-    for field in ['max_var_roles', 'max_row_families', 'max_splits', 'max_attention']:
+    for field in ['max_var_roles', 'max_row_families', 'max_splits', 'max_attention', 'max_local_shapes', 'max_name_templates', 'max_values', 'max_histogram', 'max_chars']:
         for bad in (True,1.5,'2'):
             with pytest.raises(TypeError): setattr(mf.options.ir,field,bad)
         with pytest.raises(ValueError): setattr(mf.options.ir,field,-1)
@@ -361,7 +362,7 @@ def test_danoint_matches_requested_structural_map():
         assert ir.topology['connected_components']==1
         text=str(ir.show())
         assert 'density: 9.34e-3' in text
-        assert 'F0 (392)' in text and '9 families unchanged (272 members)' in text
+        assert 'Structure (template' not in text and 'Local row shapes' in text
         assert len(text.splitlines())<110
 
 
@@ -372,11 +373,11 @@ def test_varying_degree_and_coefficient_parameters(tmp_path):
         assert len(roles)==1
         assert roles[0]['degree']['kind']=='varying'
         assert (roles[0]['degree']['min'],roles[0]['degree']['max'],roles[0]['degree']['mode'])==(5,8,5)
-        assert '5..8 (mode 5)' in repr(m.ir)
+        assert 'nnz min 5 · p50 6.5 · p90 7.7 · max 8' in repr(m.ir)
         family=m.ir.structure['row_families'][0]
         assert family['parameters']['varying_coefficient_roles']==['+V0']
         assert family['structure'][0]['multiplicity']==dict(kind='constant',value=1)
-        assert 'histogram' not in repr(m.ir)
+        assert 'nnz histogram' in repr(m.ir)
 
 
 def test_ir_variation_summary_leaves_histograms_lazy(tmp_path, monkeypatch):
@@ -415,10 +416,10 @@ def test_optional_depth_and_owner_closes_eager_query_resources(tmp_path):
             assert extra.structure['depth']==depth
             assert len(extra.structure['overview'])==depth+1
             assert len(extra.structure['refinements'])==2*depth
-            assert 'MIPFrame compressed IR' in repr(extra)
+            assert 'MIPFrame scan' in repr(extra)
         eager=m.ir
-        dbs=[store.db for store in m._refinement_store.family_stores]
+        partitions=list(m._refinement_store.family_stores)
         assert eager._data
     assert eager._data=={}
-    for db in dbs:
-        with pytest.raises(sqlite3.ProgrammingError): db.execute('SELECT 1')
+    for partition in partitions:
+        with pytest.raises(mf.MIPFrameError):partition.guard()

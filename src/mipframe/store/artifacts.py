@@ -7,11 +7,15 @@ import os
 import tempfile
 
 
-def sha256(path):
+def sha256(path,*,work=None):
+    from mipframe.data.runtime import WorkContext
     h = hashlib.sha256()
-    with open(path, "rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            h.update(chunk)
+    with (work.fork() if work is not None else WorkContext()) as scratch:
+        count=max(1,min(1024*1024,scratch.memory//16,scratch.available//2))
+        with scratch.reserve(count+64):
+            buffer=bytearray(count);view=memoryview(buffer)
+            with open(path, "rb") as source:
+                while n:=source.readinto(buffer):h.update(view[:n])
     return h.hexdigest()
 
 

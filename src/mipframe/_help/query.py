@@ -11,6 +11,7 @@ from functools import lru_cache
 from importlib.resources import files
 
 from .search import search
+from .signatures import signature
 
 
 @lru_cache(maxsize=1)
@@ -127,14 +128,7 @@ def query(topic=None, *, limit=3, detail='brief', format='text'):
                 t['signatures'][symbol] = ' [unavailable; stale documentation]'
                 t['available'] = False
                 continue
-            if isinstance(obj, property):
-                current = ' [property]'
-            elif inspect.isclass(obj):
-                current = ' [type]'
-            else:
-                sig = inspect.signature(obj)
-                current = str(sig.replace(parameters=[p for n,p in sig.parameters.items() if n not in ('self','cls','ctx')]))
-                current = re.sub(r'<object object at 0x[0-9a-f]+>', '<unchanged>', current)
+            current = signature(obj, constructor=t.get('constructor', False))
             if current != t['signatures'][symbol]:
                 result['warnings'].append(f'{symbol} signature differs from compiled documentation; regenerate help resources')
                 t['signatures'][symbol] = current

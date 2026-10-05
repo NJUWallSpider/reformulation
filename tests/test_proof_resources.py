@@ -77,8 +77,9 @@ def test_builder_matches_scalar_conditions_directions_and_replay(model, memory):
             with pytest.raises(mf.UndischargedAssumptionError):model.edit().add_row(x>=1,because=batch.for_target(key))
     with model.check.linear_batch() as builder:
         builder.add(key="a",target=x<=4,assume=[x.eq(0)])
-        with pytest.raises(ValueError,match="share assumptions"):
-            builder.add(key="b",target=x<=4,assume=[x.eq(1)])
+        builder.add(key="b",target=x<=4,assume=[x.eq(1)])
+        result=builder.run().require()
+        assert result.assumptions(0)!=result.assumptions(1)
 
 
 def test_views_and_edit_keep_only_needed_proofs_alive(model):
@@ -102,12 +103,12 @@ def test_views_and_edit_keep_only_needed_proofs_alive(model):
 
 
 def test_failed_publication_preserves_previous_proofs(model, monkeypatch):
-    import mipframe.check.compiler as compiler
+    import mipframe.check.graph as graph
     x=model.vars.by_name("x")
     parent=model.check.linear(x<=4,residual="bounds")
     def fail(*args,**kwargs):raise RuntimeError("injected publication failure")
     with monkeypatch.context() as patch:
-        patch.setattr(compiler,"BatchProof",fail)
+        patch.setattr(graph,"GraphProof",fail)
         with pytest.raises(RuntimeError,match="publication"):
             model.check.linear(x<=5,using=[parent])
     assert parent.ok and mf.Report.replay(parent.to_spec(),models=[model]).ok
@@ -191,15 +192,15 @@ def test_builder_failure_and_cancellation_leave_sources_valid(model):
 
 
 def test_first_archive_failure_closes_unpublished_storage(model, monkeypatch):
-    import mipframe.check.compiler as compiler
-    from mipframe.data.runtime import WorkContext
-    closed=[];real=WorkContext.close
+    import mipframe.check.graph as graph
+    from mipframe.check.graph import CheckBatch
+    closed=[];real=CheckBatch.close
     def close(work):
-        real(work);closed.append(work.closed)
+        real(work);closed.append(work.closed and work.pool is None and not work.tasks)
     def fail(*args,**kwargs):raise RuntimeError("injected first publication failure")
     with monkeypatch.context() as patch:
-        patch.setattr(WorkContext,"close",close)
-        patch.setattr(compiler,"BatchProof",fail)
+        patch.setattr(CheckBatch,"close",close)
+        patch.setattr(graph,"GraphProof",fail)
         with pytest.raises(RuntimeError,match="first publication") as caught:
             model.check.linear(model.vars.by_name("x")<=4,residual="bounds")
         assert caught.value.__traceback__ is not None

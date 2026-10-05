@@ -43,7 +43,7 @@ def verify_bundle(bundle,source,*,target=None,artifact=None):
     try:
         for step in bundle['steps']:
             if step['parent']!=facts(current).uid:raise ValueError('Broken snapshot chain')
-            proofs=[BatchProof.replay(spec,model=current).require() for spec in step['proofs']]
+            proofs=[BatchProof.replay(spec,model=current) for spec in step['proofs']]
             def binding(spec):
                 if spec is None:return None
                 if isinstance(spec,list):return tuple(binding(x) for x in spec)

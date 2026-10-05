@@ -205,7 +205,8 @@ def test_frame_certificate_streaming_and_identity(model,monkeypatch):
     monkeypatch.setattr(Frame,'to_records',lambda *a,**kw:pytest.fail('whole certificate records'))
     result=m.check.linear_many(targets=targets,terms=terms,using=using,memory_mb=0.015625)
     assert result.ok and result.for_target('c').ok
-    assert result._certificate.sources.tolist()==[0,1]
+    task=result._graph.tasks[result._roots[0]]
+    assert [s[2] for s in task[2] if s[0]=='model']==[0,1]
     assert mf.BatchProof.replay(result.to_spec(),model=m).ok
 
 

@@ -184,7 +184,13 @@ class LinExpr:
     def __add__(self, other):
         from mipframe.edit.draft import DraftExpr, DraftVar
         if isinstance(other, (DraftExpr, DraftVar)): return other + self
+        from mipframe.check.expressions import active_pool
+        pool = active_pool(self._owner)
+        if pool is not None and not isinstance(other,LinExpr) and not hasattr(other,"_owner"):
+            return pool.shift(self,q(other))
         other = self._coerce(other)
+        if pool is not None:
+            return pool.add(self, other)
         return materialize(
             self._owner,
             merge(self._items(), other._items()),
@@ -200,6 +206,10 @@ class LinExpr:
     def __sub__(self, other):
         from mipframe.edit.draft import DraftExpr, DraftVar
         if isinstance(other, (DraftExpr, DraftVar)): return -other + self
+        from mipframe.check.expressions import active_pool
+        pool=active_pool(self._owner)
+        if pool is not None and not isinstance(other,LinExpr) and not hasattr(other,"_owner"):
+            return pool.shift(self,-q(other))
         return self + -self._coerce(other)
 
     def __rsub__(self, other):
@@ -212,6 +222,10 @@ class LinExpr:
                 "Only multiplication by an exact scalar is linear"
             )
         scalar = q(scalar)
+        from mipframe.check.expressions import active_pool
+        pool = active_pool(self._owner)
+        if pool is not None:
+            return pool.scale(self, scalar)
         if not scalar:
             self._guard()
             return LinExpr(self._owner, 0, models=self._models)
@@ -468,6 +482,10 @@ def coerce(owner, value):
 
 def variable(var):
     ident = var.id
+    from mipframe.check.expressions import active_pool
+    pool = active_pool(var._owner)
+    if pool is not None:
+        return pool.expression(pool.terms(((ident, 1),)))
     return LinExpr(
         var._owner,
         items=lambda: iter(((ident, Fraction(1)),)),
@@ -477,6 +495,10 @@ def variable(var):
 
 def row_expr(row):
     owner, ident = row._owner, row.id
+    from mipframe.check.expressions import active_pool
+    pool = active_pool(owner)
+    if pool is not None:
+        return pool.expression(pool.row(ident))
 
     def read():
         yield from owner.model.iter_terms(ident)

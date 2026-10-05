@@ -3958,7 +3958,7 @@ Discharge an exhaustive finite integer split over one variable.
 
 Checker.cases(target, *, var, cases, domain='auto', memory_mb=128, disk_mb=None)
 
-When to use: Discharge an exhaustive finite integer split over one variable.
+When to use: For repeated checks, prefer m.check.batch(); do not execute scalar checkers in a Python loop. Discharge an exhaustive finite integer split over one variable.
 
 Inputs: Exact claims, original source sides or previously verified ProofRefs; see signature.
 
@@ -3979,7 +3979,7 @@ domain="auto" and "integer" produce integer proofs; "relaxation" is rejected. Mi
 Use ordinary linear checks to align stronger or differently scaled conclusions first. Branches may contain continuous variables. Results support Edit.because only when no assumptions remain; all model fact dependencies and integer-domain coverage bounds remain auditable.
 The cases and discharged evidence Frames record branch parent indices and removed assumptions. Replay rechecks all branches and coverage.
 
-See also: concept.proofs, concept.conditions, recipe.cases
+See also: concept.proofs, concept.conditions, recipe.cases, api.Checker.batch
 
 ## api.Checker.identity
 
@@ -3989,7 +3989,7 @@ Check an exact affine identity or explicit equality combination.
 
 Checker.identity(left, right=0, *, using=(), assume=(), memory_mb=128, disk_mb=None)
 
-When to use: Check an exact affine identity or explicit equality combination.
+When to use: For repeated checks, prefer m.check.batch(); do not execute scalar checkers in a Python loop. Check an exact affine identity or explicit equality combination.
 
 Inputs: Exact claims, original source sides or previously verified ProofRefs; see signature.
 
@@ -4005,7 +4005,7 @@ Resources: Certificate execution uses exact sparse arrays and Python integers; F
 
 Without premises, compare the exact affine expressions. With using, verify the supplied equality combination.
 
-See also: concept.proofs, concept.conditions
+See also: concept.proofs, concept.conditions, api.Checker.batch
 
 ## api.Checker.linear
 
@@ -4015,7 +4015,7 @@ Verify that supplied sources imply the target inequality or equality.
 
 Checker.linear(target, *, using=(), residual='exact', assume=(), domain='auto', memory_mb=128, disk_mb=None)
 
-When to use: Verify that supplied sources imply the target inequality or equality.
+When to use: For repeated checks, prefer m.check.batch(); do not execute scalar checkers in a Python loop. Verify that supplied sources imply the target inequality or equality.
 
 Inputs: Exact claims, original source sides or previously verified ProofRefs; see signature.
 
@@ -4031,7 +4031,7 @@ Resources: Certificate execution uses exact sparse arrays and Python integers; F
 
 Equality targets use equality-only sources, or explicit using={"le": ..., "ge": ...} certificates. residual="bounds" compensates coefficient residuals with original variable bounds.
 
-See also: concept.proofs, concept.conditions
+See also: concept.proofs, concept.conditions, api.Checker.batch
 
 ## api.Checker.infeasible
 
@@ -4041,7 +4041,7 @@ Verify an explicit contradiction certificate.
 
 Checker.infeasible(*, using=(), assume=(), residual='exact', memory_mb=128, disk_mb=None)
 
-When to use: Verify an explicit contradiction certificate.
+When to use: For repeated checks, prefer m.check.batch(); do not execute scalar checkers in a Python loop. Verify an explicit contradiction certificate.
 
 Inputs: Exact claims, original source sides or previously verified ProofRefs; see signature.
 
@@ -4057,7 +4057,7 @@ Resources: Certificate execution uses exact sparse arrays and Python integers; F
 
 Supply a contradiction combination explicitly. Single-variable assumptions tighten bounds or substitute values and remain recorded in the conditional scope.
 
-See also: concept.proofs, concept.conditions
+See also: concept.proofs, concept.conditions, api.Checker.batch
 
 ## api.Checker.round
 
@@ -4067,7 +4067,7 @@ Round a proved bound on a model-integer-valued expression.
 
 Checker.round(target, *, from_, domain='auto', memory_mb=128, disk_mb=None)
 
-When to use: Round a proved bound on a model-integer-valued expression.
+When to use: For repeated checks, prefer m.check.batch(); do not execute scalar checkers in a Python loop. Round a proved bound on a model-integer-valued expression.
 
 Inputs: Exact claims, original source sides or previously verified ProofRefs; see signature.
 
@@ -4083,7 +4083,7 @@ Resources: Certificate execution uses exact sparse arrays and Python integers; F
 
 The target must keep the same nonconstant integer-valued expression as the proved source bound. Round upper bounds down and lower bounds up.
 
-See also: concept.proofs, concept.conditions
+See also: concept.proofs, concept.conditions, api.Checker.batch
 
 ## api.Checker.enumerate
 
@@ -4093,7 +4093,7 @@ Verify a claim on a finite local integer domain.
 
 Checker.enumerate(target, *, memory_mb=128, disk_mb=None, **kwargs)
 
-When to use: Verify a claim on a finite local integer domain.
+When to use: For repeated checks, prefer m.check.batch(); do not execute scalar checkers in a Python loop. Verify a claim on a finite local integer domain.
 
 Inputs: Exact claims, original source sides or previously verified ProofRefs; see signature.
 
@@ -4109,7 +4109,7 @@ Resources: Certificate execution uses exact sparse arrays and Python integers; F
 
 vars must contain every remaining variable after substitutions; continuous or unbounded integer domains are unsupported.
 
-See also: concept.proofs, concept.conditions
+See also: concept.proofs, concept.conditions, api.Checker.batch
 
 ## api.Checker.solution
 
@@ -4119,7 +4119,7 @@ Validate a complete exact point against the mathematical integer model, includin
 
 Checker.solution(values, *, memory_mb=128, disk_mb=None, **kwargs)
 
-When to use: Validate a complete exact point against the mathematical integer model, including integrality, original bounds and both row sides.
+When to use: For repeated checks, prefer m.check.batch(); do not execute scalar checkers in a Python loop. Validate a complete exact point against the mathematical integer model, including integrality, original bounds and both row sides.
 
 Inputs: Exact Frame(var,value) or Var/VarRef mapping from this snapshot. missing="error" requires every variable; missing="zero" explicitly fills absent values.
 
@@ -4136,7 +4136,7 @@ Resources: Certificate execution uses exact sparse arrays and Python integers; F
 missing="error" requires all model variables; missing="zero" is explicit. Inputs from a solver are not silently rounded.
 domain="auto" and domain="integer" both enforce the original integer domains; domain="relaxation" is rejected. For fractional LP points, use m.matrix.activity(values) plus exact checks of both row sides and every variable bound. Verify complete variable coverage, including variables absent from all rows; see limitation.fractional-point.
 
-See also: concept.proofs, concept.conditions, limitation.fractional-point
+See also: concept.proofs, concept.conditions, limitation.fractional-point, api.Checker.batch
 
 ## api.Checker.linear_many
 
@@ -4146,7 +4146,7 @@ Check compact custom targets and ragged explicit witnesses.
 
 Checker.linear_many(certificate=None, *, targets=None, witnesses=None, terms=None, using=(), reports=None, residual='exact', domain='auto', **options)
 
-When to use: Check compact custom targets and ragged explicit witnesses.
+When to use: For repeated checks, prefer m.check.batch(); do not execute scalar checkers in a Python loop. Check compact custom targets and ragged explicit witnesses.
 
 Inputs: targets=mf.Targets(...), witnesses=mf.CertificateBatch(...), residual="exact" or "bounds".
 
@@ -4162,10 +4162,10 @@ Resources: Certificate execution uses exact sparse arrays and Python integers; F
 
 Targets(ids, kind="row", sides="ub") reads existing rows. kind="var" additionally needs rhs. kind="affine" needs rhs, offsets, variables and coefficients. IDs are distinct nonnegative integers. CertificateBatch(offsets,sources,multipliers=1,sides="ub",kinds="row") describes one source slice per target; kinds may be row or var. Finite equality sources use side="eq" and allow signed multipliers. Inequality multipliers must be nonnegative. Unit path witnesses can use CertificateBatch.paths(paths).
 The positional certificate form accepts a snapshot-bound LinearCertificate from graph witnesses; do not mix it with separate targets/witnesses/terms/using.
-For the Frame adapter, targets has target/relation/rhs with unique string keys, terms has target/var/coef, and using has target, exactly one row/var/proof source, side and multiplier. Row/var columns retain same-snapshot Ref types; proof keys refer to ProofRefs in reports. Frame direction must be main; use scalar linear for directional equalities. There is no assume argument here: use linear_batch with a common assumption scope or scalar linear for separate branches.
+For the Frame adapter, targets has target/relation/rhs with unique string keys, terms has target/var/coef, and using has target, exactly one row/var/proof source, side and multiplier. Row/var columns retain same-snapshot Ref types; proof keys refer to ProofRefs in reports. Frame direction must be main; use scalar linear for directional equalities. There is no assume argument here: use check.batch() for separate conditional branches and dependent tasks.
 Frames compile once at the boundary; prefer linear_rows for existing row targets. No SQL runs in the checker.
 
-See also: api.Targets, api.CertificateBatch, api.BatchProof.for_target, api.Checker.linear_rows, api.Checker.linear_batch
+See also: api.Targets, api.CertificateBatch, api.BatchProof.for_target, api.Checker.linear_rows, api.Checker.linear_batch, api.Checker.batch
 
 ## api.Checker.linear_batch
 
@@ -4175,9 +4175,9 @@ Compile scalar Claim inputs into one compact batch.
 
 Checker.linear_batch(**kwargs)
 
-When to use: Compile scalar Claim inputs into one compact batch.
+When to use: For repeated checks, prefer m.check.batch(); do not execute scalar checkers in a Python loop. Compile scalar Claim inputs into one compact batch.
 
-Inputs: residual="exact"/"bounds", domain="auto"/"integer"/"relaxation", memory_mb/disk_mb. All targets require one shared assumption scope.
+Inputs: residual="exact"/"bounds", domain="auto"/"integer"/"relaxation", memory_mb/disk_mb. Conditions are tracked per target.
 
 Returns: LinearBatch; run returns BatchProof.
 
@@ -4196,9 +4196,9 @@ with m.check.linear_batch(residual="bounds") as batch:
     report = batch.run()
 report.require()
 
-All targets in a builder must have the same explicit assumption scope. For different case branches, use scalar checks and cases(). Existing-row workloads should use linear_rows to avoid target expression duplication.
+Compatibility adapter for linear-only inputs. Prefer check.batch() for new work, including different branch conditions and dependent checks; do not execute scalar checkers in a Python loop.
 
-See also: api.LinearBatch.add, api.LinearBatch.run, api.LinearBatch.close, api.Checker.linear_many, concept.report-resources, concept.conditions
+See also: api.LinearBatch.add, api.LinearBatch.run, api.LinearBatch.close, api.Checker.linear_many, concept.report-resources, concept.conditions, api.Checker.batch
 
 ## api.LinearBatch.add
 
@@ -4210,7 +4210,7 @@ LinearBatch.add(*, key, target, using=(), assume=())
 
 When to use: Stage one keyed target with the same using and assume arguments as check.linear.
 
-Inputs: Unique key, Claim target, explicit using sources and optional assumptions shared by the batch.
+Inputs: Unique key, Claim target, explicit using sources and optional per-target assumptions.
 
 Returns: The builder for chaining. No proof is published by add.
 
@@ -4218,11 +4218,11 @@ Establishes: Copies canonical sparse target data. No per-target Report is constr
 
 Does not establish: No model change or additional mathematical conclusion is implied.
 
-Failures: Duplicate keys and differing assumptions raise. On a staging error, leave the context or close the builder and start a fresh batch. A closed or already-run builder rejects further additions.
+Failures: Duplicate keys raise. On a staging error, leave the context or close the builder and start a fresh batch. A closed or already-run builder rejects further additions.
 
 Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
-Directional equality is available in the scalar linear API. Use separate batches for separate assumption scopes.
+Directional equality is available in the scalar linear API. Use check.batch() to compose conditional branches and cases in one plan.
 
 See also: api.Checker.linear_batch, api.Checker.linear, api.LinearBatch.run, concept.conditions
 
@@ -6026,7 +6026,7 @@ Model.indexed [api.Model.indexed]
 
 Retrieve or discover indexed coordinates with explicit structural configuration.
 
-Model.indexed(*, rows=None, vars=None, depth=2, method='template', memory_mb=128, disk_mb=None, **options)
+Model.indexed(*, rows=None, vars=None, depth=2, method='template', include_singletons=False, memory_mb=128, disk_mb=None, **options)
 
 When to use: Retrieve or discover indexed coordinates with explicit structural configuration.
 
@@ -6035,6 +6035,8 @@ Returns: IndexedResult; cached full-model results are reused.
 Establishes: Snapshot and analysis configuration remain bound. Family and indexed views share storage; original mathematical facts remain accessible through entity members.
 
 Does not establish: A repeated structure is an observation, not symmetry, redundancy, coordinates or a mathematical proof.
+
+include_singletons=False skips partitions with only one row set during discovery, before allocating component artifacts. These partitions cannot contribute to tensor pairing. Use include_singletons=True to retain them in I.partitions; this may produce very large directories. The option is part of the cached run identity and is preserved by save/load. Tensor and operator discovery and exact verification are unchanged.
 
 See also: concept.families, concept.frame, recipe.roles
 
@@ -6650,7 +6652,7 @@ Check existing row IDs directly from ragged source witnesses.
 
 Checker.linear_rows(**kwargs)
 
-When to use: Check existing row IDs directly from ragged source witnesses.
+When to use: For repeated checks, prefer m.check.batch(); do not execute scalar checkers in a Python loop. Check existing row IDs directly from ragged source witnesses.
 
 Inputs: targets=row IDs, witnesses=CertificateBatch or paths, side="ub"/"lb"/"eq", residual="exact"/"bounds".
 
@@ -6662,7 +6664,7 @@ Illustrative example (requires caller-provided inputs):
 proof = m.check.linear_rows(targets=dropped_ids, witnesses=retained_paths).require()
 final = m.edit().drop_rows(dropped_ids, because=proof).commit()
 
-See also: api.CertificateBatch, api.Edit.commit
+See also: api.CertificateBatch, api.Edit.commit, api.Checker.batch
 
 ## api.Checker.bound
 
@@ -6672,7 +6674,7 @@ Check direct variable-bound implications in a batch.
 
 Checker.bound(*, vars, values, side='ub')
 
-When to use: Check direct variable-bound implications in a batch.
+When to use: For repeated checks, prefer m.check.batch(); do not execute scalar checkers in a Python loop. Check direct variable-bound implications in a batch.
 
 Inputs: vars=integer IDs, values=exact bounds, side="ub" or "lb".
 
@@ -6680,7 +6682,7 @@ Returns: BatchProof.
 
 Does not establish: No model change or additional mathematical conclusion is implied.
 
-See also: api.BatchProof.round_many
+See also: api.BatchProof.round_many, api.Checker.batch
 
 ## api.Checker.affine_integrality
 
@@ -6690,7 +6692,7 @@ Check integer affine definitions independently of the target integer declaration
 
 Checker.affine_integrality(*, vars, rows)
 
-When to use: Check integer affine definitions independently of the target integer declaration.
+When to use: For repeated checks, prefer m.check.batch(); do not execute scalar checkers in a Python loop. Check integer affine definitions independently of the target integer declaration.
 
 Inputs: vars=defined variable IDs, rows=matching equality definition IDs.
 
@@ -6700,7 +6702,7 @@ Establishes: After normalization, constant and coefficients must be integers; al
 
 Does not establish: No model change or additional mathematical conclusion is implied.
 
-See also: api.Edit.set_domains
+See also: api.Edit.set_domains, api.Checker.batch
 
 ## api.Checker.one_hot_affine
 
@@ -6710,7 +6712,7 @@ Validate shared one-hot affine structure once, then check bound exclusions.
 
 Checker.one_hot_affine(*, groups)
 
-When to use: Validate shared one-hot affine structure once, then check bound exclusions.
+When to use: For repeated checks, prefer m.check.batch(); do not execute scalar checkers in a Python loop. Validate shared one-hot affine structure once, then check bound exclusions.
 
 Inputs: groups=[(onehot_row_id, [(definition_row_id, defined_var_id), ...]), ...].
 
@@ -6725,7 +6727,7 @@ shared = m.check.one_hot_affine(groups=groups)
 zero = shared.bound_exclusions().require()
 tightened = m.edit().set_var_bounds(zero.target_ids, ub=0, because=zero).commit()
 
-See also: api.Edit.substitute_fixed
+See also: api.Edit.substitute_fixed, api.Checker.batch
 
 ## api.Edit.commit
 
@@ -7136,3 +7138,355 @@ Does not establish: No model change or additional mathematical conclusion is imp
 Failures: A degenerate inconsistent affine range requires a separate contradiction certificate.
 
 See also: api.OneHotAffine.bound_exclusions, api.BatchProof.round_many
+
+## api.Checker.batch
+
+Checker.batch [api.Checker.batch]
+
+Register related checks once and execute their shared dependency graph.
+
+Checker.batch(**options)
+
+When to use: Register related checks once and execute their shared dependency graph.
+
+Returns: CheckBatch; run() returns named CheckResults.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Illustrative example (requires caller-provided inputs):
+with m.check.batch() as batch:
+    for key, target, sources in tasks:
+        batch.linear(target, using=sources, result_key=key)
+    results = batch.run()
+results.require()
+
+Prefer m.check.batch() for repeated checks. Do not execute scalar checkers in a Python for loop, comprehension or map, or rewrite complete checks as handwritten row/variable loops. Use Frame operations for relations. Loops may register batch tasks; run once after registration. Construct expressions inside the batch context to share common subexpressions.
+Each registration returns CheckHandle, not a signed proof: no .ok/.status and no edit authority. A handle may be used only as a dependency in its own plan. result_key is unique and exports a result; unnamed tasks are internal. run() executes the named dependency closure and seals the plan. Context exit releases unpublished work and never runs implicitly.
+results.require() checks all exported results. results[key] preserves its type: ProofRef/BatchProof for mathematics, PointReport for points, Report for diagnostics. Points and diagnostics cannot authorize edits. Conditions remain target-local; cases discharges only its matching branch conditions. Separate snapshots require separate batches.
+Finite defaults: time_limit=30 seconds, max_tasks=1000000 logical tasks, max_nodes=4096 compiled execution nodes, max_work=100000000, memory_mb=128. Explicit finite increases are supported; time/work limits cannot be disabled. ProofBudgetExceeded reports the phase and limit; unfinished work is never PROVED or mathematically REFUTED.
+
+See also: concept.proofs, api.Checker.budget
+
+## api.Checker.budget
+
+Checker.budget [api.Checker.budget]
+
+Share explicit finite limits across nested check operations.
+
+Checker.budget(**options)
+
+When to use: Share explicit finite limits across nested check operations.
+
+Returns: Budget context manager.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Use explicit finite overrides when needed; nested operations share the same allowance. Limits cannot be disabled.
+
+See also: api.Checker.batch
+
+## api.CheckBatch.linear
+
+CheckBatch.linear [api.CheckBatch.linear]
+
+Register a linear task without executing it.
+
+CheckBatch.linear(target, *, using=(), residual='exact', assume=(), domain='auto', result_key=None)
+
+When to use: Register a linear task without executing it.
+
+Returns: CheckHandle; result_key optionally exports its completed result.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Use the matching checker arguments shown in this signature. Pending handles may be proof dependencies only inside this plan. Call run() once after registration.
+
+See also: api.Checker.batch
+
+## api.CheckBatch.identity
+
+CheckBatch.identity [api.CheckBatch.identity]
+
+Register a identity task without executing it.
+
+CheckBatch.identity(left, right=0, *, using=(), assume=(), result_key=None)
+
+When to use: Register a identity task without executing it.
+
+Returns: CheckHandle; result_key optionally exports its completed result.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Use the matching checker arguments shown in this signature. Pending handles may be proof dependencies only inside this plan. Call run() once after registration.
+
+See also: api.Checker.batch
+
+## api.CheckBatch.bound
+
+CheckBatch.bound [api.CheckBatch.bound]
+
+Register a bound task without executing it.
+
+CheckBatch.bound(*, vars, values, side='ub', result_key=None)
+
+When to use: Register a bound task without executing it.
+
+Returns: CheckHandle; result_key optionally exports its completed result.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Use the matching checker arguments shown in this signature. Pending handles may be proof dependencies only inside this plan. Call run() once after registration.
+
+See also: api.Checker.batch
+
+## api.CheckBatch.infeasible
+
+CheckBatch.infeasible [api.CheckBatch.infeasible]
+
+Register a infeasible task without executing it.
+
+CheckBatch.infeasible(*, using=(), assume=(), residual='exact', result_key=None)
+
+When to use: Register a infeasible task without executing it.
+
+Returns: CheckHandle; result_key optionally exports its completed result.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Use the matching checker arguments shown in this signature. Pending handles may be proof dependencies only inside this plan. Call run() once after registration.
+
+See also: api.Checker.batch
+
+## api.CheckBatch.cases
+
+CheckBatch.cases [api.CheckBatch.cases]
+
+Register a cases task without executing it.
+
+CheckBatch.cases(target, *, var, cases, domain='auto', result_key=None)
+
+When to use: Register a cases task without executing it.
+
+Returns: CheckHandle; result_key optionally exports its completed result.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Use the matching checker arguments shown in this signature. Pending handles may be proof dependencies only inside this plan. Call run() once after registration.
+
+See also: api.Checker.batch
+
+## api.CheckBatch.round
+
+CheckBatch.round [api.CheckBatch.round]
+
+Register a round task without executing it.
+
+CheckBatch.round(target, *, from_, domain='auto', result_key=None)
+
+When to use: Register a round task without executing it.
+
+Returns: CheckHandle; result_key optionally exports its completed result.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Use the matching checker arguments shown in this signature. Pending handles may be proof dependencies only inside this plan. Call run() once after registration.
+
+See also: api.Checker.batch
+
+## api.CheckBatch.enumerate
+
+CheckBatch.enumerate [api.CheckBatch.enumerate]
+
+Register a enumerate task without executing it.
+
+CheckBatch.enumerate(target, *, vars, using=(), assume=(), max_states=100000, time_limit=30, domain='auto', result_key=None)
+
+When to use: Register a enumerate task without executing it.
+
+Returns: CheckHandle; result_key optionally exports its completed result.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Use the matching checker arguments shown in this signature. Pending handles may be proof dependencies only inside this plan. Call run() once after registration.
+
+See also: api.Checker.batch
+
+## api.CheckBatch.affine_integrality
+
+CheckBatch.affine_integrality [api.CheckBatch.affine_integrality]
+
+Register a affine_integrality task without executing it.
+
+CheckBatch.affine_integrality(*, vars, rows, result_key=None)
+
+When to use: Register a affine_integrality task without executing it.
+
+Returns: CheckHandle; result_key optionally exports its completed result.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Use the matching checker arguments shown in this signature. Pending handles may be proof dependencies only inside this plan. Call run() once after registration.
+
+See also: api.Checker.batch
+
+## api.CheckBatch.solution
+
+CheckBatch.solution [api.CheckBatch.solution]
+
+Register a solution task without executing it.
+
+CheckBatch.solution(point, *, result_key=None, **options)
+
+When to use: Register a solution task without executing it.
+
+Returns: CheckHandle; result_key optionally exports its completed result.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Use the matching checker arguments shown in this signature. Pending handles may be proof dependencies only inside this plan. Call run() once after registration.
+
+See also: api.Checker.batch
+
+## api.CheckBatch.frame
+
+CheckBatch.frame [api.CheckBatch.frame]
+
+Register a frame task without executing it.
+
+CheckBatch.frame(frame, kind, columns=None, *, result_key=None, **options)
+
+When to use: Register a frame task without executing it.
+
+Returns: CheckHandle; result_key optionally exports its completed result.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Use the matching checker arguments shown in this signature. Pending handles may be proof dependencies only inside this plan. Call run() once after registration.
+
+See also: api.Checker.batch
+
+## api.CheckBatch.model_verify
+
+CheckBatch.model_verify [api.CheckBatch.model_verify]
+
+Register a model_verify task without executing it.
+
+CheckBatch.model_verify(*, result_key=None)
+
+When to use: Register a model_verify task without executing it.
+
+Returns: CheckHandle; result_key optionally exports its completed result.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Use the matching checker arguments shown in this signature. Pending handles may be proof dependencies only inside this plan. Call run() once after registration.
+
+See also: api.Checker.batch
+
+## api.CheckBatch.run
+
+CheckBatch.run [api.CheckBatch.run]
+
+Execute exported dependency closures and seal the plan.
+
+CheckBatch.run()
+
+When to use: Execute exported dependency closures and seal the plan.
+
+Returns: CheckResults for run; None for close.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.Checker.batch
+
+## api.CheckBatch.close
+
+CheckBatch.close [api.CheckBatch.close]
+
+Release unpublished plan resources.
+
+CheckBatch.close()
+
+When to use: Release unpublished plan resources.
+
+Returns: CheckResults for run; None for close.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.Checker.batch
+
+## api.CheckHandle
+
+CheckHandle [api.CheckHandle]
+
+Pending task identity, never a checked proof.
+
+CheckHandle [type]
+
+When to use: Pending task identity, never a checked proof.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+No ok/status, boolean truth or edit authority. Use only within its own batch as a dependency.
+
+See also: api.Checker.batch
+
+## api.CheckResults.require
+
+CheckResults.require [api.CheckResults.require]
+
+Require every named exported result to succeed.
+
+CheckResults.require()
+
+When to use: Require every named exported result to succeed.
+
+Returns: This CheckResults mapping; raises on any failed or incomplete result.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.Checker.batch
+
+## api.CheckBatch
+
+CheckBatch [api.CheckBatch]
+
+Deferred checks owned by one model snapshot.
+
+CheckBatch [type]
+
+When to use: Deferred checks owned by one model snapshot.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.Checker.batch
+
+## api.CheckResults
+
+CheckResults [api.CheckResults]
+
+Named completed results with distinct mathematical and diagnostic permissions.
+
+CheckResults [type]
+
+When to use: Named completed results with distinct mathematical and diagnostic permissions.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+See also: api.CheckResults.require, api.Checker.batch
+
+## api.ProofBudgetExceeded
+
+ProofBudgetExceeded [api.ProofBudgetExceeded]
+
+A finite check budget stopped unpublished work.
+
+ProofBudgetExceeded [type]
+
+When to use: A finite check budget stopped unpublished work.
+
+Does not establish: No model change or additional mathematical conclusion is implied.
+
+Inspect phase, resource, consumed and limit. This is not a mathematical counterexample; use a finite larger budget or share related work in one batch.
+
+See also: api.Checker.batch

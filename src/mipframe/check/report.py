@@ -344,7 +344,7 @@ class Report:
             batch=cls.replay(spec_or_path['batch'],models=models,memory_mb=memory_mb,disk_mb=disk_mb)
             return ProofRef(batch,spec_or_path['index'])
 
-        if isinstance(spec_or_path, dict) and spec_or_path.get('schema') == 'mipframe-certificate-2':
+        if isinstance(spec_or_path, dict) and spec_or_path.get('schema') in ('mipframe-certificate-2','mipframe-certificate-3'):
             from mipframe.check.compact import BatchProof
             matching = [m for m in models if m.uid == spec_or_path.get('snapshot')]
             if len(matching) != 1:

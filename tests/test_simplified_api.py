@@ -25,7 +25,9 @@ def test_removed_interfaces_and_exact_contract(m):
         assert 'exactly_one' not in inspect.signature(frame.project).parameters
         assert 'column' not in inspect.signature(frame.pattern_counts).parameters
     assert not hasattr(m.rows,'show')
-    assert not hasattr(m.check,'batch')
+    with m.check.batch() as plan:
+        results=plan.run()
+    assert len(results.require())==0
     assert 'method' not in inspect.signature(m.check.linear_batch).parameters
     for name in ('identity','linear','infeasible','round','cases','enumerate','solution'):
         assert 'arithmetic' not in inspect.signature(getattr(m.check,name)).parameters

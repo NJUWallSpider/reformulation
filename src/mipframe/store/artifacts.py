@@ -15,7 +15,11 @@ def sha256(path,*,work=None):
         with scratch.reserve(count+64):
             buffer=bytearray(count);view=memoryview(buffer)
             with open(path, "rb") as source:
-                while n:=source.readinto(buffer):h.update(view[:n])
+                from mipframe.check.budget import current_budget
+                budget=current_budget()
+                while n:=source.readinto(buffer):
+                    if budget is not None:budget.poll()
+                    h.update(view[:n])
     return h.hexdigest()
 
 

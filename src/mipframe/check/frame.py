@@ -112,7 +112,7 @@ def project(source,bindings,*,memory_mb=128,disk_mb=None):
     return result
 
 
-def check(frame, kind, columns=None, *, key=None, value=None, memory_mb=None, disk_mb=None):
+def check(frame, kind, columns=None, *, key=None, value=None, memory_mb=None, disk_mb=None, _context=None):
     if kind not in ('unique','product','function'):raise ValueError('Unknown check; use unique, product or function')
     def names(v):
         ns=(v,) if isinstance(v,str) else tuple(v or ())
@@ -122,7 +122,7 @@ def check(frame, kind, columns=None, *, key=None, value=None, memory_mb=None, di
     right=names(value) if kind=='function' else ()
     selected=tuple(dict.fromkeys((*left,*right)))
     if kind=='product' and any(n not in frame.domains for n in left):raise SchemaError('Product checks require declared target domains')
-    ctx=Context(frame._models,memory_mb,disk_mb)
+    ctx=_context if _context is not None else Context(frame._models,memory_mb,disk_mb)
     try:
         table,schema=ctx.stage(frame,selected);count=len(table)
         summary=dict(operation=kind,scope='full current Frame selection',checked_records=count,columns=left)
@@ -153,4 +153,23 @@ def check(frame, kind, columns=None, *, key=None, value=None, memory_mb=None, di
         return result
     except BaseException:
         if not ctx.retained:ctx.close()
+        raise
+
+
+def check_group(owner, requests, *, budget, memory_mb=128, disk_mb=None):
+    """Share one relational workspace, including staging and sort caches."""
+    from mipframe.frame.base import merge_models
+    models=tuple(dict.fromkeys(m for frame,_,_ in requests for m in frame._models))
+    if any((m.uid,m.version)!=(owner.uid,owner.version) for m in models):
+        raise SchemaError('Frame check belongs to another snapshot')
+    ctx=Context(models,memory_mb,disk_mb)
+    reports=[]
+    try:
+        for frame,kind,options in requests:
+            budget.charge(phase='frame')
+            reports.append(check(frame,kind,_context=ctx,**options))
+        budget.poll()
+        return reports
+    except BaseException:
+        ctx.close()
         raise

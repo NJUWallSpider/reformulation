@@ -1,6 +1,7 @@
 """Proof-carrying certificate API and lazy presentation adapters."""
 import numpy as np
 from mipframe.data.runtime import resource_scope
+from mipframe.check.budget import check_operation
 from fractions import Fraction
 from math import floor, ceil, inf
 from types import MappingProxyType
@@ -157,25 +158,29 @@ class BatchProof:
         if self._targets.kind != 'var' or (ub is None) == (lb is None):
             raise ValueError('Rounding requires variable bounds and exactly one side')
         side, requested = ('ub',ub) if ub is not None else ('lb',lb)
-        from mipframe.data.runtime import WorkContext,leased_array
-        from mipframe.data.columns import ExactColumn,DependencyBuilder,EnumColumn
+        from mipframe.check.graph import CheckBatch
+        from mipframe.data.columns import ExactColumn
         from mipframe.data.index import PositionIndex
-        with WorkContext(memory_mb,disk_mb) as work:
-            chosen=frozen_ints(self.target_ids if vars is None else vars,work=work)
-            lookup=PositionIndex(self.target_ids,work=work)
-            values=ExactColumn(requested,len(chosen),work=work)
-            output=work.fork();status=output.array(len(chosen),'u1');positions=output.array(len(chosen),'<u8')
-            deps=DependencyBuilder(work)
-            for at,(v,value) in enumerate(zip(chosen,values)):
-                v=int(v);i=lookup[v]
-                if self._facts.numeric_var(v)[2]!='I' or self._targets.sides[i]!=side:raise ValueError('Rounding requires integer variables and matching sides')
-                rounded=(floor if side=='ub' else ceil)(self._targets.rhs[i])
-                status[at]=self._status[i]==1 and (rounded<=value if side=='ub' else rounded>=value)
-                deps.append('integer',v,'kind');deps.end();positions[at]=i
-            statuses=object.__new__(EnumColumn);statuses.labels=(0,1,2);statuses.codes=leased_array(output.seal(status),output)
-            return BatchProof(_KEY,self._owner,Targets(chosen,'var',side,values),statuses,
-                rule='round',parents=(self,),per_target_dependencies=deps.freeze(),domain='integer',assumptions=self._assumptions,
-                recipe=dict(positions=leased_array(output.seal(positions),output)))
+        chosen=tuple(map(int,self.target_ids if vars is None else vars))
+        if len(set(chosen))!=len(chosen):raise ValueError('Duplicate target IDs')
+        values=ExactColumn(requested,len(chosen))
+        lookup=PositionIndex(self.target_ids)
+        with CheckBatch(self._owner.check,memory_mb=memory_mb,disk_mb=disk_mb) as plan:
+            handles=[]
+            for v,value in zip(chosen,values):
+                i=lookup[v]
+                if self._targets.sides[i]!=side:raise ValueError('Rounding requires matching sides')
+                target=(plan.pool.terms(((v,1),)),value,'<=' if side=='ub' else '>=')
+                h=plan._stage('round',target,(plan._reference(ProofRef(self,i)),),config=(v,side))
+                handles.append((v,h._index))
+            plan._many(handles,'rounded')
+            return plan.run()['rounded']
+
+    def assumptions(self, index=None):
+        return self._assumptions
+
+    def domain_at(self, index):
+        return self._domain
 
     def dependencies(self, index=None):
         """Iterate actual premise identities without building Reports."""
@@ -247,6 +252,7 @@ class BatchProof:
         with WorkContext(memory_mb,disk_mb):return write_bundle(native_graph(self),path)
 
     @classmethod
+    @check_operation
     def replay(cls, spec, *, model, memory_mb=128, disk_mb=None, _ancestors=frozenset(), _internal=False):
         """
         MIPFRAME HELP BEGIN
@@ -268,9 +274,12 @@ class BatchProof:
         if isinstance(spec,BatchProof):
             if not _internal or spec not in _issued or spec._facts is not facts(model):raise ValueError('Untrusted dependency')
             return spec
-        if spec.get('schema')=='mipframe-certificate-2':
+        if spec.get('schema') in ('mipframe-certificate-2','mipframe-certificate-3'):
             if set(spec)-{'schema','snapshot','revision','root','nodes','status'}:raise ValueError('Cyclic or invalid certificate graph fields')
             if (spec.get('snapshot'),spec.get('revision'))!=(facts(model).uid,facts(model).revision):raise ValueError('Certificate snapshot mismatch')
+            if len(spec['nodes'])!=1 or spec['nodes'][0].get('rule')!='check_graph':
+                from mipframe.check.legacy import replay_legacy
+                return replay_legacy(model,spec,memory_mb=memory_mb,disk_mb=disk_mb)
             results=[]
             for node in spec['nodes']:
                 parents=node.get('parents',())
@@ -293,56 +302,18 @@ class BatchProof:
                 return {k:decode(x) for k,x in v.items()}
             if isinstance(v,list): return [decode(x) for x in v]
             return v
-        t=Targets(**decode(spec['targets'])); rule=spec['rule']; recipe=decode(spec['recipe'])
-        if rule in ('linear','identity'):
-            from mipframe.check.compiler import execute
-            parents=[parent(p) for p in spec.get('parents',[])]
-            result=execute(model,t,CertificateBatch(**decode(spec['certificate'])),residual=recipe['residual'],
-                           parents=parents,positions=recipe.get('parent_indices',()),
-                           assumptions=tuple((tuple(map(tuple,ts)),b,r) for ts,b,r in recipe.get('assumptions',())),memory_mb=memory_mb,disk_mb=disk_mb)
+        rule=spec['rule']; recipe=decode(spec['recipe'])
+        if rule=='check_graph':
+            from mipframe.check.graph import replay_graph
+            result=replay_graph(model, recipe, [parent(p) for p in spec.get('parents',[])], memory_mb=memory_mb,disk_mb=disk_mb)
             if spec.get('keys') is not None:
                 if len(spec['keys'])!=len(result.target_ids):raise ValueError('Invalid external keys')
                 from mipframe.check.keys import Keys
-                keys=Keys(result._targets._work)
+                from mipframe.data.runtime import WorkContext
+                keys=Keys(WorkContext(memory_mb,disk_mb))
                 for key in spec['keys']:keys.append(key)
                 object.__setattr__(result,'_external_keys',keys)
-            if rule=='identity' and not result.ok and not parents and not result._assumptions and not len(result._certificate.sources):
-                return BatchProof(_KEY,model,t,[2]*len(t.ids),rule='identity',certificate=result._certificate,recipe=result._recipe)
             return result
-        if rule=='bound': return check_bounds(model,t)
-        if rule=='round':
-            upstream=parent(spec['parents'][0])
-            return upstream.round_many(vars=t.ids,**{t.sides[0] if len(t.ids) else 'ub':t.rhs})
-        if rule=='affine_integrality': return affine_integrality(model,t.ids,recipe['rows'])
-        if rule=='one_hot_affine': return one_hot_affine(model,recipe['groups']).bound_exclusions()
-        if rule=='enumerate':
-            from mipframe.check.finite import enumerate_claim
-            from mipframe.linear.expr import LinExpr
-            from mipframe.linear.claim import Claim,source_claim
-            ts,rhs,rel=t.claim(facts(model),0)
-            target=Claim(LinExpr(model,-rhs,items=lambda:iter(ts)),rel)
-            c=CertificateBatch(**decode(spec['certificate']));parents=[parent(p) for p in spec['parents']]
-            assume=[Claim(LinExpr(model,-b,items=lambda ts=tuple(map(tuple,ats)):iter(ts)),r) for ats,b,r in recipe.get('assumptions',())]
-            using=[]
-            for kind,i,side,a in zip(c.kinds,c.sources,c.sides,c.multipliers):
-                src=ProofRef(parents[int(i)],recipe['parent_indices'][int(i)]) if kind=='proof' else assume[int(i)] if kind=='assumption' else source_claim((model.rows if kind=='row' else model.vars).loc[int(i)],side)
-                using.append((a,src))
-            return enumerate_claim(model,target,vars=recipe['vars'],using=using,assume=assume,
-                                   max_states=recipe['max_states'],time_limit=recipe['time_limit'],memory_mb=memory_mb,disk_mb=disk_mb).batch
-        if rule in ('round_expression','equality','cases'):
-            from mipframe.linear.expr import LinExpr
-            from mipframe.linear.claim import Claim
-            ts,rhs,relation=t.claim(facts(model),0)
-            claim=Claim(LinExpr(model,-rhs,items=lambda:iter(ts)),relation)
-            ps=[parent(p) for p in spec['parents']]
-            indices=recipe.get('parent_indices',[0]*len(ps))
-            if len(indices)!=len(ps):raise ValueError('Parent position count mismatch')
-            if rule=='cases' and (len(recipe['values'])!=len(ps) or len(set(recipe['values']))!=len(ps)):
-                raise ValueError('Invalid case records')
-            if rule=='round_expression':return model.check.round(claim,from_=ProofRef(ps[0],recipe['parent_indices'][0]),memory_mb=memory_mb,disk_mb=disk_mb).batch
-            if rule=='equality':
-                return model.check.linear(claim,using={'le':[ProofRef(ps[0],0)],'ge':[ProofRef(ps[1],0)]},memory_mb=memory_mb,disk_mb=disk_mb).batch
-            return model.check.cases(claim,var=recipe['var'],cases={v:ProofRef(p,i) for v,p,i in zip(recipe['values'],ps,indices)},memory_mb=memory_mb,disk_mb=disk_mb).batch
         raise ValueError('Unsupported certificate rule')
 
     def __repr__(self):
@@ -395,7 +366,8 @@ class ProofRef:
         Full contract: mf.help("api.ProofRef.scope")
         MIPFRAME HELP END
         """
-        return self.batch.scope
+        return dict(self.batch.scope, assumptions=len(self.batch.assumptions(self.index)),
+                    domain=self.batch.domain_at(self.index))
     @property
     def conclusion(self):
         """
@@ -431,6 +403,8 @@ class ProofRef:
         Full contract: mf.help("api.ProofRef.method")
         MIPFRAME HELP END
         """
+        if self.batch._rule=='check_graph':
+            return self.batch._graph.tasks.rule_at(self.batch._roots[self.index])
         return self.batch._rule
     @property
     def summary(self):
@@ -441,6 +415,9 @@ class ProofRef:
         Full contract: mf.help("api.ProofRef.summary")
         MIPFRAME HELP END
         """
+        if self.batch._rule=='check_graph':
+            graph=self.batch._graph;root=self.batch._roots[self.index]
+            return dict(operation=self.method,targets=1,failures=int(not self.ok),**graph.details.get(root,{}))
         return self.batch.summary
     def to_spec(self):
         """
@@ -494,7 +471,7 @@ class ProofRef:
         from mipframe.frame.base import Frame
         from mipframe.frame.schema import Ref,ref_type
         owner=self.batch._owner;records=[]
-        deps=self.batch._bounds[self.index] if self.batch._bounds else ()
+        deps=((v,side) for kind,v,side in self.batch.dependencies(self.index) if kind=='var') if self.batch._rule=='check_graph' else self.batch._bounds[self.index] if self.batch._bounds else ()
         for v,side in deps:
             value=self.batch._facts.numeric_var(v)[3 if side=='lb' else 4]
             records.append(dict(var=Ref(owner.uid,owner.version,'var',v),side=side,bound=value))
@@ -509,6 +486,29 @@ class ProofRef:
             result['sources']=Frame.from_records(
                 (dict(kind=certificate.kinds[i],source=int(certificate.sources[i]),side=certificate.sides[i],multiplier=certificate.multipliers[i]) for i in range(lo,hi)),
                 schema=dict(kind='str',source='int',side='str',multiplier='number'))
+        if self.batch._rule=='check_graph' and self.method in ('linear','identity','enumerate'):
+            graph=self.batch._graph;root=self.batch._roots[self.index]
+            sources=graph.tasks[root][2]
+            def rows():
+                for source in sources:
+                    kind=source[0]
+                    if kind=='model':yield dict(kind=source[1],source=source[2],side=source[3],multiplier=source[-1])
+                    elif kind=='task':yield dict(kind='proof',source=source[1],side='ub',multiplier=source[-1])
+                    elif kind=='external':yield dict(kind='proof',source=source[2],side='ub',multiplier=source[-1])
+                    else:yield dict(kind='assumption',source=source[1][0],side={'<=':'ub','>=':'lb','==':'eq'}[source[1][2]],multiplier=source[-1])
+            result['sources']=Frame.from_records(rows(),schema=dict(kind='str',source='int',side='str',multiplier='number'))
+        if self.batch._rule=='check_graph' and self.method=='cases':
+            graph=self.batch._graph;root=self.batch._roots[self.index]
+            _,_,sources,_,(v,values)=graph.tasks[root]
+            branches=[graph.source(source) for source in sources]
+            result['cases']=Frame.from_records([dict(value=value,status='PROVED') for value in values],schema=dict(value='number',status='str'))
+            discharged=[]
+            for value,(_,conditions,_) in zip(values,branches):
+                for expression,rhs,relation in conditions:
+                    terms=graph.terms(expression)
+                    if relation=='==' and len(terms)==1 and terms[0][0]==v and Fraction(rhs,terms[0][1])==value:
+                        discharged.append(dict(value=value,var=Ref(owner.uid,owner.version,'var',v)))
+            result['discharged']=Frame.from_records(discharged,schema=dict(value='number',var=ref_type(owner,'var')),models=(owner,))
         if self.batch._rule=='cases':
             recipe=self.batch._recipe;values=recipe['values'];v=recipe['var']
             result['cases']=Frame.from_records([dict(value=x,status=p.status) for x,p in zip(values,self.batch._parents)],schema=dict(value='number',status='str'))
@@ -531,10 +531,11 @@ class ProofRef:
         from mipframe.frame.base import Frame
         from mipframe.frame.schema import Ref,ref_type
         owner=self.batch._owner
-        records=[dict(var=Ref(owner.uid,owner.version,'var',v),value=x) for v,x in getattr(self.batch,'_counterexample',{}).items()]
+        point=self.batch._graph.counterexamples.get(self.batch._roots[self.index],{}) if self.batch._rule=='check_graph' else getattr(self.batch,'_counterexample',{})
+        records=[dict(var=Ref(owner.uid,owner.version,'var',v),value=x) for v,x in point.items()]
         return Frame.from_records(records,schema=dict(var=ref_type(owner,'var'),value='number'),models=(owner,))
     def __repr__(self):
-        scope = ' local premises' if self.batch._rule == 'enumerate' else ''
+        scope = ' local premises' if self.method == 'enumerate' else ''
         if self.batch._assumptions: scope += f' assume: {len(self.batch._assumptions)}'
         return f'<ProofRef {self.status}: {int(self.batch.target_ids[self.index])}{scope}>'
 
@@ -560,6 +561,10 @@ class ProofSelection:
     def __setattr__(self, *args): raise AttributeError('Proof selections are immutable')
     @property
     def ok(self): return all(self.batch._status[i] == 1 for i in self.positions)
+    @property
+    def scope(self):
+        return dict(self.batch.scope, assumptions=len(set(a for i in self.positions for a in self.batch.assumptions(i))),
+                    domain='integer' if any(self.batch.domain_at(i)=='integer' for i in self.positions) else 'relaxation')
 
 
 def proof_parts(proof):
@@ -572,22 +577,20 @@ def trusted(proof, f):
     from mipframe.check.certificate import InvalidCertificateError
     if not isinstance(proof, (BatchProof, ProofRef, ProofSelection)):
         raise InvalidCertificateError('Expected a verified certificate of this snapshot')
-    batch, _ = proof_parts(proof)
+    batch, positions = proof_parts(proof)
     if batch not in _issued or batch._facts is not f:
         raise InvalidCertificateError('Expected a verified certificate of this snapshot')
     if not proof.ok:
         raise InvalidCertificateError('Inconclusive proof cannot authorize an edit')
-    if batch._assumptions:
+    if any(batch.assumptions(i) for i in positions):
         from mipframe.edit.plan import UndischargedAssumptionError
         raise UndischargedAssumptionError('Conditional certificates cannot authorize an edit')
     return batch
 
 
 def check_linear(owner,targets,certificate,residual='exact',**options):
-    f=facts(owner)
-    status,bounds=linear(f,targets,certificate,residual,**options)
-    return BatchProof(_KEY,owner,targets,status,rule='linear',certificate=certificate,
-                      bounds=bounds,recipe=dict(residual=residual))
+    from mipframe.check.compiler import execute
+    return execute(owner,targets,certificate,residual=residual,**options)
 
 
 @resource_scope
@@ -598,31 +601,23 @@ def linear_rows(owner,*,targets,witnesses,side='ub',residual='exact',**options):
 
 
 def check_bounds(owner,targets):
-    if targets.kind != 'var': raise ValueError('Bound rule requires variable targets')
-    f=facts(owner); status=[];deps=[]
-    for v,side,value in zip(targets.ids,targets.sides,targets.rhs):
-        v=int(v); rec=f.numeric_var(v)
-        status.append(rec[4]<=value if side=='ub' else rec[3]>=value if side=='lb' else rec[3]==rec[4]==value)
-        deps.append((('var',v,side),))
-    return BatchProof(_KEY,owner,targets,status,rule='bound',per_target_dependencies=deps)
+    if targets.kind != 'var':raise ValueError('Bound rule requires variable targets')
+    from mipframe.check.graph import CheckBatch
+    with CheckBatch(owner.check) as plan:
+        handles=[]
+        for v,side,value in zip(targets.ids,targets.sides,targets.rhs):
+            v=int(v)
+            h=plan._stage('bound',(plan.pool.terms(((v,1),)),value,{'lb':'>=','ub':'<=','eq':'=='}[side]),config=(v,side))
+            handles.append((v,h._index))
+        plan._many(handles,'bounds')
+        return plan.run()['bounds']
 
 
 def affine_integrality(owner,variables,rows):
-    f=facts(owner); variables=list(variables); rows=list(rows)
-    if len(variables)!=len(rows): raise ValueError('Definition count mismatch')
-    status=[];deps=[]
-    for v,r in zip(variables,rows):
-        v,r=int(v),int(r); f.numeric_var(v); local=[]
-        terms,rhs,_=f.side('row',r,'eq'); d=dict(terms); a=d.pop(v,0)
-        if not a: raise ValueError('Definition does not contain the defined variable')
-        ok=Fraction(rhs,a).denominator==1
-        for x,c in d.items():
-            ok=ok and Fraction(c,a).denominator==1 and f.var_kind(x)=='I'
-            local.append(('integer',x,'kind'))
-        local.append(('row',r,'eq'));deps.append(tuple(local));status.append(ok)
-    return BatchProof(_KEY,owner,Targets(variables,'integrality'),status,
-                      rule='affine_integrality',per_target_dependencies=deps,
-                      recipe=dict(rows=rows),domain='integer')
+    from mipframe.check.graph import CheckBatch
+    with CheckBatch(owner.check) as plan:
+        plan.affine_integrality(vars=variables,rows=rows,result_key='integrality')
+        return plan.run()['integrality']
 
 
 class OneHotAffine:
@@ -697,9 +692,14 @@ class OneHotAffine:
             for v in active:
                 if any((value:=co.get(v,0)+c)<lo or value>hi for _,co,c,lo,hi in definitions):
                     excluded.append(v)
-        result=BatchProof(_KEY,self.owner,Targets(excluded,'var','ub',0),
-                          bytes([1])*len(excluded),rule='one_hot_affine',dependencies=self.deps,
-                          recipe=dict(groups=self.groups),domain='integer')
+        from mipframe.check.graph import CheckBatch
+        with CheckBatch(self.owner.check) as plan:
+            handles=[]
+            for v in excluded:
+                h=plan._stage('one_hot_exclusion',(plan.pool.terms(((v,1),)),0,'<='),config=(v,self.groups))
+                handles.append((v,h._index))
+            plan._many(handles,'exclusions')
+            result=plan.run()['exclusions']
         object.__setattr__(self,'_exclusions',result)
         return result
 

@@ -67,9 +67,9 @@ def recover(s, run, edges):
             anchor,scale = next((v,c) for v,c in terms if v not in coords)
             lo,hi = m.row_bounds(r)
             if scale<0:lo,hi = hi,lo
-            lo,hi = (None if lo is None else F(lo)/scale),(None if hi is None else F(hi)/scale)
+            lo,hi = (None if lo is None else (lo if scale==1 else F(lo)/scale)),(None if hi is None else (hi if scale==1 else F(hi)/scale))
             for axis in axes:bundles[axis].append((r,anchor,positions[0][axis],scale,lo,hi))
-            slices[r] = [(coords[v][0],coords[v][1],-F(c)/scale) for v,c in inside]
+            slices[r] = [(coords[v][0],coords[v][1],(-c if scale==1 else -F(c)/scale)) for v,c in inside]
         for axis,bundle in enumerate(bundles):
             if not bundle:continue
             duplicates = sorted((anchor,k,n) for (anchor,k),n in Counter((x[1],x[2]) for x in bundle).items() if n>1)
@@ -109,8 +109,15 @@ def check_operator(s, card, *, kernel=None, rows=None, coordinates=None, ast=Non
     if ast is not None and ast!=expected_ast:return [dict(reason='unsupported or changed indexed AST')]
     if card['ast']!=expected_ast:return [dict(reason='AST disagrees with expression')]
     m = s.owner.model;o = card['id'];axis = card['fixed_axis'];t = card['tensor']
+    # Dense snapshot IDs can be checked without decoding names/objective/bounds
+    # for every coordinate. Sparse overlay IDs retain the metadata lookup path.
+    row_ids,var_ids=m.entity_ids('row'),m.entity_ids('var')
+    def contains(ids,table,value):
+        if isinstance(ids,range):return value in ids
+        try:table[value];return True
+        except (KeyError,IndexError):return False
     try:
-        entries = s.kernels[o].records() if kernel is None else (
+        entries = s.kernels[o].records(exact=False) if kernel is None else (
             (x['p'],-1 if x.get('k') is None else x['k'],x['j'],F(x['value'])) for x in kernel)
         kernels = defaultdict(list);seen = set()
         for p,k,j,value in entries:
@@ -118,17 +125,16 @@ def check_operator(s, card, *, kernel=None, rows=None, coordinates=None, ast=Non
                 or not 0<=j<card['kernel_shape'][-1] or (k!=-1 if card['axis_invariant'] else not 0<=k<card['shape'][1])):
                 return [dict(reason='out-of-domain kernel entry')]
             if (p,k,j) in seen:raise ValueError('duplicate kernel entry')
-            seen.add((p,k,j));kernels[p,k].append((j,F(value)))
+            seen.add((p,k,j));kernels[p,k].append((j,value))
         coords = ((v,a,b) for v,_,_,a,b in s.coordinates[t].records()) if coordinates is None else (
             (_ref_id(s,x['variable'],'var'),x['axis0'],x['axis1']) for x in coordinates)
         mapping = {};variables = set()
         for v,a,b in coords:
             if v in variables or (a,b) in mapping:raise ValueError('duplicate coordinate')
             if any(type(i) is not int or i<0 for i in (v,a,b)):raise ValueError('invalid coordinate')
-            try:m.variables[v]
-            except (KeyError,IndexError):raise ValueError('variable outside snapshot') from None
+            if not contains(var_ids,m.variables,v):raise ValueError('variable outside snapshot')
             variables.add(v);mapping[a,b] = v
-        bindings = s.bindings[o].records() if rows is None else (
+        bindings = s.bindings[o].records(exact=False) if rows is None else (
             (_ref_id(s,x.get('row',x.get('row_id')),'row'),x['p'],x['k'],_ref_id(s,x['anchor'],'var'),
              F(x['scale']),None if x['lower'] is None else F(x['lower']),None if x['upper'] is None else F(x['upper'])) for x in rows)
         row_seen,pk_seen = set(),set();pa,ap = {},{};errors = []
@@ -138,9 +144,8 @@ def check_operator(s, card, *, kernel=None, rows=None, coordinates=None, ast=Non
             if pa.setdefault(p,anchor)!=anchor or ap.setdefault(anchor,p)!=p:return [dict(reason='anchor mapping mismatch')]
             if any(type(i) is not int for i in (r,p,k,anchor)) or r<0 or anchor<0 or not 0<=p<card['shape'][0] or not 0<=k<card['shape'][1]:
                 errors.append(dict(reason='row or index outside domain',row_id=r));continue
-            try:row = m.rows[r];m.variables[anchor]
-            except (IndexError,KeyError):errors.append(dict(reason='row or index outside domain',row_id=r));continue
-            scale = F(scale)
+            if not contains(row_ids,m.rows,r) or not contains(var_ids,m.variables,anchor):
+                errors.append(dict(reason='row or index outside domain',row_id=r));continue
             if not scale:errors.append(dict(reason='zero scale',row_id=r));continue
             expected = {anchor:scale};missing = False
             for j,value in kernels[p,-1 if card['axis_invariant'] else k]:
@@ -152,9 +157,9 @@ def check_operator(s, card, *, kernel=None, rows=None, coordinates=None, ast=Non
             if missing:continue
             expected = {v:c for v,c in expected.items() if c}
             if dict(m.iter_terms(r))!=expected:errors.append(dict(reason='coefficient mismatch',row_id=r))
-            low,high = (None if lo is None else F(lo)*scale),(None if hi is None else F(hi)*scale)
+            low,high = (None if lo is None else lo*scale),(None if hi is None else hi*scale)
             if scale<0:low,high = high,low
-            if (low,high)!=(m.num(row[2]),m.num(row[3])):errors.append(dict(reason='bound mismatch',row_id=r))
+            if (low,high)!=m.row_bounds(r):errors.append(dict(reason='bound mismatch',row_id=r))
         if len(row_seen)!=card['rows']:errors.append(dict(reason='operator row coverage mismatch'))
         return errors
     except (ValueError,KeyError,TypeError,IndexError,ZeroDivisionError) as error:
@@ -166,7 +171,7 @@ def kernel_stats(s, card):
     from mipframe.ir.indexing.store import Table
     o = card['id'];np_ = card['shape'][0];nj = card['kernel_shape'][-1]
     total = np_*nj*(1 if card['axis_invariant'] else card['shape'][1])
-    entries = list(s.kernels[o].records());values = [v for _,_,_,v in entries]
+    entries = list(s.kernels[o].records(exact=False));values = [v for _,_,_,v in entries]
     if len(values)<total:values.append(F(0))
     stats = dict(integer=all(v.denominator==1 for v in values),min=str(min(values,default=0)),
         max=str(max(values,default=0)),zeros=total-len(entries),stored_nonzeros=len(entries),implicit_zero=True)

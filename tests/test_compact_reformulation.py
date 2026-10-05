@@ -188,7 +188,7 @@ End
 
 def test_saved_status_not_trusted(m):
     proof=m.check.linear_rows(targets=[2],witnesses=[[0,1]])
-    spec=proof.to_spec();spec['status']='PROVED';spec['nodes'][spec['root']]['certificate']['sources'][1]=0
+    spec=proof.to_spec();spec['status']='PROVED';spec['nodes'][spec['root']]['recipe']['tasks'][0][2][1][2]=0
     assert not mf.BatchProof.replay(spec,model=m).ok
     spec['snapshot']='other'
     with pytest.raises(ValueError):mf.BatchProof.replay(spec,model=m)

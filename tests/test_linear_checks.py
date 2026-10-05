@@ -284,7 +284,7 @@ def test_replay_all_checkers_tampering_and_atomic_file(model, tmp_path):
     with pytest.raises(ValueError, match="Cyclic"):
         mf.Report.replay(cycle, models=[model])
     forged = base.to_spec()
-    forged["batch"]["nodes"][0]["certificate"]["sources"][0] = 999999
+    forged["batch"]["nodes"][0]["recipe"]["tasks"][0][2][0][2] = 999999
     with pytest.raises((ValueError, mf.InvalidCertificateError)):
         mf.Report.replay(forged, models=[model])
     wrong = base.to_spec()

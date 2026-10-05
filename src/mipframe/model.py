@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from mipframe.check.budget import check_operation
+
 from mipframe._help.diagnostics import hint as _help_hint
 
 from pathlib import Path
@@ -309,6 +311,7 @@ class Model:
         if cur is ancestor:return DeltaDiff(self,source)
         return NumericDiff(self,source)
 
+    @check_operation
     def audit(self, *, source, bundle=None, artifact=None):
         """
         Explicitly recheck saved certificates, delta coverage and numerical output.
@@ -323,7 +326,7 @@ class Model:
         from mipframe.control.proofs import proof_bundle
         from mipframe.store.reformulation_audit import verify_bundle
         f=facts(self)
-        if bundle is None:bundle=getattr(f,'saved_bundle',None) or proof_bundle(f)
+        if bundle is None:bundle=getattr(f,'saved_bundle',None) or proof_bundle(f,native=True)
         return verify_bundle(bundle,source,target=self,artifact=artifact)
 
     @property
@@ -479,7 +482,7 @@ class Model:
         from mipframe.analysis import _transitions
         return _transitions(self,start,stop,kind=kind,entities=entities,**options)
 
-    def indexed(self, *, rows=None, vars=None, depth=2, method='template', memory_mb=128, disk_mb=None, **options):
+    def indexed(self, *, rows=None, vars=None, depth=2, method='template', include_singletons=False, memory_mb=128, disk_mb=None, **options):
         """
         Retrieve or discover indexed structure using explicit refinement options.
 
@@ -491,11 +494,13 @@ class Model:
         """
         from mipframe.ir.indexing import indexed
         from mipframe.ir.signatures import refinement
+        if type(include_singletons) is not bool:
+            raise TypeError('include_singletons must be a boolean')
         self._restore_indexed()
         if method not in ('template', 'exact_structural'):
             raise ValueError('Indexed analysis requires template or exact_structural')
         result = refinement(self,depth=depth,mode='template' if method=='template' else 'exact',memory_mb=memory_mb,disk_mb=disk_mb,**options)
-        return indexed(self,rows=rows,vars=vars,signatures=result,memory_mb=memory_mb,disk_mb=disk_mb)
+        return indexed(self,rows=rows,vars=vars,signatures=result,include_singletons=include_singletons,memory_mb=memory_mb,disk_mb=disk_mb)
 
     @property
     def objective(self) -> Objective:

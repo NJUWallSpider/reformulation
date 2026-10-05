@@ -23,6 +23,18 @@ compute exact structural facts. `mf.alg` searches graph or finite integer object
 `LinExpr`, `Claim` and `m.check` express and verify mathematical propositions.
 An `Edit` builds a different snapshot; it never mutates its source.
 
+## Prefer batch execution
+
+For repeated checks, use `m.check.batch()` first. Do not write a Python `for`
+loop, comprehension, or `map` that executes `m.check.linear`, `cases`, `solution`
+or another scalar checker once per item. Do not rebuild model-wide validation
+with handwritten per-row or per-variable loops when a library checker exists.
+Use Frame operations for structural queries and register related checks together.
+A loop is appropriate only to **register** tasks with `batch.linear(...)`, etc.;
+call `batch.run()` once after registration. Construct shared expressions inside
+the batch context so their common parts remain shared. Scalar checks are for
+isolated checks, not the default strategy for a family of targets.
+
 ## Run one complete example
 
 This self-contained example creates temporary files and removes them when done.
@@ -67,6 +79,10 @@ Use `m.vars` / `m.rows`, `by_name(name)`, `loc[id_or_ref]`, and `iloc[position]`
 Bounds are exact finite values or infinities; `source_line` is one-based or `None`.
 `to_records()` explicitly materializes detached records within a budget.
 Export a numerical SciPy copy with `m.matrix.view().to_scipy()`.
+
+By default `m.indexed()` skips partitions with only one row set; these cannot
+contribute tensor coordinates. Use `m.indexed(include_singletons=True)` only
+when those potentially numerous partitions are needed.
 
 Indexed directories follow the family Frame model: `I = m.indexed()`, then
 `O = I.operators.where(...)`, `O.rows`, and `O.related("kernel")` or
@@ -243,20 +259,43 @@ variable coverage, including variables absent from all rows; activity alone only
 requires participating variables. See `mf.help("fractional point feasibility")`.
 No checker searches for multipliers.
 
-For many checks against existing model rows, pass integer IDs and compact witnesses:
+Use one explicit batch for dependent proofs and mixed check types:
 
 ```python
-proof = m.check.linear_rows(targets=target_ids, witnesses=retained_paths).require()
-final = m.edit().drop_rows(target_ids, because=proof).commit()
-receipt = final.write('output/model.mps', audit='readback')
+x = m.vars.iloc[0]  # example requires an integer variable with bounds [0, 1]
+with m.check.batch() as batch:
+    target = x >= 0
+    p0 = batch.linear(target, using=[x == 0], assume=[x == 0])
+    p1 = batch.linear(target, using=[x == 1], assume=[x == 1])
+    batch.cases(target, var=x, cases={0: p0, 1: p1}, result_key="bound")
+    batch.model_verify(result_key="integrity")
+    results = batch.run()
+results.require()
+proof = results["bound"]
 ```
 
-`retained_paths` is a list of source row-ID lists with unit multipliers. General
-certificates use `mf.CertificateBatch(offsets, sources, multipliers, sides, kinds)`.
-Sides are `lb`, `ub`, or `eq`; source kinds are `row` or `var`. For custom sparse
-claims use `mf.Targets` and `m.check.linear_many`. The scalar builder remains useful
-for small Claim inputs, with one common assumption scope per batch. Frame adapters
-are optional and do not run inside the proof kernel.
+Registration returns a `CheckHandle`, not a proof: it has no `.ok` or `.status`
+and cannot authorize edits. Handles may supply dependencies to later tasks in
+the same batch. `result_key` names an exported result and must be unique; unnamed
+tasks are internal dependencies. `run()` checks the complete dependency closure
+of named results and seals the plan. Context exit never runs it implicitly.
+`results.require()` requires all exported checks to succeed. Mathematical results
+are `ProofRef`/`BatchProof`, points are `PointReport`, and diagnostics are `Report`;
+point and diagnostic reports never grant mathematical or edit authority.
+Conditions belong to each target, including inherited conditions; only a valid
+`cases` step discharges its matching branch conditions. Different snapshots need
+separate batches and cannot share proof authority.
+
+Defaults are 30 seconds, 1,000,000 logical tasks, 4,096 compiled execution nodes,
+100,000,000 work units and 128 MiB working memory. Budget exhaustion stops with
+`ProofBudgetExceeded`, never a successful or mathematically refuted result.
+Use explicit finite overrides on `m.check.batch(...)` or `m.check.budget(...)`
+when justified; time and work limits cannot be disabled.
+
+Existing compact inputs can use `linear_rows(targets=..., witnesses=...)` or
+`linear_many(targets=mf.Targets(...), witnesses=mf.CertificateBatch(...))` as
+adapters to the common engine. Prefer `check.batch()` for new multi-rule work;
+do not add a new `*_many` interface for every checker or mathematical structure.
 
 `BatchProof` stores statuses and arrays; do not call `for_target()` in a large loop.
 Bind the batch or `proof.select(ids)` directly to an edit. `round_many(ub=0)` or

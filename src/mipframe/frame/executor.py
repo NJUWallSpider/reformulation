@@ -29,6 +29,9 @@ class Context:
         from mipframe.store.lifecycle import register
         for m in self.models:register(m,self)
     def guard(self):
+        from mipframe.check.budget import current_budget
+        budget=current_budget()
+        if budget is not None:budget.poll()
         for model in self.models:model.model
         if self._closed:raise MIPFrameError('Query storage is closed')
     def check_size(self,row):

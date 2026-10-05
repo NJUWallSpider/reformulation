@@ -51,6 +51,10 @@ class ArtifactTree:
 
     def encode(self, value):
         from fractions import Fraction
+        from mipframe.check.ir import TaskTable,ExpressionTable
+        if isinstance(value,(TaskTable,ExpressionTable)):
+            from mipframe.check.ir import native_table
+            return {'$check_tasks' if isinstance(value,TaskTable) else '$check_expressions':native_table(value,self.encode)}
         from mipframe.check.keys import Keys
         if isinstance(value,Keys):
             from mipframe.data.runtime import WorkContext
@@ -112,6 +116,10 @@ class ArtifactTree:
 
     def decode(self, value):
         if isinstance(value, dict):
+            if set(value) in ({'$check_tasks'},{'$check_expressions'}):
+                from mipframe.check.ir import restore_table
+                key=next(iter(value))
+                return restore_table('tasks' if key=='$check_tasks' else 'expressions',value[key],self.decode)
             if set(value)=={'$keys'}:
                 from mipframe.check.keys import EncodedKeys
                 return EncodedKeys({n:self.decode(v) for n,v in value['$keys'].items()})

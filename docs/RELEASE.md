@@ -1,8 +1,42 @@
-# Internal release: 1.2.0
+# Internal release: 1.4.0
 
-This is the 1.2.0 internal release for Python 3.11 or later. It is not intended
+This is the 1.4.0 internal release for Python 3.11 or later. It is not intended
 for PyPI. Package metadata includes
 `Private :: Do Not Upload`. This release does not assign an open-source license.
+
+## Changes in 1.4.0
+
+- Add `m.check.batch()` with deferred task handles, shared expressions, exact
+  numerical execution and target-local proof conditions. Named results retain
+  their mathematical, point-validation or diagnostic permissions.
+- Add compact v3 certificates and typed audit replay, with a bounded v2 adapter.
+  Existing compact linear entry points use the common graph engine.
+- Help and SKILL prioritize batch execution; loops should register tasks rather
+  than execute scalar checkers repeatedly.
+- On Python 3.14.7, three fresh-process test34 runs measured core computations
+  at 28.52 / 28.51 / 28.60 seconds and total computations at
+  46.45 / 46.72 / 46.52 seconds, including witnesses, edits, readback and audit.
+
+### Known validation limitations
+
+The last complete pre-release regression recorded 680 passed, 8 skipped and
+one failure: `test_high_degree_sparse_source` exceeds the new check memory
+budget at 16 KiB. This internal release does not claim completion of the entire
+unified-check architecture plan: the general rule protocol, comprehensive
+resource accounting and phase statistics still need further work. Release
+verification results are recorded alongside the artifacts in `dist`.
+
+### Indexed improvements carried forward
+
+- `Model.indexed()` skips single-set partitions during discovery by default.
+  Use `include_singletons=True` to retain the complete partition directory.
+  The two modes have separate cache identities and survive save/load.
+- Component discovery gathers local edges and shares immutable arrays instead
+  of repeatedly scanning all members. Full-mode singleton artifacts are packed
+  into shared columns with compact metadata.
+- Operator recovery builds typed columns in batches and avoids redundant scalar
+  and metadata decoding. Independent exact verification is retained.
+- Installed help, API documentation and the agent guide describe the new option.
 
 ## Install
 
@@ -11,14 +45,14 @@ Use an isolated environment and a wheel supplied by the project:
 ```sh
 python -m venv .venv
 . .venv/bin/activate
-python -m pip install /path/to/mipframe-1.2.0-py3-none-any.whl
+python -m pip install /path/to/mipframe-1.4.0-py3-none-any.whl
 python -m mipframe help
 python -m mipframe help "recover coordinates" --detail full
 ```
 
 NumPy is the only core dependency. For optional exports, install the same wheel
 with extras, for example
-`python -m pip install '/path/to/mipframe-1.2.0-py3-none-any.whl[scipy]'`.
+`python -m pip install '/path/to/mipframe-1.4.0-py3-none-any.whl[scipy]'`.
 The `parquet` extra provides PyArrow. For offline installation, prepare a wheel
 folder containing NumPy and any required optional dependencies, then pass
 `--no-index --find-links /path/to/wheels` to pip. The mipframe wheel alone does
@@ -34,8 +68,8 @@ python scripts/build_help.py --check
 python -m pytest -q -rs
 python -m build
 python scripts/verify_release.py \
-  --wheel dist/mipframe-1.2.0-py3-none-any.whl \
-  --sdist dist/mipframe-1.2.0.tar.gz
+  --wheel dist/mipframe-1.4.0-py3-none-any.whl \
+  --sdist dist/mipframe-1.4.0.tar.gz
 ```
 
 The verifier checks wheel contents and private-release metadata, exercises

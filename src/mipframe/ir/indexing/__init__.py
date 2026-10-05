@@ -12,8 +12,9 @@ from mipframe.frame.entity import VarFrame
 from mipframe.core.resources import memory_bytes
 
 
-def indexed(owner, *, rows=None, vars=None, signatures=None, memory_mb=128,disk_mb=None):
+def indexed(owner, *, rows=None, vars=None, signatures=None, include_singletons=False, memory_mb=128,disk_mb=None):
     owner.model
+    if type(include_singletons) is not bool:raise TypeError('include_singletons must be a boolean')
     memory_bytes(memory_mb)
     for value, cls, name in ((rows, RowFrame, "rows"), (vars, VarFrame, "vars")):
         if value is not None and (
@@ -29,7 +30,7 @@ def indexed(owner, *, rows=None, vars=None, signatures=None, memory_mb=128,disk_
     if rows is None and vars is None:
         for result in getattr(owner, "_indexed_results", {}).values():
             record = result._record()
-            if record["scope"]["full_model"] and record["signatures"] == {
+            if record.get("include_singletons",True)==include_singletons and record["scope"]["full_model"] and record["signatures"] == {
                 "config": sig.config,
                 "depth": sig.depth,
             }:
@@ -38,6 +39,7 @@ def indexed(owner, *, rows=None, vars=None, signatures=None, memory_mb=128,disk_
     variables = owner.vars if vars is None else vars
     # Work in a private copy. Published stores and their live queries remain unchanged on failure.
     s = Store(owner, memory_mb,disk_mb)
+    s.include_singletons=include_singletons
     try:
         rg = s.domain("row", rows.ids)
         vg = s.domain("var", variables.ids)
@@ -50,7 +52,8 @@ def indexed(owner, *, rows=None, vars=None, signatures=None, memory_mb=128,disk_
         )
         key = ident(
             "run_",
-            [owner.model.manifest["model_version"], rg, vg, sig.config, sig.depth],
+            [owner.model.manifest["model_version"], rg, vg, sig.config, sig.depth]
+            + ([] if include_singletons else ["exclude_singletons"]),
         )
         record = s.runs.get(key)
         if record is not None:
@@ -75,6 +78,7 @@ def indexed(owner, *, rows=None, vars=None, signatures=None, memory_mb=128,disk_
         record = dict(
             id=key,
             status="complete",
+            include_singletons=include_singletons,
             scope=scope,
             signatures=dict(config=sig.config, depth=sig.depth),
             search="homogeneous type/unit seeds + all available signature levels + role direction groups + bipartite components",

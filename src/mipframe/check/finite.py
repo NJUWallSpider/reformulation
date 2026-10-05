@@ -15,79 +15,10 @@ def satisfied(data,point):
     return value<=rhs if rel=='<=' else value>=rhs if rel=='>=' else value==rhs
 
 
-@resource_scope
-def enumerate_claim(owner,target,*,vars,using=(),assume=(),max_states=100000,time_limit=None,domain='auto',memory_mb=128,disk_mb=None):
-    from mipframe.core.resources import memory_bytes
-    from mipframe.frame.executor import QueryMemoryError,size
-    budget=memory_bytes(memory_mb)
-    if domain not in ('auto','integer'):raise InvalidCertificateError('Enumeration proves integer claims only')
-    if max_states is not None and (isinstance(max_states,bool) or not isinstance(max_states,int) or max_states<0):raise ValueError('Invalid state limit')
-    if time_limit is not None and (isinstance(time_limit,bool) or not isfinite(time_limit) or time_limit<0):raise ValueError('Invalid time limit')
-    f=facts(owner);selected=set()
-    for v in vars:
-        if getattr(v,'uid',getattr(getattr(v,'_owner',None),'uid',f.uid))!=f.uid:raise InvalidCertificateError('Foreign enumeration variable')
-        ident=v.id if hasattr(v,'id') else v
-        from numbers import Integral
-        if isinstance(ident,bool) or not isinstance(ident,Integral):raise InvalidCertificateError('Expected a variable ID')
-        f.validate('var',ident);selected.add(int(ident))
-        if len(selected)*256>budget:raise QueryMemoryError('Enumeration state exceeds the working-memory budget')
-    selected=sorted(selected)
-    a=assumptions_data(owner,assume);c,parents,positions=compile_sources(owner,using,a)
-    a=tuple(dict.fromkeys((*a,*(x for p in parents for x in p._assumptions))))
-    ib,contradiction=intervals(f,a);premises=[];deps=[]
-    for i,(kind,ident,side) in enumerate(zip(c.kinds,c.sources,c.sides)):
-        ident=int(ident)
-        if kind=='proof':premises.append(parents[ident]._targets.claim(f,positions[ident]))
-        elif kind=='assumption':premises.append(a[ident])
-        else:premises.append(f.side(kind,ident,side));deps.append((kind,ident,side))
-    premises.extend(a);data=claim_data(owner,target)
-    fixed={v:lo for v,(lo,hi) in ib.items() if lo==hi}
-    used={v for ts,_,_ in (*premises,data) for v,c in ts}
-    for v in used-set(selected)-set(fixed):
-        lo,hi=f.var_bounds(v)
-        if lo==hi and lo not in (-inf,inf):
-            fixed[v]=lo;deps.extend((('var',v,'lb'),('var',v,'ub')))
-            if f.var_kind(v)=='I':
-                deps.append(('integer',v,'kind'));contradiction |= Fraction(lo).denominator!=1
-    if len(used)*256+sum(size(c) for ts,_,_ in (*premises,data) for _,c in ts)>budget:
-        raise QueryMemoryError('Enumeration premise state exceeds the working-memory budget')
-    if not used<=set(selected)|set(fixed):raise UnsupportedEnumerationDomain('Variables remain outside the finite selection')
-    ranges=[]
-    for v in selected:
-        rec=f.numeric_var(v);lo,hi=ib.get(v,rec[3:5])
-        if rec[2]!='I' or lo==-inf or hi==inf:raise UnsupportedEnumerationDomain('Finite integer variables are required')
-        ranges.append(range(ceil(lo),floor(hi)+1));deps.extend((('integer',v,'kind'),('var',v,'lb'),('var',v,'ub')))
-    # itertools.product materializes each range. The odometer retains only one
-    # assignment even when a domain has billions of values and max_states=1.
-    def assignments():
-        if any(r.start>=r.stop for r in ranges):return
-        values=[r.start for r in ranges]
-        while True:
-            yield values
-            for i in range(len(values)-1,-1,-1):
-                values[i]+=1
-                if values[i]<ranges[i].stop:break
-                values[i]=ranges[i].start
-            else:return
-    start=time.monotonic();states=feasible=0;minimum=maximum=None;counterexample={};status=1;exhaustive=True;stop_reason=None
-    if not contradiction:
-        for values in assignments():
-            if max_states is not None and states>=max_states or time_limit is not None and time.monotonic()-start>=time_limit:
-                status=0;exhaustive=False;stop_reason='max_states' if max_states is not None and states>=max_states else 'time_limit';break
-            states+=1;point=dict(fixed);point.update(zip(selected,values))
-            if not all(satisfied(p,point) for p in premises):continue
-            feasible+=1;value=sum(c*point[v] for v,c in data[0])-data[1]
-            minimum=value if minimum is None else min(minimum,value);maximum=value if maximum is None else max(maximum,value)
-            if not satisfied(data,point):counterexample=point;status=2;exhaustive=False;break
-    t=target_data(owner,target)
-    p=BatchProof(_KEY,owner,t,[status],rule='enumerate',parents=parents,dependencies=deps,
-                 assumptions=a,domain='integer',certificate=c,
-                 recipe=dict(vars=selected,parent_indices=positions,assumptions=a,max_states=max_states,time_limit=time_limit))
-    object.__setattr__(p,'_details',dict(states=states,feasible_states_observed=feasible,minimum=minimum,maximum=maximum,
-                                      exhaustive=exhaustive,vacuous=exhaustive and feasible==0,stop_reason=stop_reason,
-                                      extrema='exact' if exhaustive else 'observed only',counterexample_is_model_solution=False))
-    object.__setattr__(p,'_counterexample',counterexample)
-    return ProofRef(p,0)
+def enumerate_claim(owner,target,*,vars,using=(),assume=(),max_states=100000,time_limit=30,domain='auto',memory_mb=128,disk_mb=None):
+    from mipframe.check.graph import immediate
+    return immediate(owner.check,'enumerate',target,vars=vars,using=using,assume=assume,
+        max_states=max_states,time_limit=time_limit,domain=domain,memory_mb=memory_mb,disk_mb=disk_mb)
 
 
 class PointReport:
@@ -179,8 +110,7 @@ class PointReport:
     def __repr__(self):return f'<PointReport {self.status}: {self.summary}>'
 
 
-@resource_scope
-def solution(owner,values,*,value='value',missing='error',domain='auto',memory_mb=128,disk_mb=None):
+def prepare_point(owner,values,*,value='value',missing='error',domain='auto',memory_mb=128,disk_mb=None):
     from mipframe.frame.base import Frame
     from mipframe.frame.schema import SchemaError
     if domain not in ('auto','integer'):
@@ -208,23 +138,116 @@ def solution(owner,values,*,value='value',missing='error',domain='auto',memory_m
         if missing=='error' and len(storage.ids)!=f.nvars:raise SchemaError('Point must cover every variable')
         point=ExactPoint(storage,f)
     except BaseException:storage.close();raise
+    return point
+
+
+@resource_scope
+def solution_group(owner,requests,*,budget=None,memory_mb=128,disk_mb=None):
+    """Read each sparse model row once for a block of complete exact points."""
     from mipframe.data.relations import RelationBuilder
     from mipframe.data.runtime import WorkContext
-    builder=RelationBuilder(WorkContext(),dict(axis='str',ident='int',side='str',value='number',bound='number'))
-    def violation_record(axis,ident,side,value,bound):builder.append(dict(axis=axis,ident=ident,side=side,value=value,bound=bound))
-    max_integer=0
-    for v in f.var_ids():
-        _,_,kind,lo,hi,_=f.numeric_var(v);x=point[v]
-        if x<lo:violation_record('var',v,'lb',x,lo)
-        if x>hi:violation_record('var',v,'ub',x,hi)
-        if kind=='I' and Fraction(x).denominator!=1:
-            violation=min(x-floor(x),ceil(x)-x);max_integer=max(max_integer,violation)
-            violation_record('var',v,'integer',x,floor(x))
-    for r in f.row_ids():
-        x=sum(c*point[v] for v,c in f.terms(r));lo,hi=f.row_bounds(r)
-        if x<lo:violation_record('row',r,'lb',x,lo)
-        if x>hi:violation_record('row',r,'ub',x,hi)
-    objective=f.constant+sum(f.numeric_var(v)[5]*point[v] for v in f.var_ids())
-    violations=builder.finish()
-    return PointReport(owner,point,violations,dict(objective=objective,objective_sense=f.sense,optimality_proved=False,
-                                                  max_integrality_violation=max_integer,violations=len(violations)))
+    points=[];builders=[];reports=[]
+    f=facts(owner)
+    try:
+        for values,options in requests:
+            if budget:budget.poll()
+            points.append(prepare_point(owner,values,memory_mb=memory_mb,disk_mb=disk_mb,**options))
+            builders.append(RelationBuilder(WorkContext(),dict(axis='str',ident='int',side='str',value='number',bound='number')))
+        maxima=[0]*len(points);objectives=[f.constant]*len(points)
+        def violation(i,axis,ident,side,value,bound):
+            builders[i].append(dict(axis=axis,ident=ident,side=side,value=value,bound=bound))
+        for at,v in enumerate(f.var_ids()):
+            if budget and at%256==0:budget.charge(count=256*max(1,len(points)),phase='solution')
+            _,_,kind,lo,hi,c=f.numeric_var(v)
+            for i,point in enumerate(points):
+                x=point[v];objectives[i]+=c*x
+                if x<lo:violation(i,'var',v,'lb',x,lo)
+                if x>hi:violation(i,'var',v,'ub',x,hi)
+                if kind=='I' and Fraction(x).denominator!=1:
+                    maxima[i]=max(maxima[i],min(x-floor(x),ceil(x)-x))
+                    violation(i,'var',v,'integer',x,floor(x))
+        for at,r in enumerate(f.row_ids()):
+            terms=tuple(f.terms(r));lo,hi=f.row_bounds(r)
+            if budget:budget.charge(count=len(terms)*max(1,len(points)),phase='solution')
+            for i,point in enumerate(points):
+                x=sum(c*point[v] for v,c in terms)
+                if x<lo:violation(i,'row',r,'lb',x,lo)
+                if x>hi:violation(i,'row',r,'ub',x,hi)
+        for i,point in enumerate(points):
+            violations=builders[i].finish()
+            reports.append(PointReport(owner,point,violations,dict(objective=objectives[i],objective_sense=f.sense,
+                optimality_proved=False,max_integrality_violation=maxima[i],violations=len(violations))))
+        if budget:budget.poll()
+        return reports
+    except BaseException:
+        for point in points:point.close()
+        for builder in builders:builder.work.close()
+        raise
+
+
+@resource_scope
+def solution(owner,values,*,value='value',missing='error',domain='auto',memory_mb=128,disk_mb=None):
+    from mipframe.check.budget import current_budget,CheckBudget
+    return solution_group(owner,[(values,dict(value=value,missing=missing,domain=domain))],
+        budget=current_budget() or CheckBudget(memory_mb=memory_mb,disk_mb=disk_mb),memory_mb=memory_mb,disk_mb=disk_mb)[0]
+
+
+def enumerate_kernel(owner,data,premises,a,*,vars,max_states,time_limit,memory_mb,budget):
+    """One bounded finite-domain rule; execution and publication stay separate."""
+    from mipframe.core.resources import memory_bytes
+    from mipframe.frame.executor import QueryMemoryError,size
+    byte_budget=memory_bytes(memory_mb)
+    f=facts(owner);selected=set()
+    for v in vars:
+        if getattr(v,'uid',getattr(getattr(v,'_owner',None),'uid',f.uid))!=f.uid:raise InvalidCertificateError('Foreign enumeration variable')
+        ident=v.id if hasattr(v,'id') else v
+        from numbers import Integral
+        if isinstance(ident,bool) or not isinstance(ident,Integral):raise InvalidCertificateError('Expected a variable ID')
+        f.validate('var',ident);selected.add(int(ident))
+        if len(selected)*256>byte_budget:raise QueryMemoryError('Enumeration state exceeds the working-memory budget')
+    selected=sorted(selected)
+    ib,contradiction=intervals(f,a)
+    premises=list(premises)+list(a);deps=[]
+    fixed={v:lo for v,(lo,hi) in ib.items() if lo==hi}
+    used={v for ts,_,_ in (*premises,data) for v,c in ts}
+    for v in used-set(selected)-set(fixed):
+        lo,hi=f.var_bounds(v)
+        if lo==hi and lo not in (-inf,inf):
+            fixed[v]=lo;deps.extend((('var',v,'lb'),('var',v,'ub')))
+            if f.var_kind(v)=='I':
+                deps.append(('integer',v,'kind'));contradiction |= Fraction(lo).denominator!=1
+    if len(used)*256+sum(size(c) for ts,_,_ in (*premises,data) for _,c in ts)>byte_budget:
+        raise QueryMemoryError('Enumeration premise state exceeds the working-memory budget')
+    if not used<=set(selected)|set(fixed):raise UnsupportedEnumerationDomain('Variables remain outside the finite selection')
+    ranges=[]
+    for v in selected:
+        rec=f.numeric_var(v);lo,hi=ib.get(v,rec[3:5])
+        if rec[2]!='I' or lo==-inf or hi==inf:raise UnsupportedEnumerationDomain('Finite integer variables are required')
+        ranges.append(range(ceil(lo),floor(hi)+1));deps.extend((('integer',v,'kind'),('var',v,'lb'),('var',v,'ub')))
+    # itertools.product materializes each range. The odometer retains only one
+    # assignment even when a domain has billions of values and max_states=1.
+    def assignments():
+        if any(r.start>=r.stop for r in ranges):return
+        values=[r.start for r in ranges]
+        while True:
+            yield values
+            for i in range(len(values)-1,-1,-1):
+                values[i]+=1
+                if values[i]<ranges[i].stop:break
+                values[i]=ranges[i].start
+            else:return
+    start=time.monotonic();states=feasible=0;minimum=maximum=None;counterexample={};status=1;exhaustive=True;stop_reason=None
+    if not contradiction:
+        for values in assignments():
+            budget.charge(phase="enumeration")
+            if max_states is not None and states>=max_states or time_limit is not None and time.monotonic()-start>=time_limit:
+                status=0;exhaustive=False;stop_reason='max_states' if max_states is not None and states>=max_states else 'time_limit';break
+            states+=1;point=dict(fixed);point.update(zip(selected,values))
+            if not all(satisfied(p,point) for p in premises):continue
+            feasible+=1;value=sum(c*point[v] for v,c in data[0])-data[1]
+            minimum=value if minimum is None else min(minimum,value);maximum=value if maximum is None else max(maximum,value)
+            if not satisfied(data,point):counterexample=point;status=2;exhaustive=False;break
+    details=dict(states=states,feasible_states_observed=feasible,minimum=minimum,maximum=maximum,
+                 exhaustive=exhaustive,vacuous=exhaustive and feasible==0,stop_reason=stop_reason,
+                 extrema='exact' if exhaustive else 'observed only',counterexample_is_model_solution=False)
+    return status,deps,details,counterexample

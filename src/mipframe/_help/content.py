@@ -174,7 +174,7 @@ topic('concept.report-resources', 'Report resource lifecycle',
       keywords=('report resources file descriptor exhaustion cleanup close memory batch certificates',),
       guarantees='Scalar mathematical checkers release their temporary workspace after publication and share retained evidence per live model owner. Batch targets share one store; for_target does not open another database.',
       non_guarantees='Report and LinExpr have no public close() method. Retained evidence still uses memory and disk. Unrelated queries and separately retained batches have their own storage; memory_mb is not a global process budget.',
-      body='''Use check.linear_batch() for a loop of explicit claims, sources and one shared assumption scope. Use check.linear_many when the inputs already exist as Frames.
+      body='''Prefer check.batch() to register related checks with per-target conditions. Use linear_many as an adapter for existing compact arrays or Frames.
 A BatchProof retains compact arrays and dependency leases; scalar ProofRef views do not own separate stores. Diagnostic Reports retain lazy presentation artifacts. Releasing the last expression/result view releases its owned scratch artifacts.
 Small expressions use exact in-memory terms; large materialized expressions use typed outputs and bounded sorted-run spill. Scratch lifetime follows retained views; manual garbage collection is not part of the API contract.
 Keep source models and proof dependencies alive until verification and any Edit that consumes them are complete.
@@ -602,12 +602,12 @@ domain="auto" and domain="integer" both enforce the original integer domains; do
             'linear_many':'''targets has target/relation/rhs, with unique string target IDs; terms has target/var/coef.
 using has target and exactly one source field row/var/proof per record, plus side and multiplier (direction for equality target sides).
 Reference columns use m.rows.schema["row"] or m.vars.schema["var"]. A proof source is a string key in the explicit reports mapping.
-Use residual="bounds" for bound compensation. This Frame-native entry point has no assume parameter; use check.linear_batch().add(..., assume=...) for one shared assumption scope and ordinary Claim/Report inputs.
+Use residual="bounds" for bound compensation. This Frame-native entry point has no assume parameter; use check.batch() for ordinary Claim inputs, per-target assumptions and proof dependencies.
 The result shares paged storage across targets; inspect evidence and use for_target(target_id) for one conclusion. require() on the batch requires every target to be PROVED.''',
         }[n])
 
 api('Checker.linear_batch','mipframe.check.accessor:Checker.linear_batch',
-    'Build a batch of linear certificates with scalar arguments and one shared assumption scope.',
+    'Adapt scalar linear certificate inputs to the unified execution engine.',
     inputs='residual="exact" or "bounds"; domain="auto", "relaxation" or "integer"; memory_mb and disk_mb apply to the whole batch.',
     returns='LinearBatch context manager. add stages each check; run verifies all targets and returns a Report.',
     guarantees='Consumes inputs incrementally in shared storage. No caller-authored schemas or reports mapping are required.',
@@ -624,7 +624,7 @@ api('Checker.linear_batch','mipframe.check.accessor:Checker.linear_batch',
     report = batch.run()
 report.require()''',
     body='''The example requires finite upper bounds on the selected rows. Replace targets and sources with the actual propositions and certificates to verify.
-Prefer this builder for ordinary Python loops. If targets/terms/using are already Frames, use linear_many instead.
+Prefer check.batch() for new multi-rule work. This builder remains a compatibility adapter for linear-only inputs; registration loops do not execute checks.
 The returned report remains usable after leaving the with block. Use report.for_target(key) for one conclusion, including its explicit and inherited assumptions.''',
     related=('api.LinearBatch.add','api.LinearBatch.run','api.LinearBatch.close','api.Checker.linear_many','concept.report-resources','concept.conditions'))
 api('LinearBatch.add','mipframe.check.batch:LinearBatch.add',
@@ -632,7 +632,7 @@ api('LinearBatch.add','mipframe.check.batch:LinearBatch.add',
     inputs='A unique nonempty string key, Claim target, original source Claims or verified Reports, optional exact multipliers and assumptions. Equality certificates also accept using={"le": ..., "ge": ...}.',
     returns='The builder for chaining. No proof is published by add.',
     guarantees='Consumes generators and copies mathematical inputs into shared paged staging now; does not retain a list of target expressions. Parent proof dependencies remain live.',
-    failures='Duplicate keys and differing assumptions raise. On a staging error, leave the context or close the builder and start a fresh batch. A closed or already-run builder rejects further additions.',
+    failures='Duplicate keys raise. On a staging error, leave the context or close the builder and start a fresh batch. A closed or already-run builder rejects further additions.',
     related=('api.Checker.linear_batch','api.Checker.linear','api.LinearBatch.run','concept.conditions'))
 api('LinearBatch.run','mipframe.check.batch:LinearBatch.run',
     'Verify every staged linear target and seal the builder.',
@@ -813,7 +813,7 @@ for symbol, binding, summary, returns in [
  ('analysis.signatures','mipframe.analysis:signatures','Read exact entity features, patterns and structural levels.','Frame; one Row input produces one row, never a Signature object.'),
 ]:
     api(symbol,binding,summary,returns=returns,
-        body=('max_items bounds the preview for every Frame. Family views also support max_splits, samples, sample_formula, max_terms and verbose; indexed views support max_items and verbose. Unsupported non-default display options raise ValueError.' if symbol=='Frame.inspect' else ''),
+        body=('max_items bounds the preview for every Frame. Family views also support max_splits, samples, sample_formula, max_terms and verbose; indexed views support max_items and verbose. Unsupported non-default display options raise ValueError.' if symbol=='Frame.inspect' else 'include_singletons=False skips partitions with only one row set during discovery, before allocating component artifacts. These partitions cannot contribute to tensor pairing. Use include_singletons=True to retain them in I.partitions; this may produce very large directories. The option is part of the cached run identity and is preserved by save/load. Tensor and operator discovery and exact verification are unchanged.' if symbol=='Model.indexed' else ''),
         aliases=(('m.' + symbol.split('.', 1)[1],) if symbol.startswith('Model.')
                  else ('mf.' + symbol,) if symbol.startswith('analysis.') else ()),
         guarantees='Snapshot and analysis configuration remain bound. Family and indexed views share storage; original mathematical facts remain accessible through entity members.',
@@ -847,7 +847,7 @@ topic('api.analysis','Advanced feature analysis','Explicit feature rules returni
 topic('concept.indexed', 'Indexed directories and related Frames',
       'Use ordinary Frames for indexed coordinates, partitions, operators and evidence.',
       aliases=('indexed frames','indexed kernel','indexed axes','indexed AST'),
-      body='I = m.indexed() binds a snapshot, configuration and declared scope.\nI.tensors, I.operators, I.partitions and I.evidence are ordinary Frames.\nI.tensor(id), I.operator(id), I.partition(id), I.evidence_item(id) return exactly one-row Frames; unknown IDs raise KeyError.\nUse O.one().row_count for metadata, O.rows for original rows, and O.related("kernel"), "bindings", "alignment", "ast", "statistics" or "dimensions" for complete data.\nUse T.vars, T.related("coordinates"), and T.related("axes").where(axis=0).rows. Coordinates retain the complete declared axis domains.\nFrame.shape always means table dimensions. Indexed dimensions live in related("dimensions") as component,axis,size.\nAST, origins and diagnostics use path,node_type,text,number,boolean node tables; empty containers and array order are preserved. Statistics retain exact numeric values.\nFiltering, sorting, slicing and key-preserving projection restrict related results. Keep indexed_key for navigation; axes additionally require axis. Members are deduplicated.\nI.verify(selection=None) checks prepared tensors/operators by default; an explicit directory selection can also verify partitions. Empty selection checks zero items. Discovery evidence is not a proposition.\nI.validate(spec) checks independently supplied hypotheses, including Frame relations. Neither directory identity nor saved status grants proof authority.\nm.verify() returns Report for storage integrity and prepared indexed runs. Inconsistency returns REFUTED; require() raises. Corrupt base data skips dependent checks; execution and input errors still raise.\nThese reports cannot be used as linear certificates or Edit justifications. Live views share stores; detached records remain usable after close.',related=('api.Model.indexed','api.IndexedResult.verify','api.IndexedResult.validate','api.Frame.related','api.Model.verify'))
+      body='I = m.indexed() binds a snapshot, configuration and declared scope.\nI.tensors, I.operators, I.partitions and I.evidence are ordinary Frames.\nBy default partitions with only one row set are skipped before materialization; m.indexed(include_singletons=True) retains them. This does not change tensor/operator discovery.\nI.tensor(id), I.operator(id), I.partition(id), I.evidence_item(id) return exactly one-row Frames; unknown IDs raise KeyError.\nUse O.one().row_count for metadata, O.rows for original rows, and O.related("kernel"), "bindings", "alignment", "ast", "statistics" or "dimensions" for complete data.\nUse T.vars, T.related("coordinates"), and T.related("axes").where(axis=0).rows. Coordinates retain the complete declared axis domains.\nFrame.shape always means table dimensions. Indexed dimensions live in related("dimensions") as component,axis,size.\nAST, origins and diagnostics use path,node_type,text,number,boolean node tables; empty containers and array order are preserved. Statistics retain exact numeric values.\nFiltering, sorting, slicing and key-preserving projection restrict related results. Keep indexed_key for navigation; axes additionally require axis. Members are deduplicated.\nI.verify(selection=None) checks prepared tensors/operators by default; an explicit directory selection can also verify partitions. Empty selection checks zero items. Discovery evidence is not a proposition.\nI.validate(spec) checks independently supplied hypotheses, including Frame relations. Neither directory identity nor saved status grants proof authority.\nm.verify() returns Report for storage integrity and prepared indexed runs. Inconsistency returns REFUTED; require() raises. Corrupt base data skips dependent checks; execution and input errors still raise.\nThese reports cannot be used as linear certificates or Edit justifications. Live views share stores; detached records remain usable after close.',related=('api.Model.indexed','api.IndexedResult.verify','api.IndexedResult.validate','api.Frame.related','api.Model.verify'))
 
 # Proof-carrying v2 replaces the former SQL certificate/Edit execution contracts.
 for item in TOPICS:
@@ -871,12 +871,12 @@ Proofs bind an immutable snapshot and domain. Unproved/conditional/foreign evide
                     related=['api.Targets','api.CertificateBatch','api.BatchProof.for_target','api.Checker.linear_rows','api.Checker.linear_batch'],
                     body='''Targets(ids, kind="row", sides="ub") reads existing rows. kind="var" additionally needs rhs. kind="affine" needs rhs, offsets, variables and coefficients. IDs are distinct nonnegative integers. CertificateBatch(offsets,sources,multipliers=1,sides="ub",kinds="row") describes one source slice per target; kinds may be row or var. Finite equality sources use side="eq" and allow signed multipliers. Inequality multipliers must be nonnegative. Unit path witnesses can use CertificateBatch.paths(paths).
 The positional certificate form accepts a snapshot-bound LinearCertificate from graph witnesses; do not mix it with separate targets/witnesses/terms/using.
-For the Frame adapter, targets has target/relation/rhs with unique string keys, terms has target/var/coef, and using has target, exactly one row/var/proof source, side and multiplier. Row/var columns retain same-snapshot Ref types; proof keys refer to ProofRefs in reports. Frame direction must be main; use scalar linear for directional equalities. There is no assume argument here: use linear_batch with a common assumption scope or scalar linear for separate branches.
+For the Frame adapter, targets has target/relation/rhs with unique string keys, terms has target/var/coef, and using has target, exactly one row/var/proof source, side and multiplier. Row/var columns retain same-snapshot Ref types; proof keys refer to ProofRefs in reports. Frame direction must be main; use scalar linear for directional equalities. There is no assume argument here: use check.batch() for separate conditional branches and dependent tasks.
 Frames compile once at the boundary; prefer linear_rows for existing row targets. No SQL runs in the checker.''')
     if item['id']=='api.Checker.linear_batch':
-        item.update(summary='Compile scalar Claim inputs into one compact batch.',inputs='residual="exact"/"bounds", domain="auto"/"integer"/"relaxation", memory_mb/disk_mb. All targets require one shared assumption scope.',returns='LinearBatch; run returns BatchProof.',body='All targets in a builder must have the same explicit assumption scope. For different case branches, use scalar checks and cases(). Existing-row workloads should use linear_rows to avoid target expression duplication.')
+        item.update(summary='Compile scalar Claim inputs into one compact batch.',inputs='residual="exact"/"bounds", domain="auto"/"integer"/"relaxation", memory_mb/disk_mb. Conditions are tracked per target.',returns='LinearBatch; run returns BatchProof.',body='Compatibility adapter for linear-only inputs. Prefer check.batch() for new work, including different branch conditions and dependent checks; do not execute scalar checkers in a Python loop.')
     if item['id']=='api.LinearBatch.add':
-        item.update(inputs='Unique key, Claim target, explicit using sources and optional assumptions shared by the batch.',guarantees='Copies canonical sparse target data. No per-target Report is constructed.',body='Directional equality is available in the scalar linear API. Use separate batches for separate assumption scopes.')
+        item.update(inputs='Unique key, Claim target, explicit using sources and optional per-target assumptions.',guarantees='Copies canonical sparse target data. No per-target Report is constructed.',body='Directional equality is available in the scalar linear API. Use check.batch() to compose conditional branches and cases in one plan.')
     if item['id']=='api.LinearBatch.run':
         item.update(returns='BatchProof; empty batches are PROVED.',guarantees='All successes are stored as status bytes; for_target creates a lazy ProofRef.',body='Results survive builder context exit. Conditions remain attached and cannot authorize edits until explicitly discharged.')
     if item['id']=='api.Edit.build':
@@ -1021,3 +1021,49 @@ api('OneHotAffine.expand_exclusions','mipframe.check.compact:OneHotAffine.expand
 for item in TOPICS:
     if item['kind'] == 'api':
         item['when'] = item['summary']
+
+# Unified execution is the default route for repeated checks.
+BATCH_GUIDANCE = """Prefer m.check.batch() for repeated checks. Do not execute scalar checkers in a Python for loop, comprehension or map, or rewrite complete checks as handwritten row/variable loops. Use Frame operations for relations. Loops may register batch tasks; run once after registration. Construct expressions inside the batch context to share common subexpressions.
+Each registration returns CheckHandle, not a signed proof: no .ok/.status and no edit authority. A handle may be used only as a dependency in its own plan. result_key is unique and exports a result; unnamed tasks are internal. run() executes the named dependency closure and seals the plan. Context exit releases unpublished work and never runs implicitly.
+results.require() checks all exported results. results[key] preserves its type: ProofRef/BatchProof for mathematics, PointReport for points, Report for diagnostics. Points and diagnostics cannot authorize edits. Conditions remain target-local; cases discharges only its matching branch conditions. Separate snapshots require separate batches.
+Finite defaults: time_limit=30 seconds, max_tasks=1000000 logical tasks, max_nodes=4096 compiled execution nodes, max_work=100000000, memory_mb=128. Explicit finite increases are supported; time/work limits cannot be disabled. ProofBudgetExceeded reports the phase and limit; unfinished work is never PROVED or mathematically REFUTED."""
+api('Checker.batch','mipframe.check.compiler:Checker.batch',
+    'Register related checks once and execute their shared dependency graph.',
+    aliases=('m.check.batch','batch checks','prefer batch','avoid scalar loops'),
+    returns='CheckBatch; run() returns named CheckResults.',
+    body=BATCH_GUIDANCE, related=('concept.proofs','api.Checker.budget'),
+    example="with m.check.batch() as batch:\n    for key, target, sources in tasks:\n        batch.linear(target, using=sources, result_key=key)\n    results = batch.run()\nresults.require()")
+api('Checker.budget','mipframe.check.compiler:Checker.budget',
+    'Share explicit finite limits across nested check operations.',
+    returns='Budget context manager.', body='Use explicit finite overrides when needed; nested operations share the same allowance. Limits cannot be disabled.',
+    related=('api.Checker.batch',))
+for item in TOPICS:
+    if item['id'] in ('home','concept.proofs','concept.report-resources'):
+        item['body'] = BATCH_GUIDANCE + '\n\n' + item.get('body','')
+        item['related'] = list(dict.fromkeys([*item.get('related',()), 'api.Checker.batch']))
+
+for name in ('linear','identity','bound','infeasible','cases','round','enumerate','affine_integrality','solution','frame','model_verify'):
+    api('CheckBatch.'+name, 'mipframe.check.graph:CheckBatch.'+name,
+        'Register a '+name+' task without executing it.',
+        returns='CheckHandle; result_key optionally exports its completed result.',
+        body='Use the matching checker arguments shown in this signature. Pending handles may be proof dependencies only inside this plan. Call run() once after registration.',
+        related=('api.Checker.batch',))
+for name,summary in (('run','Execute exported dependency closures and seal the plan.'),('close','Release unpublished plan resources.')):
+    api('CheckBatch.'+name,'mipframe.check.graph:CheckBatch.'+name,summary,
+        returns='CheckResults for run; None for close.',related=('api.Checker.batch',))
+api('CheckHandle','mipframe.check.graph:CheckHandle','Pending task identity, never a checked proof.',
+    body='No ok/status, boolean truth or edit authority. Use only within its own batch as a dependency.',related=('api.Checker.batch',))
+api('CheckResults.require','mipframe.check.graph:CheckResults.require','Require every named exported result to succeed.',
+    returns='This CheckResults mapping; raises on any failed or incomplete result.',related=('api.Checker.batch',))
+
+api('CheckBatch','mipframe.check.graph:CheckBatch','Deferred checks owned by one model snapshot.',related=('api.Checker.batch',))
+api('CheckResults','mipframe.check.graph:CheckResults','Named completed results with distinct mathematical and diagnostic permissions.',related=('api.CheckResults.require','api.Checker.batch'))
+api('ProofBudgetExceeded','mipframe.check.budget:ProofBudgetExceeded','A finite check budget stopped unpublished work.',
+    body='Inspect phase, resource, consumed and limit. This is not a mathematical counterexample; use a finite larger budget or share related work in one batch.',related=('api.Checker.batch',))
+
+for item in TOPICS:
+    if item['id'].startswith('api.Checker.') and item['id'] not in ('api.Checker.batch','api.Checker.budget'):
+        item['when'] = 'For repeated checks, prefer m.check.batch(); do not execute scalar checkers in a Python loop. ' + item['summary']
+        item['related'] = list(dict.fromkeys([*item.get('related',()), 'api.Checker.batch']))
+    if item['id']=='home':
+        item['summary'] = 'Use Frame operations for structural work and m.check.batch() for repeated checks; avoid scalar checker loops. ' + item['summary']

@@ -45,19 +45,23 @@ def run(mode, count):
                 reports = [2 * x + 3 * x - x for _ in range(count)]
                 assert reports[-1].evaluate({x: 1}) == 4
             else:
-                for i in range(count):
-                    report = model.check.linear(claim, using=[source]).require()
-                    if mode == "retained":
-                        reports.append(report)
-                    del report
-                    if i % 100 == 0:
-                        peak = max(peak, fd_count())
+                from contextlib import nullcontext
+                budget=model.check.budget(max_nodes=count+100) if mode=="retained" else nullcontext()
+                with budget:
+                    for i in range(count):
+                        report = model.check.linear(claim, using=[source]).require()
+                        if mode == "retained":
+                            reports.append(report)
+                        del report
+                        if i % 100 == 0:
+                            peak = max(peak, fd_count())
             peak = max(peak, fd_count())
             assert peak - baseline <= 8, (mode, baseline, peak)
             if mode == "retained":
                 assert len({id(r.batch._facts) for r in reports}) == 1
                 assert not hasattr(reports[0],"_store")
-                assert mf.Report.replay(reports[-1].to_spec(), models=[model]).ok
+                with model.check.budget(max_nodes=count+100):
+                    assert mf.Report.replay(reports[-1].to_spec(), models=[model]).ok
             reports.clear()
             if mode == "batch":
                 del batch

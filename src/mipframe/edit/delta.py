@@ -496,7 +496,7 @@ class DeltaEdit:
             if hit is None: good=False;return False
             batch,i=hit
             if backward:reverse.setdefault(batch,set()).add(i)
-            return batch._domain=='relaxation'
+            return batch.domain_at(i)=='relaxation'
 
         bound_proofs={}
         for kind,ids,p in self._operations:

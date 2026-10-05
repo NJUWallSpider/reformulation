@@ -65,3 +65,12 @@ Default structural depth is 2 with `method="template"`; explicit exact configura
 Views and diagnostic reports share model-owned storage. Creating thousands of views does not create thousands of database connections. Dropped diagnostic results release their rows; related evidence keeps a result alive when needed. Closing the model invalidates every live view. Detached records remain independent.
 
 Native v3 and existing `indexing.sqlite` caches retain their algorithms, original IDs and storage format. Public field normalization happens at the read boundary. New directory/relation query specifications bind the saved run and can be restored without manual relation bindings; legacy explicit relation bindings remain supported.
+
+## Small partitions
+
+`m.indexed()` defaults to `include_singletons=False`: partitions with only one
+row set are skipped during discovery, before allocating per-component artifacts.
+They cannot participate in tensor pairing, so tensor/operator discovery and exact
+verification are unchanged. Use `m.indexed(include_singletons=True)` for the full
+partition directory. The option has a separate cache identity and survives native
+save/load. Full-mode component arrays and metadata use compact shared storage.

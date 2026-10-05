@@ -274,13 +274,16 @@ def test_replay_rechecks_case_certificates(m, tamper):
     spec = deepcopy(p.to_spec())
     root = spec["batch"]["nodes"][spec["batch"]["root"]]
     if tamper == "missing": root["parents"].pop()
-    if tamper == "value": root["recipe"]["values"][0] = 2
-    if tamper == "parent": root["recipe"]["parent_indices"][0] = 999
-    if tamper == "duplicate": root["recipe"]["values"][1] = 0
-    if tamper == "variable": root["recipe"]["var"] = -1
-    if tamper == "branch_target": spec["batch"]["nodes"][root["parents"][0]]["targets"]["rhs"][0] = -99
-    if tamper == "branch_assumption": spec["batch"]["nodes"][root["parents"][0]]["recipe"]["assumptions"][0][1] = -99
-    if tamper == "verdict":
+    task=root["recipe"]["tasks"][root["recipe"]["roots"][0]]
+    if tamper == "value": task[4][1][0] = 2
+    if tamper == "parent": task[2][0][2] = 999
+    if tamper == "duplicate": task[4][1][1] = 0
+    if tamper == "variable": task[4][0] = -1
+    if tamper == "branch_target": spec["batch"]["nodes"][root["parents"][0]]["recipe"]["tasks"][0][1][1] = -99
+    if tamper == "branch_assumption": spec["batch"]["nodes"][root["parents"][0]]["recipe"]["tasks"][0][3][0][1] = -99
+    if tamper == "branch_target":
+        assert not mf.Report.replay(spec, models=[m]).ok
+    elif tamper == "verdict":
         root["status"] = "REFUTED"
         assert mf.Report.replay(spec, models=[m]).ok
     else:

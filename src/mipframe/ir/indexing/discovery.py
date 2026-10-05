@@ -21,7 +21,8 @@ def candidate(s, run, rg, vg, origin):
     if g is None:
         g = len(s.candidates)+1
         s._candidate_index[key] = g
-        s.candidates[g] = dict(run=run,rg=rg,vg=vg,origins=[])
+        s.candidates[g] = dict(run=run,rg=rg,vg=vg,origins=[origin])
+        return g
     record=s.candidates[g]
     origins = record['origins']
     if origin not in origins:
@@ -94,6 +95,7 @@ def partition(s, run, g, rg, vg):
     distinct,total = len(np.unique(members.columns['v'])),len(members)
     nonempty = len(np.unique(members.columns['r']))
     ok = bool(n and nr and total==distinct==n and nonempty==nr)
+    if ok and nr==1 and not getattr(s,'include_singletons',True):return ok,distinct,total
     if ok:
         key = ident('partition_',[rg,vg])
         s.put(run,'partitions',key,dict(id=key,g=g,rows_domain=rg,vars_domain=vg,
@@ -108,30 +110,55 @@ def split_two(s, run, g, rg, vg):
     members = s.members[g];rs,vs = members.columns['r'],members.columns['v']
     variables,counts = np.unique(vs,return_counts=True)
     if len(variables)!=s.size(vg) or np.any(counts!=2):return
+    include_singletons=getattr(s,'include_singletons',True)
+    # Disjoint two-row components can produce only one-set partitions. They
+    # never participate in tensor pairing; skip before graph/table allocation.
+    if not include_singletons and len(np.unique(rs))==len(rs):return
     order = np.argsort(vs,kind='stable');ends = rs[order].reshape(-1,2)
-    graph = defaultdict(list)
-    for a,b in ends:
-        graph[int(a)].append(int(b));graph[int(b)].append(int(a))
+    # Each adjacency carries its variable index; a component never rescans
+    # all candidate edges. Keep row-local edge positions for stable members.
+    graph = defaultdict(list);row_edges=defaultdict(list)
+    for i,(a,b) in enumerate(ends):
+        graph[int(a)].append((int(b),i));graph[int(b)].append((int(a),i))
+    for i,r in enumerate(rs):row_edges[int(r)].append(i)
+    # All singleton domains and member columns share these sealed allocations.
+    # Use canonical unsigned ID dtype, just as IDSet does.
+    def shared(values):
+        dtype='<u4' if not len(values) or np.max(values)<2**32 else '<u8'
+        out=s.work.array(len(values),dtype);out[:]=values
+        return s.work.seal(out)
+    row_values=shared(rs);var_values=shared(vs)
+    variable_values=shared(variables)
     colors = {}
     for raw in s.domains[rg]:
         root = int(raw)
         if root in colors or root not in graph:continue
-        colors[root] = 0;queue = deque([root]);component = [];valid = True
+        colors[root] = 0;queue = deque([root]);component = [];component_edges=set();valid = True
         while queue:
             r = queue.popleft();component.append(r)
-            for other in graph[r]:
+            for other,edge in graph[r]:
+                component_edges.add(edge)
                 if other not in colors:
                     colors[other] = 1-colors[r];queue.append(other)
                 elif colors[other]==colors[r]:
                     if valid:evidence(s,run,'non-bipartite candidate',candidate=g,edge=[r,other])
                     valid = False
-        if not valid:continue
-        uv = s.domain('var',variables[np.isin(ends[:,0],component)])
+        if not valid or (not include_singletons and len(component)==2):continue
+        indices=sorted(component_edges)
+        uv = (s.domain_sorted('var',variable_values[indices[0]:indices[0]+1]) if len(indices)==1
+              else s.domain('var',variables[indices]))
         for side in (0,1):
-            rr = s.domain('row',(r for r in component if colors[r]==side))
+            rows=[r for r in component if colors[r]==side]
+            if len(rows)==1 and not include_singletons:continue
+            positions=sorted(i for r in rows for i in row_edges[r])
+            if len(positions)==1:
+                i=positions[0];rc=row_values[i:i+1];vc=var_values[i:i+1]
+                rr=s.domain_sorted('row',rc)
+            else:
+                rr=s.domain('row',rows)
+                rc=shared(rs[positions]);vc=shared(vs[positions])
             new = candidate(s,run,rr,uv,dict(kind='bipartite_component',parent=g,root=root,side=side))
-            mask = np.isin(rs,s.domains[rr])
-            s.members[new] = s.make_table(('r','v'),zip(rs[mask],vs[mask]))
+            s.members[new] = Table.from_columns({'r':rc,'v':vc},s.work)
             partition(s,run,new,rr,uv)
 
 

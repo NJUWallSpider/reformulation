@@ -103,11 +103,13 @@ def test_domains_and_common_batch_assumptions(recipe_env):
     assert 'Frame is not accepted' in contract('Edit.set_domains')['inputs']
     with m.check.linear_batch() as batch:
         batch.add(key='a', target=x <= 5, using=[x.ub_claim], assume=[x.eq(0)])
-        with pytest.raises(ValueError, match='share assumptions'):
-            batch.add(key='b', target=x <= 5, using=[x.ub_claim], assume=[x.eq(1)])
+        batch.add(key='b', target=x <= 5, using=[x.ub_claim], assume=[x.eq(1)])
+        checked=batch.run().require()
+        assert checked.for_target('a').scope['assumptions']==1
+        assert checked.for_target('b').scope['assumptions']==1
+        assert checked.assumptions(0)!=checked.assumptions(1)
     brief = mf.help('Checker.linear_batch', format='json')['results'][0]
-    assert 'shared assumption scope' in brief['inputs']
-    assert 'per-target assumptions' not in str(brief)
+    assert 'per target' in brief['inputs']
 
 
 def test_diff_result_and_native_version_contracts(recipe_env, tmp_path):

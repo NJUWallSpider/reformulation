@@ -22,9 +22,9 @@ def native_graph(root):
         def record(value):return {f.name:getattr(value,f.name) for f in fields(value) if not f.metadata.get('resource')}
         ids[proof]=len(nodes)
         nodes.append(dict(schema='mipframe-certificate-node-2',snapshot=proof._facts.uid,revision=proof._facts.revision,
-            rule=proof._rule,targets=record(proof._targets),certificate=None if proof._certificate is None else record(proof._certificate),
-            recipe=proof._recipe,parents=[ids[p] for p in proof._parents],keys=getattr(proof,'_external_keys',None)))
-    return dict(schema='mipframe-certificate-2',snapshot=root._facts.uid,revision=root._facts.revision,root=ids[root],nodes=nodes)
+            rule=proof._rule,targets=None if proof._rule=='check_graph' else record(proof._targets),certificate=None if proof._certificate is None else record(proof._certificate),
+            recipe=proof.graph_record() if proof._rule=='check_graph' else proof._recipe,parents=[ids[p] for p in proof._parents],keys=getattr(proof,'_external_keys',None)))
+    return dict(schema='mipframe-certificate-3' if any(n['rule']=='check_graph' for n in nodes) else 'mipframe-certificate-2',snapshot=root._facts.uid,revision=root._facts.revision,root=ids[root],nodes=nodes)
 
 
 def materialize(value,materialize_mb=None):

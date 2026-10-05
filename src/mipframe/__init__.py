@@ -19,7 +19,7 @@ from mipframe.check.report import Report
 from mipframe.check.report import CardinalityError
 from mipframe.check.report import ValidationError
 
-__version__ = "1.2.0"
+__version__ = "1.4.0"
 __all__ = [
     "read",
     "load",
@@ -102,3 +102,7 @@ __all__ += ['LinearCertificate','TransitiveReductionResult','PatchPlan','PatchNo
 
 from mipframe.store.output import WriteReceipt
 __all__ += ['WriteReceipt']
+
+from mipframe.check.graph import CheckBatch, CheckHandle, CheckResults
+from mipframe.check.budget import ProofBudgetExceeded
+__all__ += ['CheckBatch', 'CheckHandle', 'CheckResults', 'ProofBudgetExceeded']

@@ -92,13 +92,11 @@ def source_claim(entity, side):
         )
     e = row_expr(entity) if axis == "row" else variable(entity)
     # Preserve lazy CSR access when forming a source claim.
-    result = LinExpr(
-        e._owner,
-        -bound,
-        items=lambda: e._items(),
-        models=e._models,
-        ids=lambda: e._ids(),
-    )
+    if hasattr(e, "_check_pool"):
+        result = e._check_pool.expression(e._check_node, -bound, models=e._models)
+    else:
+        result = LinExpr(e._owner, -bound, items=lambda: e._items(),
+                         models=e._models, ids=lambda: e._ids())
     return Claim(
         result,
         {"lb": ">=", "ub": "<=", "eq": "=="}[side],

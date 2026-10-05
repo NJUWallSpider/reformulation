@@ -277,7 +277,7 @@ class BatchProof:
         if spec.get('schema') in ('mipframe-certificate-2','mipframe-certificate-3'):
             if set(spec)-{'schema','snapshot','revision','root','nodes','status'}:raise ValueError('Cyclic or invalid certificate graph fields')
             if (spec.get('snapshot'),spec.get('revision'))!=(facts(model).uid,facts(model).revision):raise ValueError('Certificate snapshot mismatch')
-            if len(spec['nodes'])!=1 or spec['nodes'][0].get('rule')!='check_graph':
+            if not spec['nodes'] or any(node.get('rule')!='check_graph' for node in spec['nodes']):
                 from mipframe.check.legacy import replay_legacy
                 return replay_legacy(model,spec,memory_mb=memory_mb,disk_mb=disk_mb)
             results=[]

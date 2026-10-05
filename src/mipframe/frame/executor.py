@@ -21,11 +21,13 @@ def unpack(value,typ):
 class Context:
     @property
     def query_context(self):return self
-    def __init__(self,models=(),memory_mb=None,disk_mb=None,*,work=None):
+    def __init__(self,models=(),memory_mb=None,disk_mb=None,*,work=None,reuse_queries=False):
         from mipframe.options import options
         self.work=work.fork() if work is not None else WorkContext(options.query.memory_mb if memory_mb is None else memory_mb,options.query.disk_mb if disk_mb is None else disk_mb)
         self.memory=self.work.memory;self.models=tuple(models)
         self._closed=False;self.retained=False;self.staged={};self.members={};self.literal_members={};self._staged_frames={}
+        self.staged_rows=0;self.cache_hits=0
+        self.reuse_queries=reuse_queries
         from mipframe.store.lifecycle import register
         for m in self.models:register(m,self)
     def guard(self):
@@ -53,6 +55,8 @@ class Context:
                 expressions=frame._params['expressions'];needed=tuple(dict.fromkeys(expressions[n].args[0] for n in fields))
                 source,_=self.stage(frame._parents[0],needed)
                 table=Relation({n:source.columns[expressions[n].args[0]] for n in fields},len(source),self.work,source.max_record)
+            elif self.reuse_queries and frame._op=='filter' and (lookup:=self.equality_selection(frame,fields)) is not None:
+                table=lookup
             else:
                 from mipframe.frame.stream import batches
                 from mipframe.data.relations import RelationBuilder
@@ -63,7 +67,42 @@ class Context:
                     for batch in stream:builder.extend(batch)
                     table=builder.finish()
             self.staged[key]=(table,schema)
+            self.staged_rows+=len(table)
+            from mipframe.check.budget import current_budget
+            if (budget:=current_budget()) is not None:budget.charge(count=len(table),phase='query')
+        else:self.cache_hits+=1
         return self.staged[key]
+
+    def equality_selection(self,frame,fields):
+        """Reuse a parent's typed relation and exact sorted key index.
+
+        Stage the complete parent first: join coverage/cardinality errors must
+        not disappear merely because a later filter selects a small group.
+        """
+        pairs=[]
+        def visit(expr):
+            if expr.op=='and':return all(visit(a) for a in expr.args)
+            if expr.op!='eq':return False
+            a,b=expr.args
+            if a.op=='literal' and b.op=='col':a,b=b,a
+            if a.op!='col' or b.op!='literal':return False
+            pairs.append((a.args[0],b.evaluate({},self)))
+            return True
+        if not all(visit(e) for e in frame._params['predicates']):return None
+        if not pairs:return None
+        from mipframe.data.relations import Relation,ColumnView
+        from mipframe.data.sorting import lexorder
+        keys=tuple(n for n,_ in pairs)
+        needed=tuple(dict.fromkeys((*fields,*keys)))
+        parent,_=self.stage(frame._parents[0],needed)
+        order=parent.order(keys)
+        if any(v is None for _,v in pairs):chosen=order[:0]
+        else:
+            lo,hi=search_range(parent,order,keys,tuple(v for _,v in pairs))
+            chosen=order[lo:hi]
+        # where preserves input order, including duplicate matching keys.
+        if len(chosen)>1:chosen=chosen[lexorder(self.work,(chosen,))]
+        return Relation({n:ColumnView(parent.columns[n],chosen) for n in fields},len(chosen),self.work,parent.max_record)
     def contains(self,frame,ident):
         key=frame.key[0]
         if id(frame) not in self.members:

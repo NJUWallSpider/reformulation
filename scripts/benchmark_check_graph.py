@@ -15,7 +15,7 @@ import mipframe as mf
 from mipframe.check.kernel import facts
 
 
-def run(path):
+def run(path, *, strategy='prefix', indexed=False, memory_mb=128):
     timings={}
     def timed(name,fn):
         start=perf_counter()
@@ -24,6 +24,7 @@ def run(path):
             timings[name]=perf_counter()-start
             print(json.dumps({'phase':name,'seconds':timings[name]}),flush=True)
     with timed('read',lambda:mf.read(path)) as m:
+        if indexed:timed('indexed',lambda:m.indexed())
         f=facts(m)
         def structure():
             aids=tuple(map(int,m.family('F2').rows.ids))
@@ -65,9 +66,39 @@ def run(path):
             return aids,eids,zeroids,z,ys,ep,groups,xy
         aids,eids,zeroids,z,ys,ep,groups,xy=timed('structure',structure)
         def forward():
+            if strategy=='branches':
+                # B3's public Frame/query path and long conditional chain,
+                # including its separately issued first-group parent proof.
+                X=m.var_families.where(mf.col('id').isin(['V2','V3'])).vars
+                P=X.project(group=m.family('F2').rows)
+                D=m.family('F1').rows.terms.where(mf.col('coef')>0).select('var',radius=mf.col('row'),distance=mf.col('coef'))
+                G=D.join(P,on='var',cardinality='1:1',require='left')
+                expressions={}
+                def register(b,aid):
+                    ref=mf.Ref(m.uid,m.version,'row',aid)
+                    expr=m.linexpr(G.where(mf.col('group')==ref).select('var',coef=mf.col('distance')))-m.vars.loc[z]
+                    expressions[aid]=expr;target=expr<=0
+                    members=[(m.vars.loc[v],ep.get(v,(None,0))) for v in groups[aid]]
+                    zeros=[v.eq(0) for v,_ in members];maximum=max(d for _,(_,d) in members)
+                    onehot=m.rows.loc[aid].eq_claim
+                    tail=b.linear(target,using=[m.vars.loc[z].lb_claim,(-maximum,onehot)]+
+                        [(d+maximum,a) for a,(_,(_,d)) in zip(zeros,members)],assume=zeros)
+                    for position in reversed(range(len(members))):
+                        var,(row,d)=members[position];selected=var.eq(1)
+                        radial=m.vars.loc[z].lb_claim if row is None else m.rows.loc[row].ub_claim
+                        leaf=b.linear(target,using=[radial,(maximum,onehot),(-maximum,selected)],
+                                      residual='bounds',assume=[selected])
+                        tail=b.cases(target,var=var,cases={0:tail,1:leaf},result_key=str(aid) if position==0 else None)
+                with m.check.batch(memory_mb=memory_mb) as b:
+                    register(b,aids[0]);first=b.run().require()
+                with m.check.batch(memory_mb=memory_mb) as b:
+                    b.linear(expressions[aids[0]]<=0,using=[first[str(aids[0])]],result_key=str(aids[0]))
+                    for aid in aids[1:]:register(b,aid)
+                    results=b.run().require()
+                return expressions,results
             expressions={}
             rows=m.rows;variables=m.vars
-            with m.check.batch() as b:
+            with m.check.batch(memory_mb=memory_mb) as b:
                 for aid in aids:
                     equality=rows.loc[aid].eq_claim
                     positive=sorted(((v,*ep[v]) for v in groups[aid] if v in ep),key=lambda item:item[2])
@@ -108,12 +139,9 @@ def run(path):
                 selected={m.vars.by_name(f'y[{k}]').id for k in range(1,14)}
                 dmax=max(d for _,d in ep.values())
                 def check_relaxation(point):
-                    assert set(point)==set(f.var_ids())
-                    for v,value in point.items():
-                        lo,hi=f.var_bounds(v);assert lo<=value<=hi
-                    for row in f.row_ids():
-                        value=sum(c*point[v] for v,c in f.terms(row))
-                        lo,hi=f.row_bounds(row);assert lo<=value<=hi
+                    report=m.check.solution(point,domain='relaxation').require()
+                    assert report.scope['complete'] and report.scope['domain']=='relaxation'
+                    report.close()
                 def uniform():
                     point={v:(dmax/231 if v==z else Fraction(13,231) if v in ys else Fraction(1,231)) for v in f.var_ids()}
                     check_relaxation(point)
@@ -135,25 +163,30 @@ def run(path):
                             report=b.run().require()['point']
                         report.close()
                 timed('integer_points',integer_points)
+                timed('integrity',lambda:final.verify().require())
                 with TemporaryDirectory(prefix='mipframe-check-benchmark-') as directory:
                     artifact=Path(directory)/'model.mps'
                     receipt=timed('write_readback',lambda:final.write(artifact,audit='readback'))
                     assert receipt.verified
-                    audit=timed('audit',lambda:final.audit(source=m,artifact=artifact))
+                    with m.check.budget(memory_mb=memory_mb):
+                        audit=timed('audit',lambda:final.audit(source=m,artifact=artifact))
                     assert audit['status']=='PROVED'
                     semantic=audit['semantic']
                     assert semantic['lp']=='SUBSET' and semantic['mip']=='SAME' and semantic['objective']['kind']=='SAME'
     core=sum(timings[k] for k in ('forward','relaxed_witness','write_readback','audit'))
     total=sum(timings.values())
-    return dict(timings=timings,core_seconds=core,total_seconds=total,
-                accepted=core<=30 and total<=60,statistics=dict(results.statistics))
+    return dict(strategy=strategy,indexed=indexed,memory_mb=memory_mb,timings=timings,core_seconds=core,total_seconds=total,
+                accepted=core<=30 and total<=60,statistics=dict(results.statistics),audit_statistics=audit.get('statistics',{}))
 
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('model',type=Path)
     parser.add_argument('--output',type=Path)
+    parser.add_argument('--strategy',choices=('prefix','branches'),default='prefix')
+    parser.add_argument('--indexed',action='store_true')
+    parser.add_argument('--memory-mb',type=int,default=128)
     args=parser.parse_args()
-    result=run(args.model)
+    result=run(args.model,strategy=args.strategy,indexed=args.indexed,memory_mb=args.memory_mb)
     print(json.dumps(result,indent=2))
     if args.output:args.output.write_text(json.dumps(result,indent=2)+'\n')

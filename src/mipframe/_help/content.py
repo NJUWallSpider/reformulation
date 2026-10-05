@@ -155,17 +155,16 @@ Use alg.graph.isomorphism_classes only for label-preserving bijections between g
       related=('concept.search','api.Frame.check','recipe.linear','api.alg.graph.isomorphism_classes'))
 
 topic('limitation.fractional-point', 'Check fractional point feasibility in the relaxation',
-      'Use exact matrix activity and bound comparisons to inspect an LP relaxation point.',
+      'Use check.solution(domain="relaxation") for complete exact LP point feasibility.',
       kind='limitation', aliases=('fractional point feasibility','LP point feasibility','relaxation feasibility'),
       keywords=('fractional solution feasible relaxation witness rational point row variable bounds',),
       inputs='A complete exact Frame(var,value), uniquely keyed by var and bound to the model snapshot.',
-      guarantees='m.matrix.activity computes exact row activities; compare both row sides and all variable bounds explicitly.',
-      non_guarantees='check.solution checks the integer model and rejects domain="relaxation". Fractional values on integer variables fail its integrality check.',
-      body='''Use m.matrix.activity(values), with the default missing="error", then join the result to m.rows on row and compare activity against lb and ub.
-Independently check full variable coverage and both variable bounds, including variables absent from every row.
-A point that passes these comparisons is feasible for the linear relaxation; it need not satisfy integrality.
-LinExpr.evaluate only evaluates one expression; it is not a feasibility check. A feasible point is not an optimality or implication certificate.
-Use check.solution for a complete point that must also satisfy the original integer domains.''',
+      guarantees='check.solution(domain="relaxation") checks complete variable coverage, all variable bounds and both row sides with exact arithmetic.',
+      non_guarantees='A PointReport is not an implication proof and cannot authorize edits. A relaxation point need not satisfy integrality or optimality.',
+      body='''Use m.check.solution(values, domain="relaxation").require() for one complete fractional point. For multiple points, register batch.solution(values, domain="relaxation", result_key=...) and run once.
+The default missing="error" requires every variable, including variables absent from all rows. Variable bounds and both row sides are always checked. Only integrality is omitted in the explicit relaxation domain.
+The default domain="auto" and domain="integer" enforce integrality. scope.domain records which domain was checked; saved point replay preserves it.
+Use m.matrix.activity only when row activities themselves are needed. LinExpr.evaluate evaluates one expression, not full feasibility.''',
       related=('api.MatrixAccessor.activity','api.Frame.join','api.Checker.solution','concept.exact'))
 
 topic('concept.report-resources', 'Report resource lifecycle',
@@ -598,7 +597,7 @@ The cases and discharged evidence Frames record branch parent indices and remove
             'round':'The target must keep the same nonconstant integer-valued expression as the proved source bound. Round upper bounds down and lower bounds up.',
             'enumerate':'vars must contain every remaining variable after substitutions; continuous or unbounded integer domains are unsupported.',
             'solution':'''missing="error" requires all model variables; missing="zero" is explicit. Inputs from a solver are not silently rounded.
-domain="auto" and domain="integer" both enforce the original integer domains; domain="relaxation" is rejected. For fractional LP points, use m.matrix.activity(values) plus exact checks of both row sides and every variable bound. Verify complete variable coverage, including variables absent from all rows; see limitation.fractional-point.''',
+domain="auto" and domain="integer" enforce the original integer domains. domain="relaxation" checks all variable bounds and both row sides without integrality. All modes require complete variable coverage by default, including variables absent from all rows. scope.domain and point artifacts retain the chosen domain. Use batch.solution for multiple points; see limitation.fractional-point.''',
             'linear_many':'''targets has target/relation/rhs, with unique string target IDs; terms has target/var/coef.
 using has target and exactly one source field row/var/proof per record, plus side and multiplier (direction for equality target sides).
 Reference columns use m.rows.schema["row"] or m.vars.schema["var"]. A proof source is a string key in the explicit reports mapping.
@@ -957,7 +956,8 @@ api('Edit.substitute_fixed','mipframe.edit.delta:DeltaEdit.substitute_fixed','Su
     inputs='vars=IDs or a variable selection; equal finite bounds, possibly set by a proved preceding edit.',
     guarantees='Shifts all retained row bounds and objective constant; removes columns. A child diff exposes lifting.',related=('api.Edit.commit',))
 api('Model.audit','mipframe.model:Model.audit','Explicitly replay a persisted proof-carrying delta and compare numerical output.',
-    inputs='source=bound root Model; optional bundle path and artifact MPS path.',returns='Fresh audit receipt; historical status fields are ignored.',related=('api.Model.write',))
+    inputs='source=bound root Model; optional bundle path and artifact MPS path.',returns='Fresh audit receipt; historical status fields are ignored.',
+    body='statistics separates serialization, replay, edit validation, numerical comparison and file readback seconds. Each audit independently rechecks certificates and committed coverage; timing data grants no proof authority. Large proof lineages may require an explicit finite check.budget(memory_mb=...) context.',related=('api.Model.write',))
 api('Model.content_hash','mipframe.model:Model.content_hash','Explicitly compute a numerical fingerprint; snapshot construction does not compute it.',related=('concept.identity',))
 
 # Exception classes retain their diagnostic import paths.
@@ -989,10 +989,10 @@ api('WriteReceipt','mipframe.store.output:WriteReceipt','Immutable numerical art
 
 api('PointReport','mipframe.check.finite:PointReport','Exact point-feasibility result returned by m.check.solution().',
     returns='A result handle; obtain it through Checker.solution, not its constructor.',
-    body='status is PROVED or REFUTED; ok is a bool. summary includes the exact objective and violations; scope records integer-model feasibility. require() raises ValidationError on failure. evidence contains violating_rows and violating_vars Frames. This type has no implication conclusion or explain() method and cannot authorize Edit because. close() releases its point and diagnostic storage; finish consuming evidence before closing.',
+    body='status is PROVED or REFUTED; ok is a bool. summary includes the exact objective and violations; scope.domain records integer or relaxation feasibility. require() raises ValidationError on failure. evidence contains violating_rows and violating_vars Frames. This type has no implication conclusion or explain() method and cannot authorize Edit because. close() releases its point and diagnostic storage; finish consuming evidence before closing.',
     related=('api.Checker.solution','api.PointReport.evidence','api.PointReport.close'))
 for name, summary, returns in [
-    ('require','Require exact integer-model point feasibility.','The same PointReport, or ValidationError carrying it.'),
+    ('require','Require exact point feasibility in the selected domain.','The same PointReport, or ValidationError carrying it.'),
     ('evidence','Inspect every violated row side, variable bound and integrality condition.','Mapping with violating_rows and violating_vars Frames; requires an open model and point result.'),
     ('to_spec','Materialize the exact point for later validation.','Detached dictionary within materialize_mb; no saved verdict is trusted.'),
     ('write','Write the exact point as a portable artifact.','Saved path; replay with Report.replay(path, models=[m]) reruns the point checker.'),
@@ -1023,7 +1023,7 @@ for item in TOPICS:
         item['when'] = item['summary']
 
 # Unified execution is the default route for repeated checks.
-BATCH_GUIDANCE = """Prefer m.check.batch() for repeated checks. Do not execute scalar checkers in a Python for loop, comprehension or map, or rewrite complete checks as handwritten row/variable loops. Use Frame operations for relations. Loops may register batch tasks; run once after registration. Construct expressions inside the batch context to share common subexpressions.
+BATCH_GUIDANCE = """Prefer m.check.batch() for repeated checks. Do not execute scalar checkers in a Python for loop, comprehension or map, or rewrite complete checks as handwritten row/variable loops. Use Frame operations for relations. Loops may register batch tasks; run once after registration. Construct expressions inside the batch context to share common subexpressions. m.linexpr(Frame) registers a lazy query leaf there; reachable leaves are read at run(), sharing parent relations and exact equality-filter indexes. Do not call to_records(), shape or other materializing operations inside a registration loop. Full parent join coverage/cardinality is validated before filtering. Unused query tasks are not executed; query work has the same finite time/work budget. Statistics distinguish registration, query, compilation, kernel and publication time; query time is included in compilation.
 Each registration returns CheckHandle, not a signed proof: no .ok/.status and no edit authority. A handle may be used only as a dependency in its own plan. result_key is unique and exports a result; unnamed tasks are internal. run() executes the named dependency closure and seals the plan. Context exit releases unpublished work and never runs implicitly.
 results.require() checks all exported results. results[key] preserves its type: ProofRef/BatchProof for mathematics, PointReport for points, Report for diagnostics. Points and diagnostics cannot authorize edits. Conditions remain target-local; cases discharges only its matching branch conditions. Separate snapshots require separate batches.
 Finite defaults: time_limit=30 seconds, max_tasks=1000000 logical tasks, max_nodes=4096 compiled execution nodes, max_work=100000000, memory_mb=128. Explicit finite increases are supported; time/work limits cannot be disabled. ProofBudgetExceeded reports the phase and limit; unfinished work is never PROVED or mathematically REFUTED."""

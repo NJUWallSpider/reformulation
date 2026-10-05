@@ -35,6 +35,10 @@ def from_records(records, *, schema, key=None, models=(), memory_mb=None, disk_m
     key=(key,) if isinstance(key,str) else tuple(key) if key is not None else None
     if key is not None and not set(key)<=set(schema):raise SchemaError('Unknown key column')
     ctx=Context(models,memory_mb,disk_mb)
+    # Build one validated membership index per snapshot/axis, never scan the
+    # overlay's tuple of live IDs once for every input record.
+    from mipframe.check.kernel import facts
+    validators={(model.uid,model.version):facts(model) for model in models}
     def rows():
         for record in records:
             if set(record)!=set(schema):raise SchemaError('Record columns must match the declared schema')
@@ -44,7 +48,8 @@ def from_records(records, *, schema, key=None, models=(), memory_mb=None, disk_m
                     for model in models:
                         if model.uid==t.uid:
                             if model.version!=t.version:raise SchemaError('Reference version mismatch')
-                            if row[n] not in model.model.entity_ids(t.axis):raise SchemaError('Reference ID outside the declared model axis')
+                            try:validators[(t.uid,t.version)].validate(t.axis,row[n])
+                            except ValueError:raise SchemaError('Reference ID outside the declared model axis') from None
             yield row
     try:
         from mipframe.data.relations import build

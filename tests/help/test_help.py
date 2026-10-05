@@ -100,8 +100,7 @@ def test_fractional_feasibility_guidance_matches_checker(recipe_env):
     )
     assert m.matrix.activity(point).one().activity == 1
     assert m.check.solution(point).status == 'REFUTED'
-    with pytest.raises(ValueError, match='integer model'):
-        m.check.solution(point, domain='relaxation')
+    assert m.check.solution(point, domain='relaxation').require().scope['domain']=='relaxation'
     assert not hasattr(mf.Report, 'close')
     assert not hasattr(mf.LinExpr, 'close')
 

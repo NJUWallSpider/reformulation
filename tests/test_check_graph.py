@@ -63,6 +63,108 @@ def test_handles_and_scopes(m):
     assert r['result'].conclusion.expr == target.expr
 
 
+def test_query_leaves_are_lazy_shared_and_replayable(m,tmp_path):
+    calls=[]
+    ids=list(m.vars.ids)
+    def scan(fields,ctx):
+        calls.append(tuple(fields))
+        for group,var in enumerate(ids):
+            row=dict(var=var,coef=1,group=group)
+            yield {k:row[k] for k in fields}
+    relation=mf.Frame(dict(var=m.vars.schema['var'],coef=mf.DType('number'),group=mf.DType('int')),
+                      models=(m,),source=scan)
+    def forbidden(*args):raise AssertionError('dead query executed')
+    dead=mf.Frame(dict(var=m.vars.schema['var'],coef=mf.DType('number')),models=(m,),source=forbidden)
+    with m.check.batch() as batch:
+        for i in range(len(ids)):
+            target=m.linexpr(relation.where(mf.col('group')==i).select('var','coef'))<=10
+            batch.linear(target,residual='bounds',result_key=str(i))
+        batch.linear(m.linexpr(dead)<=0)
+        assert not calls
+        result=batch.run().require()
+    assert len(calls)==1
+    for spec in (result['0'].batch.to_spec(),result['0'].batch.write(tmp_path/'lazy')):
+        assert mf.BatchProof.replay(spec,model=m).ok
+    assert len(calls)==1
+
+
+def test_lazy_query_does_not_hide_join_errors(m):
+    x=mf.Ref(m.uid,m.version,'var',m.vars.by_name('x').id)
+    left=mf.Frame.from_records([dict(var=x,group=0),dict(var=x,group=1)],
+        schema=dict(var=m.vars.schema['var'],group='int'),models=(m,))
+    right=mf.Frame.from_records([dict(var=x,coef=1)],schema=dict(var=m.vars.schema['var'],coef='number'),models=(m,))
+    with m.check.batch() as batch:
+        expr=m.linexpr(left.join(right,on='var',cardinality='1:1').where(mf.col('group')==0).select('var','coef'))
+        batch.linear(expr<=10,residual='bounds',result_key='bad')
+        with pytest.raises(mf.CardinalityError):batch.run()
+
+
+def test_discharge_preserves_unrelated_conditions(m):
+    x,y,z=(m.vars.by_name(k) for k in ('x','y','z'))
+    with m.check.batch() as batch:
+        target=x<=10
+        branches={k:batch.linear(target,assume=[y.eq(k),z.eq(1)],residual='bounds') for k in (0,1)}
+        batch.cases(target,var=y,cases=branches,result_key='conditional')
+        batch.linear(target,residual='bounds',result_key='unconditional')
+        result=batch.run().require()
+    assert result['conditional'].scope['assumptions']==1
+    assert result['unconditional'].scope['assumptions']==0
+    with pytest.raises(mf.UndischargedAssumptionError):trusted(result['conditional'],facts(m))
+    replay=mf.BatchProof.replay(result['conditional'].batch.to_spec(),model=m)
+    assert replay.for_target(result['conditional'].index).scope['assumptions']==1
+
+
+def test_wide_integer_residual_never_rounds_or_builds_fraction_trees(tmp_path,monkeypatch):
+    path=tmp_path/'wide-products.lp'
+    expr=' + '.join(f'x{i}' for i in range(12))
+    path.write_text(f'Minimize\n obj: x0\nSubject To\n zero: {expr} = 0\nBounds\n'+
+                    '\n'.join(f' 0 <= x{i} <= 1' for i in range(12))+'\nEnd\n')
+    from mipframe.check.sparse_tree import SparseTree
+    def forbidden(*args):raise AssertionError('wide integer tile fell back to Fraction tree')
+    monkeypatch.setattr(SparseTree,'residual',forbidden)
+    with mf.read(path) as model:
+        row=model.rows.by_name('zero');large=2**110+1
+        with model.check.batch() as batch:
+            batch.linear(row.expr<=0,using=[(large,row.eq_claim)],residual='bounds',result_key='valid')
+            batch.linear(row.expr<=-1,using=[(large,row.eq_claim)],residual='bounds',result_key='invalid')
+            result=batch.run()
+        assert result['valid'].ok and not result['invalid'].ok
+        restored=mf.BatchProof.replay(result['valid'].batch.to_spec(),model=model)
+        assert tuple(restored._status)==tuple(result['valid'].batch._status)
+
+
+def test_overlay_frame_reference_validation_uses_live_index(m,monkeypatch):
+    x=m.vars.by_name('x');proof=m.check.linear(x<=10,residual='bounds')
+    edit=m.edit();edit.add_row(x<=10,name='copy',because=proof)
+    with edit.commit() as child:
+        refs=child.vars.select('var').to_records()
+        class Unscannable(tuple):
+            def __contains__(self,value):raise AssertionError('linear ID membership scan')
+        monkeypatch.setattr(child.model,'entity_ids',lambda axis:Unscannable(facts(child).var_ids()))
+        points=[dict(var=r['var'],value=0) for r in refs]
+        frame=mf.Frame.from_records(points,schema=dict(var=child.vars.schema['var'],value='number'),models=(child,))
+        child.check.solution(frame).require()
+        with pytest.raises(mf.SchemaError):
+            mf.Frame.from_records([dict(var=mf.Ref(child.uid,child.version,'var',999))],
+                                  schema=dict(var=child.vars.schema['var']),models=(child,))
+
+
+def test_mixed_point_domains_keep_scope_and_replay(m,tmp_path):
+    values={v:Fraction(1,2) for v in m.vars.ids}
+    with m.check.batch() as batch:
+        batch.solution(values,result_key='integer')
+        batch.solution(values,domain='relaxation',result_key='lp')
+        results=batch.run()
+    assert not results['integer'].ok and results['lp'].ok
+    report=results['lp']
+    assert report.scope['domain']=='relaxation'
+    restored=mf.Report.replay(report.write(tmp_path/'lp-point'),models=[m]).require()
+    assert restored.scope['domain']=='relaxation'
+    with pytest.raises(Exception):trusted(restored,facts(m))
+    bad=report.to_spec();bad['domain']='integer'
+    assert not mf.Report.replay(bad,models=[m]).ok
+
+
 def test_graph_replay_edit_and_tampering(m, tmp_path):
     target, results = staged(m)
     p = results['result']

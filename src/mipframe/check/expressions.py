@@ -22,6 +22,12 @@ class ExpressionPool:
         self.nodes, self.lookup = ExpressionTable(self.numbers), {}
         self.leaf_objects = {}
         self.rows = {}
+        self.query_context=None
+        self.query_leaves={}
+        self.query_seconds=0.0
+        self.retained_bytes=0
+        self.query_bytes=0
+        self.query_statistics=dict(staged_rows=0,cache_hits=0,memory_bytes=0,disk_bytes=0)
         self.intern(('terms', ()))
 
     def intern(self, node):
@@ -29,7 +35,8 @@ class ExpressionPool:
         found = self.lookup.get(key)
         if found is not None:
             return found
-        self.budget.charge('memory', 128 + (len(node[1]) * 80 if node[0] == 'terms' else 0))
+        cost=128 + (len(node[1]) * 80 if node[0] == 'terms' else 0)
+        self.budget.charge('memory',cost);self.retained_bytes+=cost
         ident = len(self.nodes)
         self.nodes.append_key(key)
         self.lookup[key] = ident
@@ -73,6 +80,7 @@ class ExpressionPool:
         for node, scale in pairs:
             scale = exact(scale)
             while node:
+                if node in self.nodes.pending:break
                 kind,data=self.nodes[node]
                 if kind!='sum' or len(data)!=1:break
                 node,weight=data[0];scale*=weight
@@ -84,6 +92,68 @@ class ExpressionPool:
         if len(pairs) == 1 and pairs[0][1] == 1:
             return pairs[0][0]
         return self.intern(('sum', pairs))
+
+    def frame(self, source, var, coef, constant, *, scale=None):
+        """Register a query leaf; compile it only when its task is reachable."""
+        source._guard()
+        key=(id(source),var,coef,scale)
+        if key not in self.query_leaves:
+            self.budget.charge('memory',256)
+            self.retained_bytes+=256
+            def resolve():
+                from time import perf_counter
+                from mipframe.frame.executor import Context
+                from mipframe.data.batch import scalar
+                if getattr(self,'finished',False):raise ValueError('Unexecuted batch expression is closed')
+                start=perf_counter()
+                self.budget.phase='query'
+                if self.query_context is None:
+                    available=max(1,self.budget.limits['memory']-self.budget.counts['memory'])
+                    self.query_context=Context((self.owner,),available/1024**2,self.budget.disk_mb,reuse_queries=True)
+                ctx=self.query_context
+                fields=(var,) if scale is not None else tuple(dict.fromkeys((var,coef)))
+                table,_=ctx.stage(source,fields)
+                extra=ctx.work.resident-self.query_bytes
+                self.budget.charge('memory',extra)
+                self.query_bytes+=extra;self.retained_bytes+=extra
+                values={}
+                for i in range(len(table)):
+                    if i%256==0:self.budget.charge(count=min(256,len(table)-i),phase='query')
+                    v=int(scalar(table.columns[var][i]))
+                    c=scale if scale is not None else exact(scalar(table.columns[coef][i]))
+                    values[v]=values.get(v,0)+c
+                result=tuple(sorted((v,c) for v,c in values.items() if c))
+                self.budget.charge('memory',80*len(result))
+                self.retained_bytes+=80*len(result)
+                self.query_seconds+=perf_counter()-start
+                return result
+            self.query_leaves[key]=(source,self.nodes.defer(resolve))
+        return self.expression(self.query_leaves[key][1],constant,source._models)
+
+    def close_queries(self):
+        if self.query_context is not None:
+            ctx=self.query_context
+            self.query_statistics['staged_rows']+=ctx.staged_rows
+            self.query_statistics['cache_hits']+=ctx.cache_hits
+            self.query_statistics['memory_bytes']=max(self.query_statistics['memory_bytes'],ctx.work.ledger.peak_resident)
+            self.query_statistics['disk_bytes']=max(self.query_statistics['disk_bytes'],ctx.work.ledger.peak_disk)
+            self.query_context.close();self.query_context=None
+            self.budget.counts['memory']-=self.query_bytes
+            self.retained_bytes-=self.query_bytes;self.query_bytes=0
+        self.query_leaves.clear()
+
+    def resolve_queries(self,roots):
+        if not self.nodes.pending:return
+        pending=list(roots);seen=set()
+        while pending:
+            node=pending.pop()
+            if node in seen:continue
+            seen.add(node)
+            kind,data=self.nodes[node]
+            if kind=='sum':pending.extend(i for i,_ in data)
+            self.budget.poll()
+        # Query scratch is not needed by numeric kernels or saved certificates.
+        self.close_queries()
 
     def small_sparse(self,pairs,limit=8):
         """Bounded symbolic cancellation before choosing a numerical tile."""

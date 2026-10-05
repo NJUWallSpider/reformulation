@@ -4,6 +4,10 @@ from collections.abc import Sequence
 from mipframe.check.kernel import exact
 
 
+def _closed_query():
+    raise ValueError('Unexecuted batch expression is closed')
+
+
 class Numbers:
     def __init__(self):
         self.values=[];self.ids={}
@@ -22,6 +26,24 @@ class ExpressionTable(Sequence):
     def __init__(self,numbers):
         self.numbers=numbers
         self.kind=array('B');self.offsets=array('Q',[0]);self.items=array('Q');self.weights=array('Q')
+        self.pending={};self.resolved={}
+
+    def defer(self, resolve):
+        index=len(self)
+        self.kind.append(2);self.offsets.append(len(self.items))
+        self.pending[index]=resolve
+        return index
+
+    def snapshot(self):
+        """Only executed leaves enter certificates; dead queries never run."""
+        if not self.pending and not self.resolved:return self
+        result=ExpressionTable(self.numbers)
+        for i in range(len(self)):
+            result.append(('terms',()) if i in self.pending else self[i])
+        return result
+
+    def abandon_pending(self):
+        for index in self.pending:self.pending[index]=_closed_query
 
     def key(self,node):
         kind,data=node
@@ -39,6 +61,11 @@ class ExpressionTable(Sequence):
         if isinstance(index,slice):return tuple(self[i] for i in range(*index.indices(len(self))))
         if index<0:index+=len(self)
         if not 0<=index<len(self):raise IndexError(index)
+        if index in self.pending:
+            value=self.pending[index]()
+            self.resolved[index]=('terms',value)
+            del self.pending[index]
+        if index in self.resolved:return self.resolved[index]
         lo,hi=self.offsets[index:index+2]
         return ('sum' if self.kind[index] else 'terms',tuple((int(self.items[j]),self.numbers[self.weights[j]]) for j in range(lo,hi)))
 
@@ -123,6 +150,7 @@ def native_table(table, encode):
     import numpy as np
     import json
     from mipframe.data.columns import ExactColumn
+    if isinstance(table,ExpressionTable):table=table.snapshot()
     arrays={name:encode(np.frombuffer(value,dtype=np.dtype(value.typecode)))
             for name,value in vars(table).items() if isinstance(value,array)}
     result=dict(version=1,columns=arrays,numbers=encode(ExactColumn(table.numbers.values)))

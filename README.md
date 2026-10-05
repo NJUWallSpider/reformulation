@@ -16,9 +16,9 @@ From this repository (Python 3.11 or later):
 python -m pip install .
 ```
 
-Version 1.4.0 is an internal release, not a public PyPI release. NumPy is the
+Version 1.5.0 is an internal release, not a public PyPI release. NumPy is the
 only runtime dependency. For a distributed wheel, install with
-`python -m pip install /path/to/mipframe-1.4.0-py3-none-any.whl`.
+`python -m pip install /path/to/mipframe-1.5.0-py3-none-any.whl`.
 Install `.[scipy]` from this repository for sparse CSR exports, or `.[parquet]`
 for Parquet exports. Offline help is available through
 `python -m mipframe help "support containment"`.

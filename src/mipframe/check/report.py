@@ -337,7 +337,7 @@ class Report:
                     ids,values=spec_or_path['ids'],spec_or_path['values']
                     if len(ids)!=len(values):raise ValueError('Point artifact lengths differ')
                     return zip(ids,values)
-            return matching[0].check.solution(PointInput(),memory_mb=memory_mb,disk_mb=disk_mb)
+            return matching[0].check.solution(PointInput(),domain=spec_or_path.get('domain','integer'),memory_mb=memory_mb,disk_mb=disk_mb)
 
         if isinstance(spec_or_path, dict) and spec_or_path.get('schema') == 'mipframe-proof-ref-2':
             from mipframe.check.compact import ProofRef

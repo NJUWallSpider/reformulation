@@ -325,9 +325,15 @@ class Model:
         from mipframe.check.kernel import facts
         from mipframe.control.proofs import proof_bundle
         from mipframe.store.reformulation_audit import verify_bundle
+        from time import perf_counter
+        started=perf_counter()
         f=facts(self)
         if bundle is None:bundle=getattr(f,'saved_bundle',None) or proof_bundle(f,native=True)
-        return verify_bundle(bundle,source,target=self,artifact=artifact)
+        serialization=perf_counter()-started
+        result=verify_bundle(bundle,source,target=self,artifact=artifact)
+        result['statistics']['serialization_seconds']=serialization
+        result['statistics']['total_seconds']+=serialization
+        return result
 
     @property
     def content_hash(self):

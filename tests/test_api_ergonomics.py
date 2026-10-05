@@ -101,9 +101,9 @@ def test_fractional_point_recovery_checks_rows_and_isolated_bounds(model):
             key="var", models=(model,))
 
     point = values()
-    with pytest.raises(ValueError, match="matrix.activity") as error:
-        model.check.solution(point, domain="relaxation")
-    assert mf.help(error.value, format="json")["results"][0]["id"] == "limitation.fractional-point"
+    report=model.check.solution(point,domain='relaxation').require()
+    assert report.scope['domain']=='relaxation'
+    assert mf.Report.replay(report.to_spec(),models=[model]).require().scope['domain']=='relaxation'
     for domain in ("auto", "integer"):
         assert model.check.solution(point, domain=domain).status == "REFUTED"
     activity = model.matrix.activity(point).join(model.rows, on="row", cardinality="1:1", require="both")
@@ -113,8 +113,10 @@ def test_fractional_point_recovery_checks_rows_and_isolated_bounds(model):
     # Row feasibility misses an isolated variable's bound violation.
     assert list(model.matrix.activity(values(z_value=2)).column("activity")) == [1, 0]
     bad = model.vars.join(values(z_value=2), on="var", cardinality="1:1", require="both")
+    assert model.check.solution(values(z_value=2),domain='relaxation').status=='REFUTED'
     assert [r.var.id for r in bad if not r.lb <= r.value <= r.ub] == [z.id]
     incomplete = values(include_z=False)
+    with pytest.raises(mf.SchemaError):model.check.solution(incomplete,domain='relaxation')
     assert model.matrix.activity(incomplete).count() == model.rows.count()
     with pytest.raises(mf.CardinalityError):
         model.vars.join(incomplete, on="var", cardinality="1:1", require="both").count()

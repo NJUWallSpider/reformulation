@@ -146,7 +146,7 @@ def test_examples(script):
 
 
 def test_public_surface():
-    assert mf.__version__ == "1.4.0"
+    assert mf.__version__ == "1.5.0"
     assert not hasattr(mf, "IR") and not hasattr(mf.Model, "build")
     assert not hasattr(mf.Model, "summary")
     from importlib.util import find_spec

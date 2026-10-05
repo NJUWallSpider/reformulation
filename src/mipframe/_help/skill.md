@@ -34,6 +34,11 @@ A loop is appropriate only to **register** tasks with `batch.linear(...)`, etc.;
 call `batch.run()` once after registration. Construct shared expressions inside
 the batch context so their common parts remain shared. Scalar checks are for
 isolated checks, not the default strategy for a family of targets.
+Within a batch, `m.linexpr(Frame)` defers reading until `run()` and shares repeated
+parent queries and equality-filter indexes. Keep the common Frame outside the
+registration loop; derive filtered expressions inside it. Avoid `to_records()`,
+`shape`, or other materializing reads in that loop. Query failures can surface
+at `run()`. Full parent join checks still run before any group is selected.
 
 ## Run one complete example
 
@@ -252,11 +257,13 @@ not an unknown pre-presolve model or unsaved original token spelling.
 `identity` checks algebra; `linear` checks supplied multipliers; `infeasible`
 checks contradiction; `round` uses integer-valued expressions; `enumerate` checks
 a finite local integer implication; `solution` validates a complete exact point
-against the mathematical integer model, including integrality. It rejects
-`domain="relaxation"`. For a fractional LP point use `m.matrix.activity(values)`
-plus exact checks of both row sides and every variable bound. Check complete
-variable coverage, including variables absent from all rows; activity alone only
-requires participating variables. See `mf.help("fractional point feasibility")`.
+against the integer model by default. For fractional LP points use
+`check.solution(values, domain="relaxation")`; it checks complete coverage,
+all variable bounds and both row sides, including isolated variables, while
+omitting integrality. Register multiple points with `batch.solution`.
+`PointReport.scope.domain` records the chosen domain; neither domain authorizes
+edits. Use `matrix.activity` when the row activities themselves are needed.
+See `mf.help("fractional point feasibility")`.
 No checker searches for multipliers.
 
 Use one explicit batch for dependent proofs and mixed check types:

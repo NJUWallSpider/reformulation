@@ -119,7 +119,7 @@ def test_alias_words_are_searchable_outside_exact_lookup():
     ('tighten big M', 'No automatic big-M optimizer'),
     ('set cover', 'no minimum set-cover solver'),
     ('graph matching', 'No maximum-cardinality or weighted matching solver'),
-    ('fractional point feasibility', 'rejects domain="relaxation"'),
+    ('fractional point feasibility', 'not an implication proof'),
     ('conditional case split', 'infeasible-branch elimination'),
     ('report resource lifecycle', 'no public close() method'),
 ])

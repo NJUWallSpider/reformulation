@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "version": "1.4.0",
+  "version": "1.5.0",
   "topics": [
     {
       "id": "home",
@@ -19,7 +19,7 @@
       "failures": "",
       "resources": "",
       "example": "",
-      "body": "Prefer m.check.batch() for repeated checks. Do not execute scalar checkers in a Python for loop, comprehension or map, or rewrite complete checks as handwritten row/variable loops. Use Frame operations for relations. Loops may register batch tasks; run once after registration. Construct expressions inside the batch context to share common subexpressions.\nEach registration returns CheckHandle, not a signed proof: no .ok/.status and no edit authority. A handle may be used only as a dependency in its own plan. result_key is unique and exports a result; unnamed tasks are internal. run() executes the named dependency closure and seals the plan. Context exit releases unpublished work and never runs implicitly.\nresults.require() checks all exported results. results[key] preserves its type: ProofRef/BatchProof for mathematics, PointReport for points, Report for diagnostics. Points and diagnostics cannot authorize edits. Conditions remain target-local; cases discharges only its matching branch conditions. Separate snapshots require separate batches.\nFinite defaults: time_limit=30 seconds, max_tasks=1000000 logical tasks, max_nodes=4096 compiled execution nodes, max_work=100000000, memory_mb=128. Explicit finite increases are supported; time/work limits cannot be disabled. ProofBudgetExceeded reports the phase and limit; unfinished work is never PROVED or mathematically REFUTED.\n\nExplore: m.ir; m.rows; m.vars; m.terms().\nRelate: Frame.where/select/join/group_by; VarFrame.project.\nCompare: mf.ops.sets, mf.ops.graph, mf.ops.equal_groups.\nCompute: m.matrix.nnz/activity/transpose_activity; sparse MatrixView.\nSearch: mf.alg.graph and mf.alg.integer; distinguish candidates from exhaustive results.\nVerify: LinExpr, Claim, m.check; ProofRef/BatchProof for implications, PointReport for points.\nModify: m.edit(), commit() for verified changes, build() for experiments, diff(), save(), write().\n\nRun mf.help(\"recipe.quickstart\", detail=\"full\") for a complete temporary-file example.\nStart with mf.help(\"coordinates\"), mf.help(\"support containment\"),\nmf.help(\"linear certificate\"), or mf.help(\"edit model\").\nUse detail=\"full\" on a topic ID to read its complete instructions.\nUse mf.help(\"skill\", detail=\"full\") for the portable onboarding guide.",
+      "body": "Prefer m.check.batch() for repeated checks. Do not execute scalar checkers in a Python for loop, comprehension or map, or rewrite complete checks as handwritten row/variable loops. Use Frame operations for relations. Loops may register batch tasks; run once after registration. Construct expressions inside the batch context to share common subexpressions. m.linexpr(Frame) registers a lazy query leaf there; reachable leaves are read at run(), sharing parent relations and exact equality-filter indexes. Do not call to_records(), shape or other materializing operations inside a registration loop. Full parent join coverage/cardinality is validated before filtering. Unused query tasks are not executed; query work has the same finite time/work budget. Statistics distinguish registration, query, compilation, kernel and publication time; query time is included in compilation.\nEach registration returns CheckHandle, not a signed proof: no .ok/.status and no edit authority. A handle may be used only as a dependency in its own plan. result_key is unique and exports a result; unnamed tasks are internal. run() executes the named dependency closure and seals the plan. Context exit releases unpublished work and never runs implicitly.\nresults.require() checks all exported results. results[key] preserves its type: ProofRef/BatchProof for mathematics, PointReport for points, Report for diagnostics. Points and diagnostics cannot authorize edits. Conditions remain target-local; cases discharges only its matching branch conditions. Separate snapshots require separate batches.\nFinite defaults: time_limit=30 seconds, max_tasks=1000000 logical tasks, max_nodes=4096 compiled execution nodes, max_work=100000000, memory_mb=128. Explicit finite increases are supported; time/work limits cannot be disabled. ProofBudgetExceeded reports the phase and limit; unfinished work is never PROVED or mathematically REFUTED.\n\nExplore: m.ir; m.rows; m.vars; m.terms().\nRelate: Frame.where/select/join/group_by; VarFrame.project.\nCompare: mf.ops.sets, mf.ops.graph, mf.ops.equal_groups.\nCompute: m.matrix.nnz/activity/transpose_activity; sparse MatrixView.\nSearch: mf.alg.graph and mf.alg.integer; distinguish candidates from exhaustive results.\nVerify: LinExpr, Claim, m.check; ProofRef/BatchProof for implications, PointReport for points.\nModify: m.edit(), commit() for verified changes, build() for experiments, diff(), save(), write().\n\nRun mf.help(\"recipe.quickstart\", detail=\"full\") for a complete temporary-file example.\nStart with mf.help(\"coordinates\"), mf.help(\"support containment\"),\nmf.help(\"linear certificate\"), or mf.help(\"edit model\").\nUse detail=\"full\" on a topic ID to read its complete instructions.\nUse mf.help(\"skill\", detail=\"full\") for the portable onboarding guide.",
       "related": [
         "concept.frame",
         "concept.proofs",
@@ -117,7 +117,7 @@
       "failures": "",
       "resources": "",
       "example": "",
-      "body": "Prefer m.check.batch() for repeated checks. Do not execute scalar checkers in a Python for loop, comprehension or map, or rewrite complete checks as handwritten row/variable loops. Use Frame operations for relations. Loops may register batch tasks; run once after registration. Construct expressions inside the batch context to share common subexpressions.\nEach registration returns CheckHandle, not a signed proof: no .ok/.status and no edit authority. A handle may be used only as a dependency in its own plan. result_key is unique and exports a result; unnamed tasks are internal. run() executes the named dependency closure and seals the plan. Context exit releases unpublished work and never runs implicitly.\nresults.require() checks all exported results. results[key] preserves its type: ProofRef/BatchProof for mathematics, PointReport for points, Report for diagnostics. Points and diagnostics cannot authorize edits. Conditions remain target-local; cases discharges only its matching branch conditions. Separate snapshots require separate batches.\nFinite defaults: time_limit=30 seconds, max_tasks=1000000 logical tasks, max_nodes=4096 compiled execution nodes, max_work=100000000, memory_mb=128. Explicit finite increases are supported; time/work limits cannot be disabled. ProofBudgetExceeded reports the phase and limit; unfinished work is never PROVED or mathematically REFUTED.\n\nThe checker executes explicit witnesses; it does not search for proofs. Existing row targets use integer IDs and CertificateBatch offsets/sources. Custom targets use Targets sparse arrays. Scalar Claims and optional Frames compile into the same exact kernel. A BatchProof stores statuses and dependencies without materializing target Reports. for_target returns a lazy ProofRef; select returns a compact selection. Edits accept these objects directly.\nProofs bind an immutable snapshot and domain. Unproved/conditional/foreign evidence cannot authorize commit. Serialized status is never trusted: replay re-executes the certificate. Public Frame assertion Reports are separate from mathematical proofs.",
+      "body": "Prefer m.check.batch() for repeated checks. Do not execute scalar checkers in a Python for loop, comprehension or map, or rewrite complete checks as handwritten row/variable loops. Use Frame operations for relations. Loops may register batch tasks; run once after registration. Construct expressions inside the batch context to share common subexpressions. m.linexpr(Frame) registers a lazy query leaf there; reachable leaves are read at run(), sharing parent relations and exact equality-filter indexes. Do not call to_records(), shape or other materializing operations inside a registration loop. Full parent join coverage/cardinality is validated before filtering. Unused query tasks are not executed; query work has the same finite time/work budget. Statistics distinguish registration, query, compilation, kernel and publication time; query time is included in compilation.\nEach registration returns CheckHandle, not a signed proof: no .ok/.status and no edit authority. A handle may be used only as a dependency in its own plan. result_key is unique and exports a result; unnamed tasks are internal. run() executes the named dependency closure and seals the plan. Context exit releases unpublished work and never runs implicitly.\nresults.require() checks all exported results. results[key] preserves its type: ProofRef/BatchProof for mathematics, PointReport for points, Report for diagnostics. Points and diagnostics cannot authorize edits. Conditions remain target-local; cases discharges only its matching branch conditions. Separate snapshots require separate batches.\nFinite defaults: time_limit=30 seconds, max_tasks=1000000 logical tasks, max_nodes=4096 compiled execution nodes, max_work=100000000, memory_mb=128. Explicit finite increases are supported; time/work limits cannot be disabled. ProofBudgetExceeded reports the phase and limit; unfinished work is never PROVED or mathematically REFUTED.\n\nThe checker executes explicit witnesses; it does not search for proofs. Existing row targets use integer IDs and CertificateBatch offsets/sources. Custom targets use Targets sparse arrays. Scalar Claims and optional Frames compile into the same exact kernel. A BatchProof stores statuses and dependencies without materializing target Reports. for_target returns a lazy ProofRef; select returns a compact selection. Edits accept these objects directly.\nProofs bind an immutable snapshot and domain. Unproved/conditional/foreign evidence cannot authorize commit. Serialized status is never trusted: replay re-executes the certificate. Public Frame assertion Reports are separate from mathematical proofs.",
       "related": [
         "concept.conditions",
         "api.Checker.linear",
@@ -272,7 +272,7 @@
     {
       "id": "limitation.fractional-point",
       "title": "Check fractional point feasibility in the relaxation",
-      "summary": "Use exact matrix activity and bound comparisons to inspect an LP relaxation point.",
+      "summary": "Use check.solution(domain=\"relaxation\") for complete exact LP point feasibility.",
       "kind": "limitation",
       "aliases": [
         "fractional point feasibility",
@@ -285,12 +285,12 @@
       "when": "",
       "inputs": "A complete exact Frame(var,value), uniquely keyed by var and bound to the model snapshot.",
       "returns": "",
-      "guarantees": "m.matrix.activity computes exact row activities; compare both row sides and all variable bounds explicitly.",
-      "non_guarantees": "check.solution checks the integer model and rejects domain=\"relaxation\". Fractional values on integer variables fail its integrality check.",
+      "guarantees": "check.solution(domain=\"relaxation\") checks complete variable coverage, all variable bounds and both row sides with exact arithmetic.",
+      "non_guarantees": "A PointReport is not an implication proof and cannot authorize edits. A relaxation point need not satisfy integrality or optimality.",
       "failures": "",
       "resources": "",
       "example": "",
-      "body": "Use m.matrix.activity(values), with the default missing=\"error\", then join the result to m.rows on row and compare activity against lb and ub.\nIndependently check full variable coverage and both variable bounds, including variables absent from every row.\nA point that passes these comparisons is feasible for the linear relaxation; it need not satisfy integrality.\nLinExpr.evaluate only evaluates one expression; it is not a feasibility check. A feasible point is not an optimality or implication certificate.\nUse check.solution for a complete point that must also satisfy the original integer domains.",
+      "body": "Use m.check.solution(values, domain=\"relaxation\").require() for one complete fractional point. For multiple points, register batch.solution(values, domain=\"relaxation\", result_key=...) and run once.\nThe default missing=\"error\" requires every variable, including variables absent from all rows. Variable bounds and both row sides are always checked. Only integrality is omitted in the explicit relaxation domain.\nThe default domain=\"auto\" and domain=\"integer\" enforce integrality. scope.domain records which domain was checked; saved point replay preserves it.\nUse m.matrix.activity only when row activities themselves are needed. LinExpr.evaluate evaluates one expression, not full feasibility.",
       "related": [
         "api.MatrixAccessor.activity",
         "api.Frame.join",
@@ -329,7 +329,7 @@
       "failures": "",
       "resources": "",
       "example": "",
-      "body": "Prefer m.check.batch() for repeated checks. Do not execute scalar checkers in a Python for loop, comprehension or map, or rewrite complete checks as handwritten row/variable loops. Use Frame operations for relations. Loops may register batch tasks; run once after registration. Construct expressions inside the batch context to share common subexpressions.\nEach registration returns CheckHandle, not a signed proof: no .ok/.status and no edit authority. A handle may be used only as a dependency in its own plan. result_key is unique and exports a result; unnamed tasks are internal. run() executes the named dependency closure and seals the plan. Context exit releases unpublished work and never runs implicitly.\nresults.require() checks all exported results. results[key] preserves its type: ProofRef/BatchProof for mathematics, PointReport for points, Report for diagnostics. Points and diagnostics cannot authorize edits. Conditions remain target-local; cases discharges only its matching branch conditions. Separate snapshots require separate batches.\nFinite defaults: time_limit=30 seconds, max_tasks=1000000 logical tasks, max_nodes=4096 compiled execution nodes, max_work=100000000, memory_mb=128. Explicit finite increases are supported; time/work limits cannot be disabled. ProofBudgetExceeded reports the phase and limit; unfinished work is never PROVED or mathematically REFUTED.\n\nSuccessful batch execution creates no target Report, evidence Frame or symbolic Claim. for_target and evidence access are explicit lazy presentation. Mathematical values use Python integers or exact Fraction only when needed. Closing a source Model does not release data still shared by a child overlay. Entity/Frame navigation still requires its owner to be open.",
+      "body": "Prefer m.check.batch() for repeated checks. Do not execute scalar checkers in a Python for loop, comprehension or map, or rewrite complete checks as handwritten row/variable loops. Use Frame operations for relations. Loops may register batch tasks; run once after registration. Construct expressions inside the batch context to share common subexpressions. m.linexpr(Frame) registers a lazy query leaf there; reachable leaves are read at run(), sharing parent relations and exact equality-filter indexes. Do not call to_records(), shape or other materializing operations inside a registration loop. Full parent join coverage/cardinality is validated before filtering. Unused query tasks are not executed; query work has the same finite time/work budget. Statistics distinguish registration, query, compilation, kernel and publication time; query time is included in compilation.\nEach registration returns CheckHandle, not a signed proof: no .ok/.status and no edit authority. A handle may be used only as a dependency in its own plan. result_key is unique and exports a result; unnamed tasks are internal. run() executes the named dependency closure and seals the plan. Context exit releases unpublished work and never runs implicitly.\nresults.require() checks all exported results. results[key] preserves its type: ProofRef/BatchProof for mathematics, PointReport for points, Report for diagnostics. Points and diagnostics cannot authorize edits. Conditions remain target-local; cases discharges only its matching branch conditions. Separate snapshots require separate batches.\nFinite defaults: time_limit=30 seconds, max_tasks=1000000 logical tasks, max_nodes=4096 compiled execution nodes, max_work=100000000, memory_mb=128. Explicit finite increases are supported; time/work limits cannot be disabled. ProofBudgetExceeded reports the phase and limit; unfinished work is never PROVED or mathematically REFUTED.\n\nSuccessful batch execution creates no target Report, evidence Frame or symbolic Claim. for_target and evidence access are explicit lazy presentation. Mathematical values use Python integers or exact Fraction only when needed. Closing a source Model does not release data still shared by a child overlay. Entity/Frame navigation still requires its owner to be open.",
       "related": [
         "api.Checker.linear_batch",
         "api.Checker.linear_many",
@@ -7332,7 +7332,7 @@
       "failures": "Invalid sources, missing input, bad multipliers, cross-snapshot input or unsupported domains raise; they are not INCONCLUSIVE.",
       "resources": "Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.",
       "example": "",
-      "body": "missing=\"error\" requires all model variables; missing=\"zero\" is explicit. Inputs from a solver are not silently rounded.\ndomain=\"auto\" and domain=\"integer\" both enforce the original integer domains; domain=\"relaxation\" is rejected. For fractional LP points, use m.matrix.activity(values) plus exact checks of both row sides and every variable bound. Verify complete variable coverage, including variables absent from all rows; see limitation.fractional-point.",
+      "body": "missing=\"error\" requires all model variables; missing=\"zero\" is explicit. Inputs from a solver are not silently rounded.\ndomain=\"auto\" and domain=\"integer\" enforce the original integer domains. domain=\"relaxation\" checks all variable bounds and both row sides without integrality. All modes require complete variable coverage by default, including variables absent from all rows. scope.domain and point artifacts retain the chosen domain. Use batch.solution for multiple points; see limitation.fractional-point.",
       "related": [
         "concept.proofs",
         "concept.conditions",
@@ -12577,7 +12577,7 @@
       "failures": "",
       "resources": "",
       "example": "",
-      "body": "",
+      "body": "statistics separates serialization, replay, edit validation, numerical comparison and file readback seconds. Each audit independently rechecks certificates and committed coverage; timing data grants no proof authority. Large proof lineages may require an explicit finite check.budget(memory_mb=...) context.",
       "related": [
         "api.Model.write"
       ],
@@ -12974,7 +12974,7 @@
       "failures": "",
       "resources": "",
       "example": "",
-      "body": "status is PROVED or REFUTED; ok is a bool. summary includes the exact objective and violations; scope records integer-model feasibility. require() raises ValidationError on failure. evidence contains violating_rows and violating_vars Frames. This type has no implication conclusion or explain() method and cannot authorize Edit because. close() releases its point and diagnostic storage; finish consuming evidence before closing.",
+      "body": "status is PROVED or REFUTED; ok is a bool. summary includes the exact objective and violations; scope.domain records integer or relaxation feasibility. require() raises ValidationError on failure. evidence contains violating_rows and violating_vars Frames. This type has no implication conclusion or explain() method and cannot authorize Edit because. close() releases its point and diagnostic storage; finish consuming evidence before closing.",
       "related": [
         "api.Checker.solution",
         "api.PointReport.evidence",
@@ -12994,11 +12994,11 @@
     {
       "id": "api.PointReport.require",
       "title": "PointReport.require",
-      "summary": "Require exact integer-model point feasibility.",
+      "summary": "Require exact point feasibility in the selected domain.",
       "kind": "api",
       "aliases": [],
       "keywords": [],
-      "when": "Require exact integer-model point feasibility.",
+      "when": "Require exact point feasibility in the selected domain.",
       "inputs": "",
       "returns": "The same PointReport, or ValidationError carrying it.",
       "guarantees": "",
@@ -13291,7 +13291,7 @@
       "failures": "",
       "resources": "",
       "example": "with m.check.batch() as batch:\n    for key, target, sources in tasks:\n        batch.linear(target, using=sources, result_key=key)\n    results = batch.run()\nresults.require()",
-      "body": "Prefer m.check.batch() for repeated checks. Do not execute scalar checkers in a Python for loop, comprehension or map, or rewrite complete checks as handwritten row/variable loops. Use Frame operations for relations. Loops may register batch tasks; run once after registration. Construct expressions inside the batch context to share common subexpressions.\nEach registration returns CheckHandle, not a signed proof: no .ok/.status and no edit authority. A handle may be used only as a dependency in its own plan. result_key is unique and exports a result; unnamed tasks are internal. run() executes the named dependency closure and seals the plan. Context exit releases unpublished work and never runs implicitly.\nresults.require() checks all exported results. results[key] preserves its type: ProofRef/BatchProof for mathematics, PointReport for points, Report for diagnostics. Points and diagnostics cannot authorize edits. Conditions remain target-local; cases discharges only its matching branch conditions. Separate snapshots require separate batches.\nFinite defaults: time_limit=30 seconds, max_tasks=1000000 logical tasks, max_nodes=4096 compiled execution nodes, max_work=100000000, memory_mb=128. Explicit finite increases are supported; time/work limits cannot be disabled. ProofBudgetExceeded reports the phase and limit; unfinished work is never PROVED or mathematically REFUTED.",
+      "body": "Prefer m.check.batch() for repeated checks. Do not execute scalar checkers in a Python for loop, comprehension or map, or rewrite complete checks as handwritten row/variable loops. Use Frame operations for relations. Loops may register batch tasks; run once after registration. Construct expressions inside the batch context to share common subexpressions. m.linexpr(Frame) registers a lazy query leaf there; reachable leaves are read at run(), sharing parent relations and exact equality-filter indexes. Do not call to_records(), shape or other materializing operations inside a registration loop. Full parent join coverage/cardinality is validated before filtering. Unused query tasks are not executed; query work has the same finite time/work budget. Statistics distinguish registration, query, compilation, kernel and publication time; query time is included in compilation.\nEach registration returns CheckHandle, not a signed proof: no .ok/.status and no edit authority. A handle may be used only as a dependency in its own plan. result_key is unique and exports a result; unnamed tasks are internal. run() executes the named dependency closure and seals the plan. Context exit releases unpublished work and never runs implicitly.\nresults.require() checks all exported results. results[key] preserves its type: ProofRef/BatchProof for mathematics, PointReport for points, Report for diagnostics. Points and diagnostics cannot authorize edits. Conditions remain target-local; cases discharges only its matching branch conditions. Separate snapshots require separate batches.\nFinite defaults: time_limit=30 seconds, max_tasks=1000000 logical tasks, max_nodes=4096 compiled execution nodes, max_work=100000000, memory_mb=128. Explicit finite increases are supported; time/work limits cannot be disabled. ProofBudgetExceeded reports the phase and limit; unfinished work is never PROVED or mathematically REFUTED.",
       "related": [
         "concept.proofs",
         "api.Checker.budget"
@@ -13895,7 +13895,7 @@
       ],
       "symbols": [],
       "bindings": {},
-      "body": "---\nname: mipframe\ndescription: Inspect linear LP/MPS models with mipframe, compose exact sparse queries, verify explicit claims, and build independent edited snapshots. Use for model analysis and verified transformations, not as an optimization solver.\n---\n\n# Working with mipframe\n\nThis guide targets MIPFrame 1.4.0 and Python 3.11 or newer. Check the configured interpreter and `mf.__version__`.\nIf the installed version matches this skill, use the current interpreter.\nDo not search for or switch to another Python environment.\n\n```python\nimport sys\nimport mipframe as mf\nprint(sys.executable, sys.version)\nprint(mf.__version__)\nmf.help()\n```\n\nMIPFrame represents a linear MIP as immutable rows, variables, sparse terms and\nmodel metadata. Compressed IR suggests structural hypotheses. Frames and `mf.ops`\ncompute exact structural facts. `mf.alg` searches graph or finite integer objects.\n`LinExpr`, `Claim` and `m.check` express and verify mathematical propositions.\nAn `Edit` builds a different snapshot; it never mutates its source.\n\n## Prefer batch execution\n\nFor repeated checks, use `m.check.batch()` first. Do not write a Python `for`\nloop, comprehension, or `map` that executes `m.check.linear`, `cases`, `solution`\nor another scalar checker once per item. Do not rebuild model-wide validation\nwith handwritten per-row or per-variable loops when a library checker exists.\nUse Frame operations for structural queries and register related checks together.\nA loop is appropriate only to **register** tasks with `batch.linear(...)`, etc.;\ncall `batch.run()` once after registration. Construct shared expressions inside\nthe batch context so their common parts remain shared. Scalar checks are for\nisolated checks, not the default strategy for a family of targets.\n\n## Run one complete example\n\nThis self-contained example creates temporary files and removes them when done.\nIt selects two known rows, verifies a supplied witness, commits the deletion and\nchecks the exported MPS. For a real model, choose target rows and retained witnesses\nfrom the actual model; no checker discovers them automatically.\n\n```python\nfrom pathlib import Path\nfrom tempfile import TemporaryDirectory\nimport mipframe as mf\n\nwith TemporaryDirectory() as directory:\n    source = Path(directory) / \"input.lp\"\n    source.write_text(\"\\n\".join([\n        \"Minimize\", \" obj: x + y\", \"Subject To\",\n        \" keep: x + y <= 4\", \" redundant: x + y <= 4\",\n        \"Bounds\", \" 0 <= x <= 5\", \" 0 <= y <= 5\", \"End\",\n    ]))\n    with mf.read(source) as m:\n        kept = m.rows.by_name(\"keep\")\n        dropped = m.rows.by_name(\"redundant\")\n        proof = m.check.linear_rows(\n            targets=[dropped.id], witnesses=[[kept.id]],\n        ).require()\n        with m.edit() as edit:\n            edit.drop_rows([dropped.id], because=proof)\n            with edit.commit() as final:\n                assert final.shape == (1, 2)\n                receipt = final.write(Path(directory) / \"output.mps\", audit=\"readback\")\n                assert receipt.verified\n                print(receipt.writer, receipt.verified)\n```\n\nThe same executable example is in `mf.help(\"recipe.quickstart\", detail=\"full\")`.\n\n## Find the capability before inventing syntax\n\nQuery `mf.help(\"recover coordinates\")`, `mf.help(\"linear certificate\")`, or another\nEnglish task description. An exact public name such as `mf.help(\"VarFrame.project\")`\nopens its contract. `mf.help(mf.ops.sets.pairs)` accepts actual registered callables.\nRead a full topic with `detail=\"full\"`; use `format=\"json\"` for structured results.\nThe same documentation is available through `python -m mipframe help \"query\"`.\nSearch is local, versioned and deterministic. It does not execute an analysis.\n\nStart from these six actions:\n\n- Observe: `m.ir`, `m.rows`, `m.vars`, family summaries and bounded examples.\n- Navigate: `.rows` and `.vars` for entities, `.terms` for original coefficients.\n- Relate: Frame filters, joins, grouping and strict coordinate projection.\n- Compute or search: exact sets/graphs/matrix operations, then explicit alg searches.\n- Verify: an explicit Claim and the appropriate checker, including its scope.\n- Modify: stage an Edit, inspect its summary, build and audit the new snapshot.\n\nDo not guess methods such as `detect_network`, `find_symmetry` or `auto_reformulate`.\nUse `Model.write` or `Edit.write` for supported LP/MPS output. Search the intended\ncapability; a limitation topic may be the correct answer. Inspect a public signature\nor docstring when the argument contract\nis uncertain. Avoid rebuilding parsers or sparse indexing already supplied by the\nlibrary, while keeping ordinary Python available for small custom calculations.\n\n## Unified entity and indexed navigation\n\nUse `m.vars` / `m.rows`, `by_name(name)`, `loc[id_or_ref]`, and `iloc[position]`.\nBounds are exact finite values or infinities; `source_line` is one-based or `None`.\n`to_records()` explicitly materializes detached records within a budget.\nExport a numerical SciPy copy with `m.matrix.view().to_scipy()`.\n\nBy default `m.indexed()` skips partitions with only one row set; these cannot\ncontribute tensor coordinates. Use `m.indexed(include_singletons=True)` only\nwhen those potentially numerous partitions are needed.\n\nIndexed directories follow the family Frame model: `I = m.indexed()`, then\n`O = I.operators.where(...)`, `O.rows`, and `O.related(\"kernel\")` or\n`O.related(\"bindings\")`. `I.operator(id)` returns a one-row Frame, so metadata\nuses `O.one().row_count` or `O.one().formula`. Tensor members use `T.vars`;\nits axes use `T.related(\"axes\").where(axis=0).rows`. Frame.shape is the table\nshape; indexed dimensions are in `related(\"dimensions\")`.\nKeep `indexed_key` when projecting to preserve related navigation. All relations\nfollow the current selection and share storage. Use `inspect(max_items=...)` for\nbounded previews, including ordinary Frames. Indexed views additionally support\n`verbose`; family-specific display options are rejected on other providers.\n\n`m.verify()` and `I.verify(selection)` return Reports with integrity/indexed scope.\nInconsistency returns REFUTED; use `.require()` to raise. Neither is a linear\ncertificate or an Edit justification. `summary[\"checked\"]` and `summary[\"failures\"]`\ncount primary checks; `evidence[\"checks\"]` lists these checks and\n`evidence[\"details\"]` adds subordinate diagnostics. A skipped or inconclusive check\nprevents an overall PROVED result. Use mathematical checkers for those claims.\nAll mathematical checkers use exact arithmetic; no tolerance or arithmetic switch\nchanges their comparison rules. See `mf.help(\"concept.indexed\", detail=\"full\")`.\n\n## Observe, hypothesize, query, verify, act, audit\n\nRead the IR after importing a model. `read()` and `load()` cache a cheap scan:\nsize, domains, bounds, degrees, numeric fingerprints, local row shapes and lexical\nname hypotheses. Display and default exports never start structural analysis.\nHigh-cardinality counts may carry error bounds; candidate fingerprints and name\npatterns are not exact structural evidence. Use `m.ir.row_shapes()` or\n`m.ir.name_templates(\"row\")` for full exact navigable directories. Families,\n`m.ir.topology`, role support and `m.indexed()` compute only on explicit access.\nUse samples to choose hypotheses and full declared scopes to establish them.\nA small example is not a proof about every family member.\n\n```python\nm = mf.read(\"model.mps\")\nm.ir\nm.rows.head()\nmf.help(\"recipe.coordinates\", detail=\"full\")\n```\n\nKeep explanations separate from verified facts. Anonymous coefficients can support\na precise statement about incidence without identifying the original application.\nNames may suggest a useful coordinate map, but the map still requires coverage,\nuniqueness and numerical checks. Family labels belong to a snapshot, configuration\nand refinement depth; their numbers are not portable across models or versions.\n\nStructural signatures are normalized observations, not original formulas. Inspect\noriginal terms and bounds before reasoning about a row. Equal support does not\nimply equal coefficients, equal bounds, redundancy or symmetry. Comparing complete\nlocal templates still omits any external coupling that was not in the payload.\n\n## Structural families\n\nStart with `m.row_families` or `m.var_families`: both are template structural\nFrames at depth 2. `m.family(\"F0\")` is a one-row Frame with `.rows`; variable\nfamilies have `.vars`. Filter several families and use the same navigation.\n`m.rows.head(100).families()` restricts members, preserving global family IDs.\n`count` is selected coverage; `total_count` is the full-model population.\n\nUse `f.related(\"pattern\")` for exact structural tokens, `f.related(\"parameters\")`\nfor numeric summaries, and `f.related(\"histogram\")` for complete distributions.\nFilter `basis=\"canonical\"`, `\"raw\"` or `\"scale_normalized\"` explicitly; retain\n`orientation` when comparing zero-RHS equalities. `f.inspect()` is bounded.\nKeep `family_key` when selecting columns if you need later relation navigation.\nA depth-d row pattern references depth-(d-1) variable roles, not necessarily the\nfamilies in the default variable directory.\n\nAdvanced algebraic, typed and exact structural rules live in\n`mf.analysis.families/signatures(..., method=...)`, always returning Frames.\nUse `m.refinement(...)` for parent/child transitions and `m.indexed(...)` for\nindexed discovery. There is no `m.structure` or public Family/Signature object.\n\n## Rows, Vars, Terms and identity\n\nThe canonical tables are Rows `(row,name,lb,ub)`, Vars\n`(var,name,kind,lb,ub,obj,source_line)` and Terms `(row,var,coef)`. Finite numeric facts are\nexact rationals. Terms exclude the objective, bounds and structural zeros.\nCanonical variable kind is C or I; binary status is derived from effective integer\nbounds and includes variables fixed at zero or one.\n\nUse `m.rows.iloc[0]` for a position, `.loc[key]` for a declared key,\n`.by_name(\"name\")` for explicit name lookup. Use `m.family(\"F0@2\").rows`\nor `m.family(\"V0@2\").vars` for family members. Frame `[]` is not a mixed-purpose index.\nUse `.ids` for original IDs and typed Ref columns for relationships.\n`m.rows.loc[ref]` and `m.vars.loc[ref]` accept typed Refs with matching snapshot\nuid/version and entity axis, and require membership in the selected Frame.\n`ref.bind(m)` navigates the full matching model. `.loc[ref.id]` uses only the\ninteger ID and cannot validate the Ref's snapshot or axis; prefer `.loc[ref]`.\n\n`r.vars` and `x.rows` are deduplicated entity sets. A coefficient belongs to\n`r.terms` or `x.terms`; `term.row` and `term.var` navigate its endpoints.\n`one()` requires exactly one output, never an arbitrary representative.\n\n```python\nx = m.vars.iloc[0]\nterm = x.terms.head(1).one()  # requires a nonzero column\nterm.row, term.var, term.coef\n```\n\nIndependent imports have different snapshot identities. Save/load preserves uid\nand version. Same spelling does not authorize cross-model joins. Presolved names\ndo not supply a postsolve map. Keep every model referenced by a live result open;\nexport detached records if data must outlive it. New Edit snapshots are independent\nand child snapshots remain usable after the parent closes.\n\n## Compose relations with explicit contracts\n\nUse `mf.col` for serializable table expressions, `&`, `|`, `~` for predicates.\nDo not use Python `and/or` or lambda callbacks in the core query language.\n`select` and `join` return ordinary Frames; filtering and slicing retain entity\ntype. Direct key retention can preserve uniqueness; choosing a non-key column\ncannot create it. `Terms.select(\"var\")` is usually not unique.\n\nFor joins, specify the intended cardinality when existing facts do not establish\nit. `cardinality=\"1:1\"` and `require=\"left\"` are separate requests: the first\nchecks uniqueness, the second checks coverage. Unknown uniqueness is not a finding\nof duplicates. Use `m:m` only for an intended expansion. Rename conflicting fields\nexplicitly with select. `head(1)` cannot bypass whole-input validation.\n\nA strict `V.project(i=A,j=B)` requires one adjacent target in each domain for every\nsource variable. Then `P.check(\"product\", (\"i\",\"j\")).require()` checks the full\ndeclared Cartesian product. Filtering or head does not shrink those target domains.\nInspect complete violations on zero/multiple matches instead of choosing the first.\nFor participation counts including isolated members use `m.matrix.nnz`; ordinary\nTerms group-by emits observed groups only.\n\n## Choose exact computation or candidate search\n\nUse sets.pairs/members for support relationships and witnesses; sets.components for\nhypergraph blocks; graph reachability for directed closure. Closure union resource\nsums must count shared members once: use sets.pair_aggregate. A directed path is a\ngraph witness; deletion of its corresponding model rows still requires a linear\ncertificate from retained row sides.\n\n`mf.ops` completes or raises. `mf.alg` distinguishes candidate APIs from exhaustive\nsearches. Read the search metadata and selected scope. A greedy top-k clique search\ndoes not prove a maximum clique. Graph cliques and odd cycles do not prove that the\noriginal MIP edges are conflicts. Supply and check those sources independently.\n\nUse `MatrixView.preview()` only when a small grid helps. The default is 8 by 12;\nmost_active ranks columns over all selected rows, not just the row prefix.\n`to_scipy()` explicitly converts to independent float64 CSR. Exact reasoning stays\non the rational path; conversion can fail on overflow or nonzero underflow.\n\n## Verify mathematical statements\n\nUse `row.expr` for raw coefficients, not for row bounds. Use `row.lb_claim`,\n`row.ub_claim`, `row.eq_claim` or variable bound claims as original fact sources.\n`x == y` compares entity identities; `.eq()` constructs a mathematical equality.\nFor inequalities use `s <= U` or `s >= L`; `LinExpr.le(U)` and `LinExpr.ge(L)`\nare equivalent method forms. Constructing a Claim neither proves it nor adds a row.\nClaims and Reports have no implicit bool. Check `status` or call `require()`.\n\nScalar mathematical checkers return `ProofRef`; bulk checkers return `BatchProof`.\n`check.solution` returns `PointReport`, with point violations rather than an\nimplication certificate. Frame/integrity checks return diagnostic `Report`.\nThese types have different methods: use their own help, not the Report API by\nanalogy. In particular, ProofRef has no `explain()`; inspect its conclusion,\nscope and evidence. Finish consuming PointReport evidence before calling its\n`close()` to release retained point storage.\n\nUse `mf.q(\"9.6\")` or `mf.q(\"43/39\")`, not a Python float. Converting approximate\nsolver multipliers to rationals is only a proposal; replay the full certificate\nwith residual bound compensation. Exactness is relative to this saved snapshot,\nnot an unknown pre-presolve model or unsaved original token spelling.\n\n`identity` checks algebra; `linear` checks supplied multipliers; `infeasible`\nchecks contradiction; `round` uses integer-valued expressions; `enumerate` checks\na finite local integer implication; `solution` validates a complete exact point\nagainst the mathematical integer model, including integrality. It rejects\n`domain=\"relaxation\"`. For a fractional LP point use `m.matrix.activity(values)`\nplus exact checks of both row sides and every variable bound. Check complete\nvariable coverage, including variables absent from all rows; activity alone only\nrequires participating variables. See `mf.help(\"fractional point feasibility\")`.\nNo checker searches for multipliers.\n\nUse one explicit batch for dependent proofs and mixed check types:\n\n```python\nx = m.vars.iloc[0]  # example requires an integer variable with bounds [0, 1]\nwith m.check.batch() as batch:\n    target = x >= 0\n    p0 = batch.linear(target, using=[x == 0], assume=[x == 0])\n    p1 = batch.linear(target, using=[x == 1], assume=[x == 1])\n    batch.cases(target, var=x, cases={0: p0, 1: p1}, result_key=\"bound\")\n    batch.model_verify(result_key=\"integrity\")\n    results = batch.run()\nresults.require()\nproof = results[\"bound\"]\n```\n\nRegistration returns a `CheckHandle`, not a proof: it has no `.ok` or `.status`\nand cannot authorize edits. Handles may supply dependencies to later tasks in\nthe same batch. `result_key` names an exported result and must be unique; unnamed\ntasks are internal dependencies. `run()` checks the complete dependency closure\nof named results and seals the plan. Context exit never runs it implicitly.\n`results.require()` requires all exported checks to succeed. Mathematical results\nare `ProofRef`/`BatchProof`, points are `PointReport`, and diagnostics are `Report`;\npoint and diagnostic reports never grant mathematical or edit authority.\nConditions belong to each target, including inherited conditions; only a valid\n`cases` step discharges its matching branch conditions. Different snapshots need\nseparate batches and cannot share proof authority.\n\nDefaults are 30 seconds, 1,000,000 logical tasks, 4,096 compiled execution nodes,\n100,000,000 work units and 128 MiB working memory. Budget exhaustion stops with\n`ProofBudgetExceeded`, never a successful or mathematically refuted result.\nUse explicit finite overrides on `m.check.batch(...)` or `m.check.budget(...)`\nwhen justified; time and work limits cannot be disabled.\n\nExisting compact inputs can use `linear_rows(targets=..., witnesses=...)` or\n`linear_many(targets=mf.Targets(...), witnesses=mf.CertificateBatch(...))` as\nadapters to the common engine. Prefer `check.batch()` for new multi-rule work;\ndo not add a new `*_many` interface for every checker or mathematical structure.\n\n`BatchProof` stores statuses and arrays; do not call `for_target()` in a large loop.\nBind the batch or `proof.select(ids)` directly to an edit. `round_many(ub=0)` or\n`round_many(lb=...)` rounds a whole batch of variable bounds.\n\nFor shared one-hot affine structure use `m.check.one_hot_affine(groups=...)`, where\neach group is `(onehot_row_id, [(definition_row_id, defined_variable_id), ...])`.\n`bound_exclusions()` verifies option exclusions after checking all common structure.\n`affine_integrality(vars=..., rows=...)` checks normalized integer definitions; its\nproof supports relaxing those variables to continuous without relying on their own\ninteger declarations. These APIs require discovered structure, not name conventions.\n\nAn insufficient certificate is INCONCLUSIVE, not a proof that the target is false.\nA local enumeration counterexample need not extend to a full-model feasible point.\nA feasible point does not prove optimality. Integer-only evidence cannot prove an\nLP claim. Assumptions remain in the report, including those inherited from parents.\nUse `m.check.cases(target, var=y, cases={0:p0, 1:p1})` to explicitly discharge\nan exhaustive split over a finite model-integer variable. Each branch must prove\nthe same target and assume its matching value. Only those equalities disappear;\nother assumptions remain. The result is integer-only and supports `because`\nonly when unconditional. Branches may involve continuous activity variables.\nA contradiction under z=1 does not automatically discharge the condition to create\nan unconditional z=0 certificate. General continuous disjunction merging and full\nMIP symmetry certification are not implemented.\n\n## Modify and audit deliberately\n\nAn Edit records a source-relative delta. `summary()` reports counts and known\nsemantics without global matrix analysis. `build()` allows experimental unproved\nchanges and marks semantic preservation UNKNOWN. `commit()` strictly requires\nMIP equivalence, preserved objective values, covered operations and grounded\ncertificate dependencies. Conditional, foreign and unproved evidence is rejected.\nDeletion witnesses must ultimately use retained facts; cycles cannot justify edits.\n\nUse cheap intermediate snapshots when a later proof needs newly established facts.\nFor example, prove bounds, commit the tightening, eliminate fixed variables with\n`substitute_fixed(vars=...)`, then check implications on the reduced snapshot.\nNonzero fixed values shift row bounds and the objective constant exactly. The delta\nretains a lifting map. `set_domains(...,kind=\"C\",because=integrality_proof)` supports\nproved integrality relaxation. General unproved replacements remain UNKNOWN.\n\nSnapshots share numerical storage with their parent. Stable entity IDs may have\ngaps; use `.iloc` for positions and `.loc` for IDs. Closing the parent does not\ninvalidate a child. `child.diff(ancestor)` composes stored deltas; unrelated models\nreceive a numerical comparison with no inferred mathematical equivalence.\n\nWrite one final artifact with `write(path,audit=\"readback\")`. It writes a\ntemporary file, checks the actual numerical output once, then publishes it. It does\nnot rerun mathematical proofs. With an indexed MPS source whose hash still matches,\npatch output supports row deletion, fixed substitution, row/variable bounds and\nintegrality relaxation. `strategy=\"auto\"` falls back to canonical output when\npatching is unsupported; `strategy=\"patch\"` requires patch support. Inspect\n`patch_plan()` for the selected mode and reasons. Native v7 `save()`\nstores flattened numerical facts plus historical delta/certificates. Loading never\nturns saved PROVED flags into live trust. `loaded.audit(source=original)` explicitly\nrechecks saved evidence and numerical output. Independent external verifiers remain\nuseful for final research audits; ordinary summary/diff/save do not invoke them.\n\n## Recover and control output\n\nWhen a call fails, inspect its original diagnostics and complete pageable report.\nUse `mf.help(exc)` or its help_topic to find a correction. Do not discard violations\nor weaken a contract merely to continue with an unsupported conclusion.\n\nAvoid full record dumps. repr is bounded but upstream joins, sorts or aggregations\ncan still require complete work. Query memory defaults to 128 MiB with a 16 KiB\nminimum; parsing has a separate 32 MiB minimum. Budgets do not bound process RSS.\nUse iter_batches/write for large exports. Output limits fail complete ops rather\nthan silently truncating them. Search and enumeration budget statuses have different\ncontracts; consult their exact topics.\n\nMathematical BatchProof results use immutable exact arrays and lightweight ProofRefs.\nOnly explicit evidence access builds Frames or symbolic claims. Keep model owners\nopen for entity/Frame navigation. Export certificates with `write()` or `to_spec()`;\nreplay always runs the checker again. Never treat a status copied from disk as proof.\n\nUse an external solver for optimization and an explicit mapping for solver data.\nUse source text when provenance or serialization itself is the question. The goal\nis a justified result with its actual scope, not forcing every computation into a\nmipframe primitive or inferring domain semantics from an attractive pattern.\n",
+      "body": "---\nname: mipframe\ndescription: Inspect linear LP/MPS models with mipframe, compose exact sparse queries, verify explicit claims, and build independent edited snapshots. Use for model analysis and verified transformations, not as an optimization solver.\n---\n\n# Working with mipframe\n\nThis guide targets MIPFrame 1.5.0 and Python 3.11 or newer. Check the configured interpreter and `mf.__version__`.\nIf the installed version matches this skill, use the current interpreter.\nDo not search for or switch to another Python environment.\n\n```python\nimport sys\nimport mipframe as mf\nprint(sys.executable, sys.version)\nprint(mf.__version__)\nmf.help()\n```\n\nMIPFrame represents a linear MIP as immutable rows, variables, sparse terms and\nmodel metadata. Compressed IR suggests structural hypotheses. Frames and `mf.ops`\ncompute exact structural facts. `mf.alg` searches graph or finite integer objects.\n`LinExpr`, `Claim` and `m.check` express and verify mathematical propositions.\nAn `Edit` builds a different snapshot; it never mutates its source.\n\n## Prefer batch execution\n\nFor repeated checks, use `m.check.batch()` first. Do not write a Python `for`\nloop, comprehension, or `map` that executes `m.check.linear`, `cases`, `solution`\nor another scalar checker once per item. Do not rebuild model-wide validation\nwith handwritten per-row or per-variable loops when a library checker exists.\nUse Frame operations for structural queries and register related checks together.\nA loop is appropriate only to **register** tasks with `batch.linear(...)`, etc.;\ncall `batch.run()` once after registration. Construct shared expressions inside\nthe batch context so their common parts remain shared. Scalar checks are for\nisolated checks, not the default strategy for a family of targets.\nWithin a batch, `m.linexpr(Frame)` defers reading until `run()` and shares repeated\nparent queries and equality-filter indexes. Keep the common Frame outside the\nregistration loop; derive filtered expressions inside it. Avoid `to_records()`,\n`shape`, or other materializing reads in that loop. Query failures can surface\nat `run()`. Full parent join checks still run before any group is selected.\n\n## Run one complete example\n\nThis self-contained example creates temporary files and removes them when done.\nIt selects two known rows, verifies a supplied witness, commits the deletion and\nchecks the exported MPS. For a real model, choose target rows and retained witnesses\nfrom the actual model; no checker discovers them automatically.\n\n```python\nfrom pathlib import Path\nfrom tempfile import TemporaryDirectory\nimport mipframe as mf\n\nwith TemporaryDirectory() as directory:\n    source = Path(directory) / \"input.lp\"\n    source.write_text(\"\\n\".join([\n        \"Minimize\", \" obj: x + y\", \"Subject To\",\n        \" keep: x + y <= 4\", \" redundant: x + y <= 4\",\n        \"Bounds\", \" 0 <= x <= 5\", \" 0 <= y <= 5\", \"End\",\n    ]))\n    with mf.read(source) as m:\n        kept = m.rows.by_name(\"keep\")\n        dropped = m.rows.by_name(\"redundant\")\n        proof = m.check.linear_rows(\n            targets=[dropped.id], witnesses=[[kept.id]],\n        ).require()\n        with m.edit() as edit:\n            edit.drop_rows([dropped.id], because=proof)\n            with edit.commit() as final:\n                assert final.shape == (1, 2)\n                receipt = final.write(Path(directory) / \"output.mps\", audit=\"readback\")\n                assert receipt.verified\n                print(receipt.writer, receipt.verified)\n```\n\nThe same executable example is in `mf.help(\"recipe.quickstart\", detail=\"full\")`.\n\n## Find the capability before inventing syntax\n\nQuery `mf.help(\"recover coordinates\")`, `mf.help(\"linear certificate\")`, or another\nEnglish task description. An exact public name such as `mf.help(\"VarFrame.project\")`\nopens its contract. `mf.help(mf.ops.sets.pairs)` accepts actual registered callables.\nRead a full topic with `detail=\"full\"`; use `format=\"json\"` for structured results.\nThe same documentation is available through `python -m mipframe help \"query\"`.\nSearch is local, versioned and deterministic. It does not execute an analysis.\n\nStart from these six actions:\n\n- Observe: `m.ir`, `m.rows`, `m.vars`, family summaries and bounded examples.\n- Navigate: `.rows` and `.vars` for entities, `.terms` for original coefficients.\n- Relate: Frame filters, joins, grouping and strict coordinate projection.\n- Compute or search: exact sets/graphs/matrix operations, then explicit alg searches.\n- Verify: an explicit Claim and the appropriate checker, including its scope.\n- Modify: stage an Edit, inspect its summary, build and audit the new snapshot.\n\nDo not guess methods such as `detect_network`, `find_symmetry` or `auto_reformulate`.\nUse `Model.write` or `Edit.write` for supported LP/MPS output. Search the intended\ncapability; a limitation topic may be the correct answer. Inspect a public signature\nor docstring when the argument contract\nis uncertain. Avoid rebuilding parsers or sparse indexing already supplied by the\nlibrary, while keeping ordinary Python available for small custom calculations.\n\n## Unified entity and indexed navigation\n\nUse `m.vars` / `m.rows`, `by_name(name)`, `loc[id_or_ref]`, and `iloc[position]`.\nBounds are exact finite values or infinities; `source_line` is one-based or `None`.\n`to_records()` explicitly materializes detached records within a budget.\nExport a numerical SciPy copy with `m.matrix.view().to_scipy()`.\n\nBy default `m.indexed()` skips partitions with only one row set; these cannot\ncontribute tensor coordinates. Use `m.indexed(include_singletons=True)` only\nwhen those potentially numerous partitions are needed.\n\nIndexed directories follow the family Frame model: `I = m.indexed()`, then\n`O = I.operators.where(...)`, `O.rows`, and `O.related(\"kernel\")` or\n`O.related(\"bindings\")`. `I.operator(id)` returns a one-row Frame, so metadata\nuses `O.one().row_count` or `O.one().formula`. Tensor members use `T.vars`;\nits axes use `T.related(\"axes\").where(axis=0).rows`. Frame.shape is the table\nshape; indexed dimensions are in `related(\"dimensions\")`.\nKeep `indexed_key` when projecting to preserve related navigation. All relations\nfollow the current selection and share storage. Use `inspect(max_items=...)` for\nbounded previews, including ordinary Frames. Indexed views additionally support\n`verbose`; family-specific display options are rejected on other providers.\n\n`m.verify()` and `I.verify(selection)` return Reports with integrity/indexed scope.\nInconsistency returns REFUTED; use `.require()` to raise. Neither is a linear\ncertificate or an Edit justification. `summary[\"checked\"]` and `summary[\"failures\"]`\ncount primary checks; `evidence[\"checks\"]` lists these checks and\n`evidence[\"details\"]` adds subordinate diagnostics. A skipped or inconclusive check\nprevents an overall PROVED result. Use mathematical checkers for those claims.\nAll mathematical checkers use exact arithmetic; no tolerance or arithmetic switch\nchanges their comparison rules. See `mf.help(\"concept.indexed\", detail=\"full\")`.\n\n## Observe, hypothesize, query, verify, act, audit\n\nRead the IR after importing a model. `read()` and `load()` cache a cheap scan:\nsize, domains, bounds, degrees, numeric fingerprints, local row shapes and lexical\nname hypotheses. Display and default exports never start structural analysis.\nHigh-cardinality counts may carry error bounds; candidate fingerprints and name\npatterns are not exact structural evidence. Use `m.ir.row_shapes()` or\n`m.ir.name_templates(\"row\")` for full exact navigable directories. Families,\n`m.ir.topology`, role support and `m.indexed()` compute only on explicit access.\nUse samples to choose hypotheses and full declared scopes to establish them.\nA small example is not a proof about every family member.\n\n```python\nm = mf.read(\"model.mps\")\nm.ir\nm.rows.head()\nmf.help(\"recipe.coordinates\", detail=\"full\")\n```\n\nKeep explanations separate from verified facts. Anonymous coefficients can support\na precise statement about incidence without identifying the original application.\nNames may suggest a useful coordinate map, but the map still requires coverage,\nuniqueness and numerical checks. Family labels belong to a snapshot, configuration\nand refinement depth; their numbers are not portable across models or versions.\n\nStructural signatures are normalized observations, not original formulas. Inspect\noriginal terms and bounds before reasoning about a row. Equal support does not\nimply equal coefficients, equal bounds, redundancy or symmetry. Comparing complete\nlocal templates still omits any external coupling that was not in the payload.\n\n## Structural families\n\nStart with `m.row_families` or `m.var_families`: both are template structural\nFrames at depth 2. `m.family(\"F0\")` is a one-row Frame with `.rows`; variable\nfamilies have `.vars`. Filter several families and use the same navigation.\n`m.rows.head(100).families()` restricts members, preserving global family IDs.\n`count` is selected coverage; `total_count` is the full-model population.\n\nUse `f.related(\"pattern\")` for exact structural tokens, `f.related(\"parameters\")`\nfor numeric summaries, and `f.related(\"histogram\")` for complete distributions.\nFilter `basis=\"canonical\"`, `\"raw\"` or `\"scale_normalized\"` explicitly; retain\n`orientation` when comparing zero-RHS equalities. `f.inspect()` is bounded.\nKeep `family_key` when selecting columns if you need later relation navigation.\nA depth-d row pattern references depth-(d-1) variable roles, not necessarily the\nfamilies in the default variable directory.\n\nAdvanced algebraic, typed and exact structural rules live in\n`mf.analysis.families/signatures(..., method=...)`, always returning Frames.\nUse `m.refinement(...)` for parent/child transitions and `m.indexed(...)` for\nindexed discovery. There is no `m.structure` or public Family/Signature object.\n\n## Rows, Vars, Terms and identity\n\nThe canonical tables are Rows `(row,name,lb,ub)`, Vars\n`(var,name,kind,lb,ub,obj,source_line)` and Terms `(row,var,coef)`. Finite numeric facts are\nexact rationals. Terms exclude the objective, bounds and structural zeros.\nCanonical variable kind is C or I; binary status is derived from effective integer\nbounds and includes variables fixed at zero or one.\n\nUse `m.rows.iloc[0]` for a position, `.loc[key]` for a declared key,\n`.by_name(\"name\")` for explicit name lookup. Use `m.family(\"F0@2\").rows`\nor `m.family(\"V0@2\").vars` for family members. Frame `[]` is not a mixed-purpose index.\nUse `.ids` for original IDs and typed Ref columns for relationships.\n`m.rows.loc[ref]` and `m.vars.loc[ref]` accept typed Refs with matching snapshot\nuid/version and entity axis, and require membership in the selected Frame.\n`ref.bind(m)` navigates the full matching model. `.loc[ref.id]` uses only the\ninteger ID and cannot validate the Ref's snapshot or axis; prefer `.loc[ref]`.\n\n`r.vars` and `x.rows` are deduplicated entity sets. A coefficient belongs to\n`r.terms` or `x.terms`; `term.row` and `term.var` navigate its endpoints.\n`one()` requires exactly one output, never an arbitrary representative.\n\n```python\nx = m.vars.iloc[0]\nterm = x.terms.head(1).one()  # requires a nonzero column\nterm.row, term.var, term.coef\n```\n\nIndependent imports have different snapshot identities. Save/load preserves uid\nand version. Same spelling does not authorize cross-model joins. Presolved names\ndo not supply a postsolve map. Keep every model referenced by a live result open;\nexport detached records if data must outlive it. New Edit snapshots are independent\nand child snapshots remain usable after the parent closes.\n\n## Compose relations with explicit contracts\n\nUse `mf.col` for serializable table expressions, `&`, `|`, `~` for predicates.\nDo not use Python `and/or` or lambda callbacks in the core query language.\n`select` and `join` return ordinary Frames; filtering and slicing retain entity\ntype. Direct key retention can preserve uniqueness; choosing a non-key column\ncannot create it. `Terms.select(\"var\")` is usually not unique.\n\nFor joins, specify the intended cardinality when existing facts do not establish\nit. `cardinality=\"1:1\"` and `require=\"left\"` are separate requests: the first\nchecks uniqueness, the second checks coverage. Unknown uniqueness is not a finding\nof duplicates. Use `m:m` only for an intended expansion. Rename conflicting fields\nexplicitly with select. `head(1)` cannot bypass whole-input validation.\n\nA strict `V.project(i=A,j=B)` requires one adjacent target in each domain for every\nsource variable. Then `P.check(\"product\", (\"i\",\"j\")).require()` checks the full\ndeclared Cartesian product. Filtering or head does not shrink those target domains.\nInspect complete violations on zero/multiple matches instead of choosing the first.\nFor participation counts including isolated members use `m.matrix.nnz`; ordinary\nTerms group-by emits observed groups only.\n\n## Choose exact computation or candidate search\n\nUse sets.pairs/members for support relationships and witnesses; sets.components for\nhypergraph blocks; graph reachability for directed closure. Closure union resource\nsums must count shared members once: use sets.pair_aggregate. A directed path is a\ngraph witness; deletion of its corresponding model rows still requires a linear\ncertificate from retained row sides.\n\n`mf.ops` completes or raises. `mf.alg` distinguishes candidate APIs from exhaustive\nsearches. Read the search metadata and selected scope. A greedy top-k clique search\ndoes not prove a maximum clique. Graph cliques and odd cycles do not prove that the\noriginal MIP edges are conflicts. Supply and check those sources independently.\n\nUse `MatrixView.preview()` only when a small grid helps. The default is 8 by 12;\nmost_active ranks columns over all selected rows, not just the row prefix.\n`to_scipy()` explicitly converts to independent float64 CSR. Exact reasoning stays\non the rational path; conversion can fail on overflow or nonzero underflow.\n\n## Verify mathematical statements\n\nUse `row.expr` for raw coefficients, not for row bounds. Use `row.lb_claim`,\n`row.ub_claim`, `row.eq_claim` or variable bound claims as original fact sources.\n`x == y` compares entity identities; `.eq()` constructs a mathematical equality.\nFor inequalities use `s <= U` or `s >= L`; `LinExpr.le(U)` and `LinExpr.ge(L)`\nare equivalent method forms. Constructing a Claim neither proves it nor adds a row.\nClaims and Reports have no implicit bool. Check `status` or call `require()`.\n\nScalar mathematical checkers return `ProofRef`; bulk checkers return `BatchProof`.\n`check.solution` returns `PointReport`, with point violations rather than an\nimplication certificate. Frame/integrity checks return diagnostic `Report`.\nThese types have different methods: use their own help, not the Report API by\nanalogy. In particular, ProofRef has no `explain()`; inspect its conclusion,\nscope and evidence. Finish consuming PointReport evidence before calling its\n`close()` to release retained point storage.\n\nUse `mf.q(\"9.6\")` or `mf.q(\"43/39\")`, not a Python float. Converting approximate\nsolver multipliers to rationals is only a proposal; replay the full certificate\nwith residual bound compensation. Exactness is relative to this saved snapshot,\nnot an unknown pre-presolve model or unsaved original token spelling.\n\n`identity` checks algebra; `linear` checks supplied multipliers; `infeasible`\nchecks contradiction; `round` uses integer-valued expressions; `enumerate` checks\na finite local integer implication; `solution` validates a complete exact point\nagainst the integer model by default. For fractional LP points use\n`check.solution(values, domain=\"relaxation\")`; it checks complete coverage,\nall variable bounds and both row sides, including isolated variables, while\nomitting integrality. Register multiple points with `batch.solution`.\n`PointReport.scope.domain` records the chosen domain; neither domain authorizes\nedits. Use `matrix.activity` when the row activities themselves are needed.\nSee `mf.help(\"fractional point feasibility\")`.\nNo checker searches for multipliers.\n\nUse one explicit batch for dependent proofs and mixed check types:\n\n```python\nx = m.vars.iloc[0]  # example requires an integer variable with bounds [0, 1]\nwith m.check.batch() as batch:\n    target = x >= 0\n    p0 = batch.linear(target, using=[x == 0], assume=[x == 0])\n    p1 = batch.linear(target, using=[x == 1], assume=[x == 1])\n    batch.cases(target, var=x, cases={0: p0, 1: p1}, result_key=\"bound\")\n    batch.model_verify(result_key=\"integrity\")\n    results = batch.run()\nresults.require()\nproof = results[\"bound\"]\n```\n\nRegistration returns a `CheckHandle`, not a proof: it has no `.ok` or `.status`\nand cannot authorize edits. Handles may supply dependencies to later tasks in\nthe same batch. `result_key` names an exported result and must be unique; unnamed\ntasks are internal dependencies. `run()` checks the complete dependency closure\nof named results and seals the plan. Context exit never runs it implicitly.\n`results.require()` requires all exported checks to succeed. Mathematical results\nare `ProofRef`/`BatchProof`, points are `PointReport`, and diagnostics are `Report`;\npoint and diagnostic reports never grant mathematical or edit authority.\nConditions belong to each target, including inherited conditions; only a valid\n`cases` step discharges its matching branch conditions. Different snapshots need\nseparate batches and cannot share proof authority.\n\nDefaults are 30 seconds, 1,000,000 logical tasks, 4,096 compiled execution nodes,\n100,000,000 work units and 128 MiB working memory. Budget exhaustion stops with\n`ProofBudgetExceeded`, never a successful or mathematically refuted result.\nUse explicit finite overrides on `m.check.batch(...)` or `m.check.budget(...)`\nwhen justified; time and work limits cannot be disabled.\n\nExisting compact inputs can use `linear_rows(targets=..., witnesses=...)` or\n`linear_many(targets=mf.Targets(...), witnesses=mf.CertificateBatch(...))` as\nadapters to the common engine. Prefer `check.batch()` for new multi-rule work;\ndo not add a new `*_many` interface for every checker or mathematical structure.\n\n`BatchProof` stores statuses and arrays; do not call `for_target()` in a large loop.\nBind the batch or `proof.select(ids)` directly to an edit. `round_many(ub=0)` or\n`round_many(lb=...)` rounds a whole batch of variable bounds.\n\nFor shared one-hot affine structure use `m.check.one_hot_affine(groups=...)`, where\neach group is `(onehot_row_id, [(definition_row_id, defined_variable_id), ...])`.\n`bound_exclusions()` verifies option exclusions after checking all common structure.\n`affine_integrality(vars=..., rows=...)` checks normalized integer definitions; its\nproof supports relaxing those variables to continuous without relying on their own\ninteger declarations. These APIs require discovered structure, not name conventions.\n\nAn insufficient certificate is INCONCLUSIVE, not a proof that the target is false.\nA local enumeration counterexample need not extend to a full-model feasible point.\nA feasible point does not prove optimality. Integer-only evidence cannot prove an\nLP claim. Assumptions remain in the report, including those inherited from parents.\nUse `m.check.cases(target, var=y, cases={0:p0, 1:p1})` to explicitly discharge\nan exhaustive split over a finite model-integer variable. Each branch must prove\nthe same target and assume its matching value. Only those equalities disappear;\nother assumptions remain. The result is integer-only and supports `because`\nonly when unconditional. Branches may involve continuous activity variables.\nA contradiction under z=1 does not automatically discharge the condition to create\nan unconditional z=0 certificate. General continuous disjunction merging and full\nMIP symmetry certification are not implemented.\n\n## Modify and audit deliberately\n\nAn Edit records a source-relative delta. `summary()` reports counts and known\nsemantics without global matrix analysis. `build()` allows experimental unproved\nchanges and marks semantic preservation UNKNOWN. `commit()` strictly requires\nMIP equivalence, preserved objective values, covered operations and grounded\ncertificate dependencies. Conditional, foreign and unproved evidence is rejected.\nDeletion witnesses must ultimately use retained facts; cycles cannot justify edits.\n\nUse cheap intermediate snapshots when a later proof needs newly established facts.\nFor example, prove bounds, commit the tightening, eliminate fixed variables with\n`substitute_fixed(vars=...)`, then check implications on the reduced snapshot.\nNonzero fixed values shift row bounds and the objective constant exactly. The delta\nretains a lifting map. `set_domains(...,kind=\"C\",because=integrality_proof)` supports\nproved integrality relaxation. General unproved replacements remain UNKNOWN.\n\nSnapshots share numerical storage with their parent. Stable entity IDs may have\ngaps; use `.iloc` for positions and `.loc` for IDs. Closing the parent does not\ninvalidate a child. `child.diff(ancestor)` composes stored deltas; unrelated models\nreceive a numerical comparison with no inferred mathematical equivalence.\n\nWrite one final artifact with `write(path,audit=\"readback\")`. It writes a\ntemporary file, checks the actual numerical output once, then publishes it. It does\nnot rerun mathematical proofs. With an indexed MPS source whose hash still matches,\npatch output supports row deletion, fixed substitution, row/variable bounds and\nintegrality relaxation. `strategy=\"auto\"` falls back to canonical output when\npatching is unsupported; `strategy=\"patch\"` requires patch support. Inspect\n`patch_plan()` for the selected mode and reasons. Native v7 `save()`\nstores flattened numerical facts plus historical delta/certificates. Loading never\nturns saved PROVED flags into live trust. `loaded.audit(source=original)` explicitly\nrechecks saved evidence and numerical output. Independent external verifiers remain\nuseful for final research audits; ordinary summary/diff/save do not invoke them.\n\n## Recover and control output\n\nWhen a call fails, inspect its original diagnostics and complete pageable report.\nUse `mf.help(exc)` or its help_topic to find a correction. Do not discard violations\nor weaken a contract merely to continue with an unsupported conclusion.\n\nAvoid full record dumps. repr is bounded but upstream joins, sorts or aggregations\ncan still require complete work. Query memory defaults to 128 MiB with a 16 KiB\nminimum; parsing has a separate 32 MiB minimum. Budgets do not bound process RSS.\nUse iter_batches/write for large exports. Output limits fail complete ops rather\nthan silently truncating them. Search and enumeration budget statuses have different\ncontracts; consult their exact topics.\n\nMathematical BatchProof results use immutable exact arrays and lightweight ProofRefs.\nOnly explicit evidence access builds Frames or symbolic claims. Keep model owners\nopen for entity/Frame navigation. Export certificates with `write()` or `to_spec()`;\nreplay always runs the checker again. Never treat a status copied from disk as proof.\n\nUse an external solver for optimization and an explicit mapping for solver data.\nUse source text when provenance or serialization itself is the question. The goal\nis a justified result with its actual scope, not forcing every computation into a\nmipframe primitive or inferring domain semantics from an attractive pattern.\n",
       "related": [
         "home"
       ],
@@ -17862,10 +17862,6 @@
         [
           "api.Checker.solution",
           1
-        ],
-        [
-          "skill",
-          1
         ]
       ],
       "accept": [
@@ -18009,7 +18005,7 @@
         ],
         [
           "limitation.fractional-point",
-          5
+          2
         ],
         [
           "api.Model.matrix",
@@ -18022,10 +18018,6 @@
         [
           "api.MatrixAccessor.transpose_activity",
           19
-        ],
-        [
-          "api.Checker.solution",
-          1
         ],
         [
           "recipe.cases",
@@ -18422,10 +18414,6 @@
       ],
       "against": [
         [
-          "limitation.fractional-point",
-          1
-        ],
-        [
           "api.Checker.solution",
           3
         ],
@@ -18668,6 +18656,10 @@
           1
         ],
         [
+          "limitation.fractional-point",
+          1
+        ],
+        [
           "concept.report-resources",
           1
         ],
@@ -18725,7 +18717,7 @@
         ],
         [
           "api.Checker.solution",
-          2
+          4
         ],
         [
           "recipe.quickstart",
@@ -18808,10 +18800,6 @@
         [
           "concept.families",
           1
-        ],
-        [
-          "skill",
-          1
         ]
       ],
       "already": [
@@ -18826,10 +18814,6 @@
       ],
       "also": [
         [
-          "limitation.fractional-point",
-          1
-        ],
-        [
           "api.Frame.inspect",
           1
         ],
@@ -18843,6 +18827,10 @@
         ]
       ],
       "alway": [
+        [
+          "limitation.fractional-point",
+          1
+        ],
         [
           "concept.indexed",
           1
@@ -19155,7 +19143,7 @@
         ],
         [
           "skill",
-          1
+          2
         ]
       ],
       "api": [
@@ -19351,6 +19339,10 @@
         ]
       ],
       "artifact": [
+        [
+          "api.Checker.solution",
+          1
+        ],
         [
           "api.Model.indexed",
           1
@@ -19694,6 +19686,18 @@
       ],
       "at": [
         [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
+        [
           "error.join",
           1
         ],
@@ -19738,8 +19742,12 @@
           2
         ],
         [
+          "api.Checker.batch",
+          1
+        ],
+        [
           "skill",
-          2
+          3
         ]
       ],
       "atomically": [
@@ -19901,7 +19909,7 @@
         ],
         [
           "api.Model.audit",
-          16
+          17
         ],
         [
           "api.Edit.write",
@@ -19943,6 +19951,10 @@
         ],
         [
           "concept.indexed",
+          1
+        ],
+        [
+          "api.Model.audit",
           1
         ],
         [
@@ -19995,10 +20007,14 @@
         ],
         [
           "skill",
-          2
+          3
         ]
       ],
       "auto": [
+        [
+          "limitation.fractional-point",
+          1
+        ],
         [
           "error.join",
           1
@@ -20127,7 +20143,7 @@
         ],
         [
           "skill",
-          2
+          3
         ]
       ],
       "aware": [
@@ -20252,6 +20268,10 @@
           3
         ],
         [
+          "limitation.fractional-point",
+          1
+        ],
+        [
           "concept.report-resources",
           9
         ],
@@ -20262,6 +20282,10 @@
         [
           "api.RecordBatch",
           3
+        ],
+        [
+          "api.Checker.solution",
+          1
         ],
         [
           "api.Checker.linear_many",
@@ -20329,7 +20353,7 @@
         ],
         [
           "skill",
-          18
+          20
         ]
       ],
       "batche": [
@@ -20502,7 +20526,19 @@
       ],
       "before": [
         [
+          "home",
+          1
+        ],
+        [
           "concept.frame",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
           1
         ],
         [
@@ -20538,8 +20574,12 @@
           1
         ],
         [
+          "api.Checker.batch",
+          1
+        ],
+        [
           "skill",
-          6
+          7
         ]
       ],
       "belong": [
@@ -20807,7 +20847,7 @@
         ],
         [
           "api.Checker.solution",
-          5
+          4
         ],
         [
           "api.Edit.fix",
@@ -20849,7 +20889,7 @@
         ],
         [
           "limitation.fractional-point",
-          9
+          6
         ],
         [
           "concept.exact",
@@ -21168,6 +21208,18 @@
       ],
       "budget": [
         [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
+        [
           "concept.resources",
           12
         ],
@@ -21189,6 +21241,14 @@
         ],
         [
           "recipe.enumeration",
+          1
+        ],
+        [
+          "api.Model.audit",
+          1
+        ],
+        [
+          "api.Checker.batch",
           1
         ],
         [
@@ -21460,6 +21520,10 @@
           3
         ],
         [
+          "api.Checker.solution",
+          1
+        ],
+        [
           "api.IndexedResult.tensor",
           3
         ],
@@ -21557,7 +21621,7 @@
         ],
         [
           "skill",
-          10
+          11
         ]
       ],
       "bypass": [
@@ -21644,11 +21708,27 @@
       ],
       "call": [
         [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
+        [
           "error.expressions",
           1
         ],
         [
           "api.Checker.cases",
+          1
+        ],
+        [
+          "api.Checker.batch",
           1
         ],
         [
@@ -21976,12 +22056,24 @@
       ],
       "cardinality": [
         [
+          "home",
+          1
+        ],
+        [
           "concept.frame",
+          1
+        ],
+        [
+          "concept.proofs",
           1
         ],
         [
           "limitation.graph-matching",
           5
+        ],
+        [
+          "concept.report-resources",
+          1
         ],
         [
           "concept.search",
@@ -22033,6 +22125,10 @@
         ],
         [
           "recipe.epigraph",
+          1
+        ],
+        [
+          "api.Checker.batch",
           1
         ],
         [
@@ -22202,10 +22298,6 @@
           4
         ],
         [
-          "limitation.fractional-point",
-          1
-        ],
-        [
           "concept.report-resources",
           8
         ],
@@ -22332,6 +22424,10 @@
         [
           "api.BatchProof.replay",
           3
+        ],
+        [
+          "api.Model.audit",
+          1
         ],
         [
           "api.OneHotAffine.expand_exclusions",
@@ -22585,7 +22681,7 @@
         ],
         [
           "limitation.fractional-point",
-          8
+          9
         ],
         [
           "concept.report-resources",
@@ -22828,6 +22924,10 @@
           8
         ],
         [
+          "api.Model.audit",
+          1
+        ],
+        [
           "api.PointReport",
           3
         ],
@@ -22853,7 +22953,7 @@
         ],
         [
           "skill",
-          41
+          42
         ]
       ],
       "checkbatch": [
@@ -22915,6 +23015,10 @@
         ]
       ],
       "checked": [
+        [
+          "limitation.fractional-point",
+          2
+        ],
         [
           "api.IndexedResult.verify",
           2
@@ -23282,12 +23386,20 @@
           3
         ],
         [
+          "api.Checker.solution",
+          1
+        ],
+        [
           "recipe.decomposition",
           4
         ],
         [
           "recipe.network",
           5
+        ],
+        [
+          "skill",
+          1
         ]
       ],
       "claim": [
@@ -24134,6 +24246,12 @@
           4
         ]
       ],
+      "committed": [
+        [
+          "api.Model.audit",
+          1
+        ]
+      ],
       "common": [
         [
           "home",
@@ -24153,7 +24271,7 @@
         ],
         [
           "skill",
-          3
+          4
         ]
       ],
       "compact": [
@@ -24191,10 +24309,6 @@
         ],
         [
           "concept.big-m",
-          1
-        ],
-        [
-          "limitation.fractional-point",
           1
         ],
         [
@@ -24252,10 +24366,6 @@
       ],
       "comparison": [
         [
-          "limitation.fractional-point",
-          4
-        ],
-        [
           "api.ColumnView",
           3
         ],
@@ -24273,6 +24383,10 @@
         ],
         [
           "capability.ops",
+          1
+        ],
+        [
+          "api.Model.audit",
           1
         ],
         [
@@ -24340,6 +24454,24 @@
           1
         ]
       ],
+      "compilation": [
+        [
+          "home",
+          2
+        ],
+        [
+          "concept.proofs",
+          2
+        ],
+        [
+          "concept.report-resources",
+          2
+        ],
+        [
+          "api.Checker.batch",
+          2
+        ]
+      ],
       "compile": [
         [
           "concept.proofs",
@@ -24395,7 +24527,7 @@
         ],
         [
           "limitation.fractional-point",
-          1
+          4
         ],
         [
           "concept.report-resources",
@@ -25362,6 +25494,10 @@
           1
         ],
         [
+          "api.Model.audit",
+          1
+        ],
+        [
           "api.Checker.batch",
           2
         ],
@@ -25964,6 +26100,14 @@
       ],
       "coverage": [
         [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
           "concept.conditions",
           2
         ],
@@ -25972,7 +26116,7 @@
           8
         ],
         [
-          "limitation.fractional-point",
+          "concept.report-resources",
           1
         ],
         [
@@ -26074,6 +26218,14 @@
         [
           "recipe.network",
           6
+        ],
+        [
+          "api.Model.audit",
+          1
+        ],
+        [
+          "api.Checker.batch",
+          1
         ],
         [
           "skill",
@@ -26342,6 +26494,10 @@
         [
           "concept.indexed",
           2
+        ],
+        [
+          "api.Model.audit",
+          1
         ],
         [
           "skill",
@@ -26613,7 +26769,7 @@
         ],
         [
           "limitation.fractional-point",
-          1
+          2
         ],
         [
           "concept.report-resources",
@@ -26626,6 +26782,10 @@
         [
           "api.MatrixView.preview",
           3
+        ],
+        [
+          "api.Checker.solution",
+          1
         ],
         [
           "api.CompressedIR.show",
@@ -26661,7 +26821,13 @@
         ],
         [
           "skill",
-          7
+          8
+        ]
+      ],
+      "defer": [
+        [
+          "skill",
+          1
         ]
       ],
       "deferred": [
@@ -27032,6 +27198,10 @@
         [
           "concept.big-m",
           3
+        ],
+        [
+          "skill",
+          1
         ]
       ],
       "derived": [
@@ -27997,6 +28167,18 @@
       "distinguish": [
         [
           "home",
+          2
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
+        [
+          "api.Checker.batch",
           1
         ]
       ],
@@ -28039,7 +28221,7 @@
         ],
         [
           "limitation.fractional-point",
-          1
+          10
         ],
         [
           "concept.search",
@@ -28167,7 +28349,7 @@
         ],
         [
           "api.Checker.solution",
-          4
+          6
         ],
         [
           "api.Edit.set_domains",
@@ -28214,8 +28396,16 @@
           3
         ],
         [
+          "api.PointReport",
+          1
+        ],
+        [
+          "api.PointReport.require",
+          3
+        ],
+        [
           "skill",
-          6
+          9
         ]
       ],
       "done": [
@@ -28401,6 +28591,10 @@
         ],
         [
           "api.Targets",
+          1
+        ],
+        [
+          "api.Model.audit",
           1
         ],
         [
@@ -28606,6 +28800,10 @@
           12
         ],
         [
+          "api.Model.audit",
+          1
+        ],
+        [
           "api.PatchNotSupportedError",
           3
         ],
@@ -28639,7 +28837,7 @@
         ],
         [
           "skill",
-          14
+          15
         ]
       ],
       "editconflicterror": [
@@ -28781,6 +28979,10 @@
       "enforce": [
         [
           "concept.frame",
+          1
+        ],
+        [
+          "limitation.fractional-point",
           1
         ],
         [
@@ -29176,6 +29378,18 @@
       ],
       "equality": [
         [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
+        [
           "limitation.symmetry",
           3
         ],
@@ -29232,8 +29446,12 @@
           1
         ],
         [
+          "api.Checker.batch",
+          1
+        ],
+        [
           "skill",
-          3
+          4
         ]
       ],
       "equivalence": [
@@ -29620,10 +29838,6 @@
           1
         ],
         [
-          "api.Checker.solution",
-          1
-        ],
-        [
           "api.LinearBatch.run",
           3
         ],
@@ -29653,7 +29867,7 @@
         ],
         [
           "skill",
-          6
+          5
         ]
       ],
       "evidence": [
@@ -29757,7 +29971,7 @@
       "exact": [
         [
           "home",
-          3
+          4
         ],
         [
           "concept.identity",
@@ -29765,7 +29979,7 @@
         ],
         [
           "concept.proofs",
-          6
+          7
         ],
         [
           "concept.conditions",
@@ -29781,7 +29995,7 @@
         ],
         [
           "concept.report-resources",
-          1
+          2
         ],
         [
           "concept.exact",
@@ -29953,7 +30167,7 @@
         ],
         [
           "api.Checker.solution",
-          9
+          8
         ],
         [
           "api.Report.write",
@@ -30116,8 +30330,12 @@
           3
         ],
         [
+          "api.Checker.batch",
+          1
+        ],
+        [
           "skill",
-          17
+          16
         ]
       ],
       "exactarithmeticerror": [
@@ -30378,6 +30596,24 @@
         [
           "skill",
           2
+        ]
+      ],
+      "executed": [
+        [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
+        [
+          "api.Checker.batch",
+          1
         ]
       ],
       "executing": [
@@ -30730,6 +30966,10 @@
           1
         ],
         [
+          "limitation.fractional-point",
+          1
+        ],
+        [
           "concept.report-resources",
           2
         ],
@@ -31011,6 +31251,10 @@
         ],
         [
           "concept.indexed",
+          1
+        ],
+        [
+          "api.Model.audit",
           1
         ],
         [
@@ -31459,7 +31703,7 @@
         ],
         [
           "skill",
-          3
+          4
         ]
       ],
       "extend": [
@@ -31837,7 +32081,7 @@
         ],
         [
           "skill",
-          1
+          2
         ]
       ],
       "fall": [
@@ -31963,7 +32207,7 @@
       "feasibility": [
         [
           "limitation.fractional-point",
-          21
+          24
         ],
         [
           "limitation.optimization",
@@ -31993,7 +32237,7 @@
       "feasible": [
         [
           "limitation.fractional-point",
-          7
+          5
         ],
         [
           "api.alg.integer.enumerate",
@@ -32178,11 +32422,27 @@
           1
         ],
         [
+          "api.Model.audit",
+          1
+        ],
+        [
           "skill",
           2
         ]
       ],
       "filter": [
+        [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
         [
           "api.Frame.where",
           3
@@ -32196,11 +32456,33 @@
           1
         ],
         [
+          "api.Checker.batch",
+          1
+        ],
+        [
           "skill",
-          3
+          4
+        ]
+      ],
+      "filtered": [
+        [
+          "skill",
+          1
         ]
       ],
       "filtering": [
+        [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
         [
           "api.Frame.domains",
           3
@@ -32215,6 +32497,10 @@
         ],
         [
           "concept.indexed",
+          1
+        ],
+        [
+          "api.Checker.batch",
           1
         ],
         [
@@ -32347,11 +32633,11 @@
       "finite": [
         [
           "home",
-          2
+          3
         ],
         [
           "concept.proofs",
-          2
+          3
         ],
         [
           "concept.conditions",
@@ -32363,7 +32649,7 @@
         ],
         [
           "concept.report-resources",
-          2
+          3
         ],
         [
           "concept.exact",
@@ -32434,8 +32720,12 @@
           3
         ],
         [
+          "api.Model.audit",
+          1
+        ],
+        [
           "api.Checker.batch",
-          2
+          3
         ],
         [
           "api.Checker.budget",
@@ -32709,7 +32999,7 @@
       "fractional": [
         [
           "limitation.fractional-point",
-          15
+          16
         ],
         [
           "api.Claim",
@@ -32717,7 +33007,7 @@
         ],
         [
           "api.Checker.solution",
-          2
+          1
         ],
         [
           "skill",
@@ -32727,7 +33017,7 @@
       "frame": [
         [
           "home",
-          5
+          6
         ],
         [
           "concept.frame",
@@ -32735,7 +33025,7 @@
         ],
         [
           "concept.proofs",
-          3
+          4
         ],
         [
           "limitation.graph-matching",
@@ -32743,7 +33033,7 @@
         ],
         [
           "concept.report-resources",
-          3
+          4
         ],
         [
           "concept.exact",
@@ -32999,7 +33289,7 @@
         ],
         [
           "api.Checker.batch",
-          1
+          2
         ],
         [
           "api.CheckBatch.frame",
@@ -33007,7 +33297,7 @@
         ],
         [
           "skill",
-          16
+          18
         ]
       ],
       "free": [
@@ -33025,10 +33315,18 @@
       "full": [
         [
           "home",
-          3
+          4
+        ],
+        [
+          "concept.proofs",
+          1
         ],
         [
           "limitation.fractional-point",
+          1
+        ],
+        [
+          "concept.report-resources",
           1
         ],
         [
@@ -33104,8 +33402,12 @@
           1
         ],
         [
+          "api.Checker.batch",
+          1
+        ],
+        [
           "skill",
-          14
+          15
         ]
       ],
       "function": [
@@ -33269,6 +33571,10 @@
         ],
         [
           "api.Edit.substitute_fixed",
+          1
+        ],
+        [
+          "api.Model.audit",
           1
         ],
         [
@@ -33505,7 +33811,7 @@
         ],
         [
           "skill",
-          4
+          5
         ]
       ],
       "grouped": [
@@ -33676,6 +33982,18 @@
       ],
       "has": [
         [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
+        [
           "concept.resources",
           1
         ],
@@ -33713,6 +34031,10 @@
         ],
         [
           "api.NumericDiff",
+          1
+        ],
+        [
+          "api.Checker.batch",
           1
         ],
         [
@@ -34402,10 +34724,6 @@
           5
         ],
         [
-          "limitation.fractional-point",
-          1
-        ],
-        [
           "recipe.closure",
           5
         ],
@@ -34602,6 +34920,24 @@
           2
         ]
       ],
+      "included": [
+        [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
+        [
+          "api.Checker.batch",
+          1
+        ]
+      ],
       "including": [
         [
           "limitation.fractional-point",
@@ -34653,7 +34989,7 @@
         ],
         [
           "skill",
-          7
+          6
         ]
       ],
       "inclusion": [
@@ -34862,10 +35198,6 @@
       ],
       "independently": [
         [
-          "limitation.fractional-point",
-          1
-        ],
-        [
           "error.join",
           1
         ],
@@ -34884,6 +35216,10 @@
         [
           "api.Checker.affine_integrality",
           3
+        ],
+        [
+          "api.Model.audit",
+          1
         ],
         [
           "skill",
@@ -34912,6 +35248,28 @@
         [
           "api.NameIndex",
           3
+        ],
+        [
+          "skill",
+          1
+        ]
+      ],
+      "indexe": [
+        [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
+        [
+          "api.Checker.batch",
+          1
         ],
         [
           "skill",
@@ -35337,15 +35695,15 @@
       "inside": [
         [
           "home",
-          1
+          2
         ],
         [
           "concept.proofs",
-          1
+          2
         ],
         [
           "concept.report-resources",
-          1
+          2
         ],
         [
           "concept.errors",
@@ -35357,7 +35715,7 @@
         ],
         [
           "api.Checker.batch",
-          1
+          2
         ],
         [
           "api.CheckBatch.linear",
@@ -35405,16 +35763,12 @@
         ],
         [
           "skill",
-          1
+          2
         ]
       ],
       "inspect": [
         [
           "concept.resource-cover",
-          3
-        ],
-        [
-          "limitation.fractional-point",
           3
         ],
         [
@@ -35774,10 +36128,6 @@
           1
         ],
         [
-          "api.PointReport.require",
-          3
-        ],
-        [
           "skill",
           12
         ]
@@ -35785,7 +36135,7 @@
       "integrality": [
         [
           "limitation.fractional-point",
-          1
+          2
         ],
         [
           "api.Model.write",
@@ -35793,7 +36143,7 @@
         ],
         [
           "api.Checker.solution",
-          3
+          4
         ],
         [
           "recipe.network",
@@ -36063,7 +36413,7 @@
       "isolated": [
         [
           "skill",
-          2
+          3
         ]
       ],
       "isomorphism": [
@@ -36319,18 +36669,22 @@
       "join": [
         [
           "home",
-          1
+          2
         ],
         [
           "concept.frame",
           2
         ],
         [
+          "concept.proofs",
+          1
+        ],
+        [
           "limitation.graph-matching",
           3
         ],
         [
-          "limitation.fractional-point",
+          "concept.report-resources",
           1
         ],
         [
@@ -36366,8 +36720,12 @@
           1
         ],
         [
+          "api.Checker.batch",
+          1
+        ],
+        [
           "skill",
-          6
+          7
         ]
       ],
       "joined": [
@@ -36475,7 +36833,7 @@
         ],
         [
           "skill",
-          7
+          8
         ]
       ],
       "keeping": [
@@ -36496,7 +36854,15 @@
       ],
       "kernel": [
         [
+          "home",
+          1
+        ],
+        [
           "concept.proofs",
+          2
+        ],
+        [
+          "concept.report-resources",
           1
         ],
         [
@@ -36506,6 +36872,10 @@
         [
           "concept.indexed",
           6
+        ],
+        [
+          "api.Checker.batch",
+          1
         ],
         [
           "skill",
@@ -36524,6 +36894,10 @@
         [
           "concept.proofs",
           2
+        ],
+        [
+          "limitation.fractional-point",
+          1
         ],
         [
           "concept.report-resources",
@@ -36830,6 +37204,10 @@
           1
         ],
         [
+          "api.Model.audit",
+          1
+        ],
+        [
           "skill",
           2
         ]
@@ -36866,12 +37244,16 @@
       ],
       "lazy": [
         [
-          "concept.proofs",
+          "home",
           1
         ],
         [
+          "concept.proofs",
+          2
+        ],
+        [
           "concept.report-resources",
-          1
+          2
         ],
         [
           "api.Term",
@@ -36896,15 +37278,15 @@
         [
           "api.BatchProof",
           3
+        ],
+        [
+          "api.Checker.batch",
+          1
         ]
       ],
       "lb": [
         [
           "concept.conditions",
-          1
-        ],
-        [
-          "limitation.fractional-point",
           1
         ],
         [
@@ -36970,9 +37352,45 @@
           1
         ]
       ],
+      "leaf": [
+        [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
+        [
+          "api.Checker.batch",
+          1
+        ]
+      ],
       "least": [
         [
           "error.join",
+          1
+        ]
+      ],
+      "leave": [
+        [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
+        [
+          "api.Checker.batch",
           1
         ]
       ],
@@ -37326,6 +37744,10 @@
         [
           "api.ModelDiff.semantic",
           3
+        ],
+        [
+          "api.Model.audit",
+          1
         ]
       ],
       "linear": [
@@ -37351,10 +37773,6 @@
         ],
         [
           "limitation.graph-matching",
-          1
-        ],
-        [
-          "limitation.fractional-point",
           1
         ],
         [
@@ -37489,10 +37907,18 @@
       "linexpr": [
         [
           "home",
+          2
+        ],
+        [
+          "concept.proofs",
           1
         ],
         [
           "limitation.fractional-point",
+          1
+        ],
+        [
+          "concept.report-resources",
           1
         ],
         [
@@ -37556,8 +37982,12 @@
           1
         ],
         [
+          "api.Checker.batch",
+          1
+        ],
+        [
           "skill",
-          3
+          4
         ]
       ],
       "linked": [
@@ -37921,15 +38351,15 @@
       "loop": [
         [
           "home",
-          6
+          7
         ],
         [
           "concept.proofs",
-          3
+          4
         ],
         [
           "concept.report-resources",
-          3
+          4
         ],
         [
           "api.alg.graph.isomorphism_classes",
@@ -37941,11 +38371,11 @@
         ],
         [
           "api.Checker.batch",
-          8
+          9
         ],
         [
           "skill",
-          4
+          6
         ]
       ],
       "lossless": [
@@ -37996,10 +38426,6 @@
         [
           "api.Model.write",
           3
-        ],
-        [
-          "api.Checker.solution",
-          1
         ],
         [
           "api.Edit.add_row",
@@ -38089,7 +38515,7 @@
       "m": [
         [
           "home",
-          11
+          12
         ],
         [
           "concept.frame",
@@ -38097,7 +38523,7 @@
         ],
         [
           "concept.proofs",
-          1
+          2
         ],
         [
           "concept.big-m",
@@ -38109,7 +38535,7 @@
         ],
         [
           "concept.report-resources",
-          1
+          2
         ],
         [
           "concept.errors",
@@ -38301,7 +38727,7 @@
         ],
         [
           "api.Checker.solution",
-          6
+          5
         ],
         [
           "api.Checker.linear_many",
@@ -38445,7 +38871,7 @@
         ],
         [
           "api.Checker.batch",
-          6
+          7
         ],
         [
           "api.Checker.budget",
@@ -38834,7 +39260,23 @@
       ],
       "materializing": [
         [
+          "home",
+          1
+        ],
+        [
           "concept.proofs",
+          2
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
+        [
+          "api.Checker.batch",
+          1
+        ],
+        [
+          "skill",
           1
         ]
       ],
@@ -38931,7 +39373,7 @@
         ],
         [
           "skill",
-          13
+          12
         ]
       ],
       "mathematically": [
@@ -38967,7 +39409,7 @@
         ],
         [
           "limitation.fractional-point",
-          4
+          1
         ],
         [
           "concept.resources",
@@ -39048,10 +39490,6 @@
         [
           "api.MatrixView.var_nnz",
           3
-        ],
-        [
-          "api.Checker.solution",
-          1
         ],
         [
           "api.Edit.summary",
@@ -39320,6 +39758,10 @@
           1
         ],
         [
+          "api.Model.audit",
+          1
+        ],
+        [
           "api.Checker.batch",
           2
         ],
@@ -39388,6 +39830,10 @@
         [
           "concept.resources",
           3
+        ],
+        [
+          "api.Model.audit",
+          1
         ],
         [
           "api.Checker.batch",
@@ -39610,6 +40056,10 @@
         [
           "concept.resources",
           7
+        ],
+        [
+          "api.Model.audit",
+          1
         ],
         [
           "api.Checker.batch",
@@ -40204,6 +40654,10 @@
       ],
       "mode": [
         [
+          "api.Checker.solution",
+          1
+        ],
+        [
           "skill",
           1
         ]
@@ -40566,14 +41020,6 @@
           11
         ],
         [
-          "api.PointReport",
-          1
-        ],
-        [
-          "api.PointReport.require",
-          3
-        ],
-        [
           "api.NumericDiff",
           6
         ],
@@ -40702,6 +41148,10 @@
       ],
       "multiple": [
         [
+          "limitation.fractional-point",
+          1
+        ],
+        [
           "concept.errors",
           1
         ],
@@ -40710,12 +41160,16 @@
           1
         ],
         [
+          "api.Checker.solution",
+          1
+        ],
+        [
           "api.Checker.linear_many",
           5
         ],
         [
           "skill",
-          1
+          2
         ]
       ],
       "multiplicity": [
@@ -40787,10 +41241,6 @@
       "must": [
         [
           "concept.conditions",
-          1
-        ],
-        [
-          "limitation.fractional-point",
           1
         ],
         [
@@ -41208,10 +41658,6 @@
           1
         ],
         [
-          "limitation.fractional-point",
-          1
-        ],
-        [
           "error.join",
           1
         ],
@@ -41238,6 +41684,10 @@
       ],
       "needed": [
         [
+          "limitation.fractional-point",
+          1
+        ],
+        [
           "concept.report-resources",
           1
         ],
@@ -41247,7 +41697,7 @@
         ],
         [
           "skill",
-          1
+          2
         ]
       ],
       "negative": [
@@ -41325,7 +41775,7 @@
         ],
         [
           "skill",
-          2
+          3
         ]
       ],
       "nested": [
@@ -41792,6 +42242,10 @@
           1
         ],
         [
+          "api.Model.audit",
+          1
+        ],
+        [
           "api.PointReport",
           1
         ],
@@ -42055,7 +42509,7 @@
       "not": [
         [
           "home",
-          2
+          4
         ],
         [
           "concept.frame",
@@ -42063,7 +42517,7 @@
         ],
         [
           "concept.proofs",
-          3
+          5
         ],
         [
           "concept.conditions",
@@ -42083,11 +42537,11 @@
         ],
         [
           "limitation.fractional-point",
-          3
+          1
         ],
         [
           "concept.report-resources",
-          3
+          5
         ],
         [
           "concept.exact",
@@ -42399,7 +42853,7 @@
         ],
         [
           "api.Checker.batch",
-          2
+          4
         ],
         [
           "api.ProofBudgetExceeded",
@@ -42571,7 +43025,7 @@
         ],
         [
           "api.Model.audit",
-          3
+          4
         ],
         [
           "api.Model.content_hash",
@@ -42934,9 +43388,19 @@
           1
         ]
       ],
+      "omitted": [
+        [
+          "limitation.fractional-point",
+          1
+        ]
+      ],
       "omitting": [
         [
           "concept.errors",
+          1
+        ],
+        [
+          "skill",
           1
         ]
       ],
@@ -42957,6 +43421,10 @@
         ],
         [
           "concept.proofs",
+          1
+        ],
+        [
+          "limitation.fractional-point",
           1
         ],
         [
@@ -43039,7 +43507,7 @@
       "one": [
         [
           "limitation.fractional-point",
-          1
+          2
         ],
         [
           "error.join",
@@ -43261,7 +43729,7 @@
         ],
         [
           "limitation.fractional-point",
-          1
+          2
         ],
         [
           "concept.report-resources",
@@ -43437,7 +43905,7 @@
         ],
         [
           "skill",
-          16
+          15
         ]
       ],
       "op": [
@@ -43503,15 +43971,15 @@
       "operation": [
         [
           "home",
-          4
+          5
         ],
         [
           "concept.proofs",
-          1
+          2
         ],
         [
           "concept.report-resources",
-          1
+          2
         ],
         [
           "concept.resources",
@@ -43539,7 +44007,7 @@
         ],
         [
           "api.Checker.batch",
-          1
+          2
         ],
         [
           "api.Checker.budget",
@@ -43699,10 +44167,6 @@
         ]
       ],
       "optimality": [
-        [
-          "limitation.fractional-point",
-          1
-        ],
         [
           "limitation.optimization",
           6
@@ -43907,10 +44371,6 @@
         ],
         [
           "limitation.graph-matching",
-          1
-        ],
-        [
-          "limitation.fractional-point",
           1
         ],
         [
@@ -44340,11 +44800,23 @@
       ],
       "other": [
         [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
           "concept.conditions",
           1
         ],
         [
           "concept.big-m",
+          1
+        ],
+        [
+          "concept.report-resources",
           1
         ],
         [
@@ -44360,8 +44832,12 @@
           1
         ],
         [
+          "api.Checker.batch",
+          1
+        ],
+        [
           "skill",
-          2
+          3
         ]
       ],
       "otherwise": [
@@ -44452,6 +44928,10 @@
         [
           "limitation.disjunction",
           3
+        ],
+        [
+          "skill",
+          1
         ]
       ],
       "over": [
@@ -44770,8 +45250,20 @@
       ],
       "parent": [
         [
+          "home",
+          2
+        ],
+        [
+          "concept.proofs",
+          2
+        ],
+        [
           "concept.big-m",
           1
+        ],
+        [
+          "concept.report-resources",
+          2
         ],
         [
           "api.ModelDiff",
@@ -44822,8 +45314,12 @@
           3
         ],
         [
+          "api.Checker.batch",
+          2
+        ],
+        [
           "skill",
-          5
+          7
         ]
       ],
       "parse": [
@@ -44861,12 +45357,6 @@
       "participate": [
         [
           "api.alg.graph.isomorphism_classes",
-          1
-        ]
-      ],
-      "participating": [
-        [
-          "skill",
           1
         ]
       ],
@@ -44927,12 +45417,6 @@
         ],
         [
           "recipe.conflicts",
-          1
-        ]
-      ],
-      "passe": [
-        [
-          "limitation.fractional-point",
           1
         ]
       ],
@@ -45392,16 +45876,12 @@
       ],
       "plus": [
         [
-          "api.Checker.solution",
-          1
-        ],
-        [
           "recipe.coordinates",
           1
         ],
         [
           "skill",
-          2
+          1
         ]
       ],
       "point": [
@@ -45431,7 +45911,7 @@
         ],
         [
           "api.Checker.solution",
-          15
+          16
         ],
         [
           "recipe.conditions",
@@ -45467,7 +45947,7 @@
         ],
         [
           "skill",
-          9
+          10
         ]
       ],
       "pointreport": [
@@ -45517,7 +45997,7 @@
         ],
         [
           "skill",
-          3
+          4
         ]
       ],
       "population": [
@@ -45759,6 +46239,10 @@
         ],
         [
           "concept.proofs",
+          1
+        ],
+        [
+          "limitation.fractional-point",
           1
         ],
         [
@@ -46371,7 +46855,7 @@
         ],
         [
           "api.Model.audit",
-          3
+          5
         ],
         [
           "api.LinearCertificate",
@@ -46896,6 +47380,24 @@
           3
         ]
       ],
+      "publication": [
+        [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
+        [
+          "api.Checker.batch",
+          1
+        ]
+      ],
       "publishe": [
         [
           "api.Edit.add_row",
@@ -47115,7 +47617,15 @@
       "query": [
         [
           "home",
-          3
+          8
+        ],
+        [
+          "concept.proofs",
+          5
+        ],
+        [
+          "concept.report-resources",
+          5
         ],
         [
           "concept.errors",
@@ -47246,8 +47756,12 @@
           8
         ],
         [
+          "api.Checker.batch",
+          5
+        ],
+        [
           "skill",
-          7
+          9
         ]
       ],
       "queryexpr": [
@@ -47562,13 +48076,37 @@
       ],
       "reachable": [
         [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
+        [
           "api.ops.graph.reachability",
           3
+        ],
+        [
+          "api.Checker.batch",
+          1
         ]
       ],
       "read": [
         [
           "home",
+          2
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
           1
         ],
         [
@@ -48008,8 +48546,12 @@
           3
         ],
         [
+          "api.Checker.batch",
+          1
+        ],
+        [
           "skill",
-          9
+          10
         ]
       ],
       "readback": [
@@ -48022,12 +48564,22 @@
           2
         ],
         [
+          "api.Model.audit",
+          1
+        ],
+        [
           "api.WriteReceipt",
           3
         ],
         [
           "skill",
           2
+        ]
+      ],
+      "reading": [
+        [
+          "skill",
+          1
         ]
       ],
       "real": [
@@ -48102,6 +48654,10 @@
           1
         ],
         [
+          "api.Model.audit",
+          1
+        ],
+        [
           "skill",
           1
         ]
@@ -48121,6 +48677,22 @@
         ]
       ],
       "record": [
+        [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "limitation.fractional-point",
+          1
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
         [
           "concept.exact",
           1
@@ -48246,8 +48818,12 @@
           1
         ],
         [
+          "api.Checker.batch",
+          1
+        ],
+        [
           "skill",
-          5
+          7
         ]
       ],
       "recordbatch": [
@@ -48587,19 +49163,23 @@
       "register": [
         [
           "home",
-          1
+          2
         ],
         [
           "concept.proofs",
+          2
+        ],
+        [
+          "limitation.fractional-point",
           1
         ],
         [
           "concept.report-resources",
-          1
+          2
         ],
         [
           "api.Checker.batch",
-          4
+          5
         ],
         [
           "api.CheckBatch.linear",
@@ -48647,7 +49227,7 @@
         ],
         [
           "skill",
-          2
+          3
         ]
       ],
       "registered": [
@@ -48659,19 +49239,19 @@
       "registration": [
         [
           "home",
-          2
+          4
         ],
         [
           "concept.proofs",
-          2
+          4
         ],
         [
           "concept.report-resources",
-          2
+          4
         ],
         [
           "api.Checker.batch",
-          2
+          4
         ],
         [
           "api.CheckBatch.linear",
@@ -48719,7 +49299,7 @@
         ],
         [
           "skill",
-          2
+          3
         ]
       ],
       "reimport": [
@@ -48784,10 +49364,6 @@
         [
           "api.Edit.substitute_fixed",
           1
-        ],
-        [
-          "skill",
-          1
         ]
       ],
       "rejected": [
@@ -48802,10 +49378,6 @@
         [
           "api.Checker.cases",
           2
-        ],
-        [
-          "api.Checker.solution",
-          1
         ],
         [
           "skill",
@@ -48895,11 +49467,11 @@
       "relation": [
         [
           "home",
-          4
+          5
         ],
         [
           "concept.proofs",
-          1
+          2
         ],
         [
           "concept.resource-cover",
@@ -48907,7 +49479,7 @@
         ],
         [
           "concept.report-resources",
-          1
+          2
         ],
         [
           "concept.resources",
@@ -49079,7 +49651,7 @@
         ],
         [
           "api.Checker.batch",
-          1
+          2
         ],
         [
           "skill",
@@ -49139,7 +49711,7 @@
         ],
         [
           "limitation.fractional-point",
-          19
+          21
         ],
         [
           "api.Model.write",
@@ -49155,6 +49727,10 @@
         ],
         [
           "recipe.round",
+          1
+        ],
+        [
+          "api.PointReport",
           1
         ],
         [
@@ -49489,7 +50065,7 @@
         ],
         [
           "skill",
-          1
+          2
         ]
       ],
       "replace": [
@@ -49546,6 +50122,10 @@
           1
         ],
         [
+          "limitation.fractional-point",
+          1
+        ],
+        [
           "concept.exact",
           1
         ],
@@ -49591,7 +50171,7 @@
         ],
         [
           "api.Model.audit",
-          3
+          4
         ],
         [
           "skill",
@@ -49992,6 +50572,10 @@
           1
         ],
         [
+          "limitation.fractional-point",
+          2
+        ],
+        [
           "concept.report-resources",
           3
         ],
@@ -50041,7 +50625,7 @@
         ],
         [
           "api.Checker.solution",
-          1
+          2
         ],
         [
           "api.Report.require",
@@ -50136,6 +50720,10 @@
           3
         ],
         [
+          "api.Model.audit",
+          1
+        ],
+        [
           "api.PointReport",
           1
         ],
@@ -50153,7 +50741,7 @@
         ],
         [
           "skill",
-          20
+          19
         ]
       ],
       "required": [
@@ -50580,6 +51168,10 @@
         [
           "api.Var.eq",
           3
+        ],
+        [
+          "api.Checker.solution",
+          1
         ],
         [
           "api.Checker.linear_many",
@@ -51485,7 +52077,7 @@
         ],
         [
           "skill",
-          29
+          30
         ]
       ],
       "rowframe": [
@@ -51777,7 +52369,7 @@
         ],
         [
           "skill",
-          26
+          25
         ]
       ],
       "rss": [
@@ -51815,15 +52407,19 @@
       "run": [
         [
           "home",
-          3
+          4
         ],
         [
           "concept.proofs",
-          2
+          3
+        ],
+        [
+          "limitation.fractional-point",
+          1
         ],
         [
           "concept.report-resources",
-          2
+          3
         ],
         [
           "api.LinearBatch.run",
@@ -51859,7 +52455,7 @@
         ],
         [
           "api.Checker.batch",
-          2
+          3
         ],
         [
           "api.CheckBatch.linear",
@@ -51911,7 +52507,7 @@
         ],
         [
           "skill",
-          4
+          7
         ]
       ],
       "runs": [
@@ -51972,15 +52568,23 @@
       ],
       "same": [
         [
+          "home",
+          1
+        ],
+        [
           "concept.frame",
           2
         ],
         [
           "concept.proofs",
-          1
+          2
         ],
         [
           "concept.conditions",
+          1
+        ],
+        [
+          "concept.report-resources",
           1
         ],
         [
@@ -52032,6 +52636,10 @@
           1
         ],
         [
+          "api.Checker.batch",
+          1
+        ],
+        [
           "api.Checker.budget",
           1
         ],
@@ -52055,10 +52663,6 @@
         ]
       ],
       "satisfy": [
-        [
-          "limitation.fractional-point",
-          2
-        ],
         [
           "recipe.conditions",
           1
@@ -52143,6 +52747,10 @@
         ]
       ],
       "saved": [
+        [
+          "limitation.fractional-point",
+          1
+        ],
         [
           "api.load",
           3
@@ -52414,6 +53022,10 @@
           5
         ],
         [
+          "limitation.fractional-point",
+          1
+        ],
+        [
           "concept.resources",
           1
         ],
@@ -52431,6 +53043,10 @@
         ],
         [
           "api.Checker.infeasible",
+          1
+        ],
+        [
+          "api.Checker.solution",
           1
         ],
         [
@@ -52527,7 +53143,7 @@
         ],
         [
           "skill",
-          6
+          7
         ]
       ],
       "score": [
@@ -52730,6 +53346,10 @@
         [
           "api.Model.source",
           3
+        ],
+        [
+          "api.Model.audit",
+          1
         ],
         [
           "api.Checker.batch",
@@ -53026,8 +53646,12 @@
           1
         ],
         [
+          "api.PointReport.require",
+          3
+        ],
+        [
           "skill",
-          5
+          6
         ]
       ],
       "selecting": [
@@ -53324,6 +53948,10 @@
           1
         ],
         [
+          "api.Model.audit",
+          1
+        ],
+        [
           "api.Checker.batch",
           2
         ],
@@ -53408,6 +54036,10 @@
         [
           "capability.audit",
           5
+        ],
+        [
+          "api.Model.audit",
+          1
         ],
         [
           "api.PatchPlan",
@@ -53600,6 +54232,18 @@
       ],
       "shape": [
         [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
+        [
           "api.Model.shape",
           16
         ],
@@ -53636,8 +54280,12 @@
           1
         ],
         [
+          "api.Checker.batch",
+          1
+        ],
+        [
           "skill",
-          5
+          6
         ]
       ],
       "share": [
@@ -53679,7 +54327,7 @@
         ],
         [
           "skill",
-          3
+          4
         ]
       ],
       "shared": [
@@ -53718,6 +54366,24 @@
         [
           "skill",
           4
+        ]
+      ],
+      "sharing": [
+        [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
+        [
+          "api.Checker.batch",
+          1
         ]
       ],
       "shift": [
@@ -53821,6 +54487,10 @@
         ],
         [
           "limitation.graph-matching",
+          1
+        ],
+        [
+          "limitation.fractional-point",
           1
         ],
         [
@@ -54475,7 +55145,7 @@
       "solution": [
         [
           "limitation.fractional-point",
-          6
+          10
         ],
         [
           "concept.exact",
@@ -54487,7 +55157,7 @@
         ],
         [
           "api.Checker.solution",
-          21
+          22
         ],
         [
           "api.PointReport",
@@ -54499,7 +55169,7 @@
         ],
         [
           "skill",
-          3
+          5
         ]
       ],
       "solve": [
@@ -55078,6 +55748,18 @@
       ],
       "statistic": [
         [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
+        [
           "concept.resources",
           1
         ],
@@ -55098,11 +55780,19 @@
           2
         ],
         [
+          "api.Model.audit",
+          1
+        ],
+        [
           "api.TransitiveReductionResult",
           3
         ],
         [
           "api.NumericDiff",
+          1
+        ],
+        [
+          "api.Checker.batch",
           1
         ]
       ],
@@ -55265,7 +55955,7 @@
         ],
         [
           "skill",
-          5
+          6
         ]
       ],
       "stop": [
@@ -56224,6 +56914,12 @@
           1
         ]
       ],
+      "surface": [
+        [
+          "skill",
+          1
+        ]
+      ],
       "survive": [
         [
           "api.LinearBatch.run",
@@ -56627,11 +57323,11 @@
       "task": [
         [
           "home",
-          4
+          5
         ],
         [
           "concept.proofs",
-          4
+          5
         ],
         [
           "limitation.graph-matching",
@@ -56639,7 +57335,7 @@
         ],
         [
           "concept.report-resources",
-          4
+          5
         ],
         [
           "api.Checker.linear_many",
@@ -56647,7 +57343,7 @@
         ],
         [
           "api.Checker.batch",
-          4
+          5
         ],
         [
           "api.CheckBatch.linear",
@@ -57094,6 +57790,16 @@
           5
         ]
       ],
+      "themselve": [
+        [
+          "limitation.fractional-point",
+          1
+        ],
+        [
+          "skill",
+          1
+        ]
+      ],
       "then": [
         [
           "concept.proofs",
@@ -57106,10 +57812,6 @@
         [
           "concept.big-m",
           4
-        ],
-        [
-          "limitation.fractional-point",
-          1
         ],
         [
           "concept.errors",
@@ -57140,6 +57842,18 @@
       ],
       "there": [
         [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
+        [
           "concept.resources",
           1
         ],
@@ -57164,6 +57878,10 @@
           1
         ],
         [
+          "api.Checker.batch",
+          1
+        ],
+        [
           "skill",
           1
         ]
@@ -57171,10 +57889,6 @@
       "these": [
         [
           "concept.proofs",
-          1
-        ],
-        [
-          "limitation.fractional-point",
           1
         ],
         [
@@ -57281,19 +57995,19 @@
       "time": [
         [
           "home",
-          2
+          5
         ],
         [
           "concept.proofs",
-          2
+          5
         ],
         [
           "concept.report-resources",
-          2
+          5
         ],
         [
           "api.Checker.batch",
-          2
+          5
         ],
         [
           "skill",
@@ -57301,6 +58015,10 @@
         ]
       ],
       "timing": [
+        [
+          "api.Model.audit",
+          1
+        ],
         [
           "api.WriteReceipt",
           3
@@ -57801,10 +58519,6 @@
       "ub": [
         [
           "concept.conditions",
-          1
-        ],
-        [
-          "limitation.fractional-point",
           1
         ],
         [
@@ -58444,6 +59158,28 @@
         [
           "api.LinearBatch.run",
           1
+        ],
+        [
+          "skill",
+          1
+        ]
+      ],
+      "unused": [
+        [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
+        [
+          "api.Checker.batch",
+          1
         ]
       ],
       "up": [
@@ -58742,18 +59478,38 @@
       ],
       "validated": [
         [
+          "home",
+          1
+        ],
+        [
+          "concept.proofs",
+          1
+        ],
+        [
+          "concept.report-resources",
+          1
+        ],
+        [
           "api.load",
           3
         ],
         [
           "api.OneHotAffine",
           3
+        ],
+        [
+          "api.Checker.batch",
+          1
         ]
       ],
       "validation": [
         [
           "api.Lineage.validation",
           14
+        ],
+        [
+          "api.Model.audit",
+          1
         ],
         [
           "api.PointReport.to_spec",
@@ -58785,7 +59541,7 @@
         ],
         [
           "limitation.fractional-point",
-          1
+          2
         ],
         [
           "concept.report-resources",
@@ -58841,7 +59597,7 @@
         ],
         [
           "api.Checker.solution",
-          6
+          5
         ],
         [
           "api.Edit.fix",
@@ -59427,7 +60183,7 @@
         ],
         [
           "skill",
-          21
+          19
         ]
       ],
       "varref": [
@@ -59768,10 +60524,6 @@
           3
         ],
         [
-          "api.Checker.solution",
-          1
-        ],
-        [
           "api.LinearBatch.run",
           3
         ],
@@ -59990,6 +60742,10 @@
       ],
       "was": [
         [
+          "limitation.fractional-point",
+          1
+        ],
+        [
           "skill",
           1
         ]
@@ -60091,7 +60847,7 @@
         ],
         [
           "skill",
-          1
+          2
         ]
       ],
       "whole": [
@@ -60167,7 +60923,7 @@
         ],
         [
           "skill",
-          1
+          2
         ]
       ],
       "without": [
@@ -60201,6 +60957,10 @@
         ],
         [
           "api.Checker.identity",
+          1
+        ],
+        [
+          "api.Checker.solution",
           1
         ],
         [
@@ -60339,15 +61099,15 @@
       "work": [
         [
           "home",
-          7
+          9
         ],
         [
           "concept.proofs",
-          4
+          6
         ],
         [
           "concept.report-resources",
-          4
+          6
         ],
         [
           "api.Checker.linear_batch",
@@ -60363,7 +61123,7 @@
         ],
         [
           "api.Checker.batch",
-          4
+          6
         ],
         [
           "api.ProofBudgetExceeded",
@@ -60652,16 +61412,16 @@
       ]
     },
     "lengths": {
-      "home": 366,
+      "home": 429,
       "concept.frame": 210,
       "concept.identity": 139,
-      "concept.proofs": 345,
+      "concept.proofs": 408,
       "concept.conditions": 272,
       "concept.big-m": 250,
       "concept.resource-cover": 223,
       "limitation.graph-matching": 169,
-      "limitation.fractional-point": 209,
-      "concept.report-resources": 376,
+      "limitation.fractional-point": 222,
+      "concept.report-resources": 439,
       "concept.exact": 166,
       "concept.resources": 208,
       "concept.search": 157,
@@ -60886,7 +61646,7 @@
       "api.Checker.infeasible": 64,
       "api.Checker.round": 77,
       "api.Checker.enumerate": 68,
-      "api.Checker.solution": 182,
+      "api.Checker.solution": 188,
       "api.Checker.linear_many": 308,
       "api.Checker.linear_batch": 269,
       "api.LinearBatch.add": 66,
@@ -61054,7 +61814,7 @@
       "api.Checker.one_hot_affine": 102,
       "api.Edit.commit": 52,
       "api.Edit.substitute_fixed": 117,
-      "api.Model.audit": 59,
+      "api.Model.audit": 95,
       "api.Model.content_hash": 72,
       "api.LinearCertificate": 38,
       "api.TransitiveReductionResult": 44,
@@ -61067,7 +61827,7 @@
       "api.Edit.lift": 43,
       "api.Edit.write": 49,
       "api.WriteReceipt": 38,
-      "api.PointReport": 86,
+      "api.PointReport": 87,
       "api.PointReport.require": 40,
       "api.PointReport.evidence": 49,
       "api.PointReport.to_spec": 37,
@@ -61077,7 +61837,7 @@
       "api.OneHotAffine": 47,
       "api.OneHotAffine.bound_exclusions": 54,
       "api.OneHotAffine.expand_exclusions": 54,
-      "api.Checker.batch": 262,
+      "api.Checker.batch": 325,
       "api.Checker.budget": 73,
       "api.CheckBatch.linear": 55,
       "api.CheckBatch.identity": 55,
@@ -61097,11 +61857,11 @@
       "api.CheckBatch": 32,
       "api.CheckResults": 32,
       "api.ProofBudgetExceeded": 45,
-      "skill": 2682
+      "skill": 2739
     }
   },
-  "source_hash": "8fee108bccbc732e5123b087d797064b97e9451cc59fbb05ee4ef4463d719127",
-  "content_hash": "44da9a73441a82755ce838a4cf7d19c4f8f58b525c2444e60d6460342251df82",
-  "docstring_hash": "978fe4264b6ece3b61bfe0302538953865dc522b34c8bcfda6b94b27a80285d0",
-  "checksum": "b442ae06bc5ef46bb8f5b7d425fca44740922d8eae7c057e46ceaa914a17dfc4"
+  "source_hash": "b4163e98c3de4191a44773d59a54e954f3379957d84dab5b1e811734b8d69b05",
+  "content_hash": "e7f7405c897c633f9a18317c060e0d3cfb7e75b98fe1a65750ab7ce9d0816eea",
+  "docstring_hash": "1a9471078d8dc9239394eb04c60da517150babbccf4a5ea0d47bd514d849dbbe",
+  "checksum": "56dcfc50d0fdb1a96f58a678ef2382ff8d17ae624a0f1b85ad9b55d85eeafcaf"
 }

@@ -8,6 +8,7 @@ from fractions import Fraction
 from pathlib import Path
 import hashlib
 import json
+from time import perf_counter
 from mipframe.check.kernel import facts,exact,bound,OverlayFacts
 from mipframe.check.compact import BatchProof,ProofRef,ProofSelection
 from mipframe.edit.delta import Delta,DeltaEdit
@@ -28,6 +29,8 @@ def fingerprint(f):
 
 
 def verify_bundle(bundle,source,*,target=None,artifact=None):
+    started=perf_counter()
+    statistics=dict(replay_seconds=0.0,edit_seconds=0.0,comparison_seconds=0.0,readback_seconds=0.0)
     if isinstance(bundle,(str,Path)):bundle=json.loads(Path(bundle).read_text())
     from mipframe.control.proofs import encode
     # Native arrays remain typed through replay. JSON bundles are decoded on demand.
@@ -40,10 +43,14 @@ def verify_bundle(bundle,source,*,target=None,artifact=None):
     root=copy(sf);root.uid=bundle['root'];root.revision=bundle['root_revision']
     current=type(source)._from_facts(root,dict(coordinates='SAME',lp='SAME',mip='SAME',optimal_value='PRESERVED',objective=dict(kind='SAME')))
     owned=[current]
+    statistics['comparison_seconds']+=perf_counter()-started
     try:
         for step in bundle['steps']:
             if step['parent']!=facts(current).uid:raise ValueError('Broken snapshot chain')
+            phase=perf_counter()
             proofs=[BatchProof.replay(spec,model=current) for spec in step['proofs']]
+            statistics['replay_seconds']+=perf_counter()-phase
+            phase=perf_counter()
             def binding(spec):
                 if spec is None:return None
                 if isinstance(spec,list):return tuple(binding(x) for x in spec)
@@ -95,13 +102,19 @@ def verify_bundle(bundle,source,*,target=None,artifact=None):
             cf=facts(child);cf.uid=step['uid'];cf.revision=step['revision']
             child._store.manifest.update(uid=cf.uid,model_version=cf.revision)
             current=child
+            statistics['edit_seconds']+=perf_counter()-phase
+        phase=perf_counter()
         if target is not None and fingerprint(facts(target))!=fingerprint(facts(current)):
             raise ValueError('Stored numerical model differs from proved delta')
+        statistics['comparison_seconds']+=perf_counter()-phase
         if artifact is not None:
+            phase=perf_counter()
             from mipframe.store.mps_output import compare_readback
             compare_readback(facts(current),artifact)
+            statistics['readback_seconds']+=perf_counter()-phase
+        statistics['total_seconds']=perf_counter()-started
         result=dict(status='PROVED',kind='explicit_reformulation_audit',steps=len(bundle['steps']),
-                    semantic=current.diff(owned[0]).semantic)
+                    semantic=current.diff(owned[0]).semantic,statistics=statistics)
         return result
     finally:
         for model in reversed(owned):model.close()

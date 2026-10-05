@@ -4134,7 +4134,7 @@ Failures: Invalid sources, missing input, bad multipliers, cross-snapshot input 
 Resources: Certificate execution uses exact sparse arrays and Python integers; Frame conversion, when requested, finishes before checking. Query budgets do not bound process RSS.
 
 missing="error" requires all model variables; missing="zero" is explicit. Inputs from a solver are not silently rounded.
-domain="auto" and domain="integer" both enforce the original integer domains; domain="relaxation" is rejected. For fractional LP points, use m.matrix.activity(values) plus exact checks of both row sides and every variable bound. Verify complete variable coverage, including variables absent from all rows; see limitation.fractional-point.
+domain="auto" and domain="integer" enforce the original integer domains. domain="relaxation" checks all variable bounds and both row sides without integrality. All modes require complete variable coverage by default, including variables absent from all rows. scope.domain and point artifacts retain the chosen domain. Use batch.solution for multiple points; see limitation.fractional-point.
 
 See also: concept.proofs, concept.conditions, limitation.fractional-point, api.Checker.batch
 
@@ -6781,6 +6781,8 @@ Returns: Fresh audit receipt; historical status fields are ignored.
 
 Does not establish: No model change or additional mathematical conclusion is implied.
 
+statistics separates serialization, replay, edit validation, numerical comparison and file readback seconds. Each audit independently rechecks certificates and committed coverage; timing data grants no proof authority. Large proof lineages may require an explicit finite check.budget(memory_mb=...) context.
+
 See also: api.Model.write
 
 ## api.Model.content_hash
@@ -6987,7 +6989,7 @@ Returns: A result handle; obtain it through Checker.solution, not its constructo
 
 Does not establish: No model change or additional mathematical conclusion is implied.
 
-status is PROVED or REFUTED; ok is a bool. summary includes the exact objective and violations; scope records integer-model feasibility. require() raises ValidationError on failure. evidence contains violating_rows and violating_vars Frames. This type has no implication conclusion or explain() method and cannot authorize Edit because. close() releases its point and diagnostic storage; finish consuming evidence before closing.
+status is PROVED or REFUTED; ok is a bool. summary includes the exact objective and violations; scope.domain records integer or relaxation feasibility. require() raises ValidationError on failure. evidence contains violating_rows and violating_vars Frames. This type has no implication conclusion or explain() method and cannot authorize Edit because. close() releases its point and diagnostic storage; finish consuming evidence before closing.
 
 See also: api.Checker.solution, api.PointReport.evidence, api.PointReport.close
 
@@ -6995,11 +6997,11 @@ See also: api.Checker.solution, api.PointReport.evidence, api.PointReport.close
 
 PointReport.require [api.PointReport.require]
 
-Require exact integer-model point feasibility.
+Require exact point feasibility in the selected domain.
 
 PointReport.require()
 
-When to use: Require exact integer-model point feasibility.
+When to use: Require exact point feasibility in the selected domain.
 
 Returns: The same PointReport, or ValidationError carrying it.
 
@@ -7160,7 +7162,7 @@ with m.check.batch() as batch:
     results = batch.run()
 results.require()
 
-Prefer m.check.batch() for repeated checks. Do not execute scalar checkers in a Python for loop, comprehension or map, or rewrite complete checks as handwritten row/variable loops. Use Frame operations for relations. Loops may register batch tasks; run once after registration. Construct expressions inside the batch context to share common subexpressions.
+Prefer m.check.batch() for repeated checks. Do not execute scalar checkers in a Python for loop, comprehension or map, or rewrite complete checks as handwritten row/variable loops. Use Frame operations for relations. Loops may register batch tasks; run once after registration. Construct expressions inside the batch context to share common subexpressions. m.linexpr(Frame) registers a lazy query leaf there; reachable leaves are read at run(), sharing parent relations and exact equality-filter indexes. Do not call to_records(), shape or other materializing operations inside a registration loop. Full parent join coverage/cardinality is validated before filtering. Unused query tasks are not executed; query work has the same finite time/work budget. Statistics distinguish registration, query, compilation, kernel and publication time; query time is included in compilation.
 Each registration returns CheckHandle, not a signed proof: no .ok/.status and no edit authority. A handle may be used only as a dependency in its own plan. result_key is unique and exports a result; unnamed tasks are internal. run() executes the named dependency closure and seals the plan. Context exit releases unpublished work and never runs implicitly.
 results.require() checks all exported results. results[key] preserves its type: ProofRef/BatchProof for mathematics, PointReport for points, Report for diagnostics. Points and diagnostics cannot authorize edits. Conditions remain target-local; cases discharges only its matching branch conditions. Separate snapshots require separate batches.
 Finite defaults: time_limit=30 seconds, max_tasks=1000000 logical tasks, max_nodes=4096 compiled execution nodes, max_work=100000000, memory_mb=128. Explicit finite increases are supported; time/work limits cannot be disabled. ProofBudgetExceeded reports the phase and limit; unfinished work is never PROVED or mathematically REFUTED.

@@ -29,16 +29,16 @@ class PointReport:
     Full contract: mf.help("api.PointReport")
     MIPFRAME HELP END
     """
-    def __init__(self,owner,values,violations,summary):
+    def __init__(self,owner,values,violations,summary,*,domain='integer'):
         self._owner,self._values,self._violations=owner,values,violations
         self.summary=summary;self.ok=not violations;self.status='PROVED' if self.ok else 'REFUTED'
-        self.scope=dict(kind='solution',domain='integer',arithmetic='exact',assumptions=0,complete=True)
+        self.scope=dict(kind='solution',domain=domain,arithmetic='exact',assumptions=0,complete=True)
         self.method='solution'
     def __bool__(self):raise TypeError('Inspect .ok')
     def require(self):
         """
         MIPFRAME HELP BEGIN
-        Require exact integer-model point feasibility.
+        Require exact point feasibility in the selected domain.
 
         Full contract: mf.help("api.PointReport.require")
         MIPFRAME HELP END
@@ -81,7 +81,7 @@ class PointReport:
             def __len__(self):return point.facts.nvars
             def __iter__(self):return (str(v) for v in point.facts.var_ids())
             def __getitem__(self,key):return str(point[int(key)])
-        return materialize(dict(schema='mipframe-point-1',snapshot=self._owner.uid,values=Values()),materialize_mb)
+        return materialize(dict(schema='mipframe-point-1',snapshot=self._owner.uid,domain=self.scope['domain'],values=Values()),materialize_mb)
     @resource_scope
     def write(self,path,*,memory_mb=128,disk_mb=None):
         """
@@ -96,7 +96,7 @@ class PointReport:
         from mipframe.data.columns import ExactColumn
         ids=frozen_ints(self._values.facts.var_ids())
         values=ExactColumn((self._values[int(i)] for i in ids),len(ids))
-        return write_bundle(dict(schema='mipframe-point-2',snapshot=self._owner.uid,ids=ids,values=values),path)
+        return write_bundle(dict(schema='mipframe-point-2',snapshot=self._owner.uid,domain=self.scope['domain'],ids=ids,values=values),path)
     def close(self):
         """
         MIPFRAME HELP BEGIN
@@ -113,16 +113,16 @@ class PointReport:
 def prepare_point(owner,values,*,value='value',missing='error',domain='auto',memory_mb=128,disk_mb=None):
     from mipframe.frame.base import Frame
     from mipframe.frame.schema import SchemaError
-    if domain not in ('auto','integer'):
-        from mipframe._help.diagnostics import hint
-        raise hint(ValueError('Solution checks verify the integer model; use matrix.activity for fractional points'),'limitation.fractional-point')
+    if domain not in ('auto','integer','relaxation'):
+        raise ValueError('Point domain must be auto, integer or relaxation')
     if missing not in ('error','zero'):raise ValueError('Invalid missing policy')
     from mipframe.data.exact_sparse import ExactSparse,ExactPoint
     f=facts(owner)
     def entries():
         records=((r['var'],r[value]) for r in values) if isinstance(values,Frame) else values.items()
         for key,x in records:
-            if hasattr(key,'uid') and key.uid!=owner.uid or hasattr(key,'_owner') and key._owner.uid!=owner.uid:
+            if (hasattr(key,'uid') and (key.uid,key.version,getattr(key,'kind',None))!=(owner.uid,owner.version,'var') or
+                hasattr(key,'_owner') and (key._owner.uid,key._owner.version)!=(owner.uid,owner.version)):
                 raise SchemaError('Foreign variable')
             v=key.id if hasattr(key,'id') else key
             from numbers import Integral
@@ -153,6 +153,7 @@ def solution_group(owner,requests,*,budget=None,memory_mb=128,disk_mb=None):
             if budget:budget.poll()
             points.append(prepare_point(owner,values,memory_mb=memory_mb,disk_mb=disk_mb,**options))
             builders.append(RelationBuilder(WorkContext(),dict(axis='str',ident='int',side='str',value='number',bound='number')))
+        domains=['relaxation' if options.get('domain')=='relaxation' else 'integer' for _,options in requests]
         maxima=[0]*len(points);objectives=[f.constant]*len(points)
         def violation(i,axis,ident,side,value,bound):
             builders[i].append(dict(axis=axis,ident=ident,side=side,value=value,bound=bound))
@@ -163,7 +164,7 @@ def solution_group(owner,requests,*,budget=None,memory_mb=128,disk_mb=None):
                 x=point[v];objectives[i]+=c*x
                 if x<lo:violation(i,'var',v,'lb',x,lo)
                 if x>hi:violation(i,'var',v,'ub',x,hi)
-                if kind=='I' and Fraction(x).denominator!=1:
+                if domains[i]=='integer' and kind=='I' and Fraction(x).denominator!=1:
                     maxima[i]=max(maxima[i],min(x-floor(x),ceil(x)-x))
                     violation(i,'var',v,'integer',x,floor(x))
         for at,r in enumerate(f.row_ids()):
@@ -176,7 +177,7 @@ def solution_group(owner,requests,*,budget=None,memory_mb=128,disk_mb=None):
         for i,point in enumerate(points):
             violations=builders[i].finish()
             reports.append(PointReport(owner,point,violations,dict(objective=objectives[i],objective_sense=f.sense,
-                optimality_proved=False,max_integrality_violation=maxima[i],violations=len(violations))))
+                optimality_proved=False,max_integrality_violation=maxima[i],violations=len(violations)),domain=domains[i]))
         if budget:budget.poll()
         return reports
     except BaseException:

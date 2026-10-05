@@ -53,7 +53,7 @@ Establishes: Report status is PROVED, REFUTED or INCONCLUSIVE. require() succeed
 
 Does not establish: Structural checks, feasible points, solver status and graph candidates cannot serve as linear proofs.
 
-Prefer m.check.batch() for repeated checks. Do not execute scalar checkers in a Python for loop, comprehension or map, or rewrite complete checks as handwritten row/variable loops. Use Frame operations for relations. Loops may register batch tasks; run once after registration. Construct expressions inside the batch context to share common subexpressions.
+Prefer m.check.batch() for repeated checks. Do not execute scalar checkers in a Python for loop, comprehension or map, or rewrite complete checks as handwritten row/variable loops. Use Frame operations for relations. Loops may register batch tasks; run once after registration. Construct expressions inside the batch context to share common subexpressions. m.linexpr(Frame) registers a lazy query leaf there; reachable leaves are read at run(), sharing parent relations and exact equality-filter indexes. Do not call to_records(), shape or other materializing operations inside a registration loop. Full parent join coverage/cardinality is validated before filtering. Unused query tasks are not executed; query work has the same finite time/work budget. Statistics distinguish registration, query, compilation, kernel and publication time; query time is included in compilation.
 Each registration returns CheckHandle, not a signed proof: no .ok/.status and no edit authority. A handle may be used only as a dependency in its own plan. result_key is unique and exports a result; unnamed tasks are internal. run() executes the named dependency closure and seals the plan. Context exit releases unpublished work and never runs implicitly.
 results.require() checks all exported results. results[key] preserves its type: ProofRef/BatchProof for mathematics, PointReport for points, Report for diagnostics. Points and diagnostics cannot authorize edits. Conditions remain target-local; cases discharges only its matching branch conditions. Separate snapshots require separate batches.
 Finite defaults: time_limit=30 seconds, max_tasks=1000000 logical tasks, max_nodes=4096 compiled execution nodes, max_work=100000000, memory_mb=128. Explicit finite increases are supported; time/work limits cannot be disabled. ProofBudgetExceeded reports the phase and limit; unfinished work is never PROVED or mathematically REFUTED.
@@ -141,19 +141,18 @@ See also: concept.search, api.Frame.check, recipe.linear, api.alg.graph.isomorph
 
 Check fractional point feasibility in the relaxation [limitation.fractional-point]
 
-Use exact matrix activity and bound comparisons to inspect an LP relaxation point.
+Use check.solution(domain="relaxation") for complete exact LP point feasibility.
 
 Inputs: A complete exact Frame(var,value), uniquely keyed by var and bound to the model snapshot.
 
-Establishes: m.matrix.activity computes exact row activities; compare both row sides and all variable bounds explicitly.
+Establishes: check.solution(domain="relaxation") checks complete variable coverage, all variable bounds and both row sides with exact arithmetic.
 
-Does not establish: check.solution checks the integer model and rejects domain="relaxation". Fractional values on integer variables fail its integrality check.
+Does not establish: A PointReport is not an implication proof and cannot authorize edits. A relaxation point need not satisfy integrality or optimality.
 
-Use m.matrix.activity(values), with the default missing="error", then join the result to m.rows on row and compare activity against lb and ub.
-Independently check full variable coverage and both variable bounds, including variables absent from every row.
-A point that passes these comparisons is feasible for the linear relaxation; it need not satisfy integrality.
-LinExpr.evaluate only evaluates one expression; it is not a feasibility check. A feasible point is not an optimality or implication certificate.
-Use check.solution for a complete point that must also satisfy the original integer domains.
+Use m.check.solution(values, domain="relaxation").require() for one complete fractional point. For multiple points, register batch.solution(values, domain="relaxation", result_key=...) and run once.
+The default missing="error" requires every variable, including variables absent from all rows. Variable bounds and both row sides are always checked. Only integrality is omitted in the explicit relaxation domain.
+The default domain="auto" and domain="integer" enforce integrality. scope.domain records which domain was checked; saved point replay preserves it.
+Use m.matrix.activity only when row activities themselves are needed. LinExpr.evaluate evaluates one expression, not full feasibility.
 
 See also: api.MatrixAccessor.activity, api.Frame.join, api.Checker.solution, concept.exact
 
@@ -167,7 +166,7 @@ Establishes: Scalar mathematical checkers release their temporary workspace afte
 
 Does not establish: Report and LinExpr have no public close() method. Retained evidence still uses memory and disk. Unrelated queries and separately retained batches have their own storage; memory_mb is not a global process budget.
 
-Prefer m.check.batch() for repeated checks. Do not execute scalar checkers in a Python for loop, comprehension or map, or rewrite complete checks as handwritten row/variable loops. Use Frame operations for relations. Loops may register batch tasks; run once after registration. Construct expressions inside the batch context to share common subexpressions.
+Prefer m.check.batch() for repeated checks. Do not execute scalar checkers in a Python for loop, comprehension or map, or rewrite complete checks as handwritten row/variable loops. Use Frame operations for relations. Loops may register batch tasks; run once after registration. Construct expressions inside the batch context to share common subexpressions. m.linexpr(Frame) registers a lazy query leaf there; reachable leaves are read at run(), sharing parent relations and exact equality-filter indexes. Do not call to_records(), shape or other materializing operations inside a registration loop. Full parent join coverage/cardinality is validated before filtering. Unused query tasks are not executed; query work has the same finite time/work budget. Statistics distinguish registration, query, compilation, kernel and publication time; query time is included in compilation.
 Each registration returns CheckHandle, not a signed proof: no .ok/.status and no edit authority. A handle may be used only as a dependency in its own plan. result_key is unique and exports a result; unnamed tasks are internal. run() executes the named dependency closure and seals the plan. Context exit releases unpublished work and never runs implicitly.
 results.require() checks all exported results. results[key] preserves its type: ProofRef/BatchProof for mathematics, PointReport for points, Report for diagnostics. Points and diagnostics cannot authorize edits. Conditions remain target-local; cases discharges only its matching branch conditions. Separate snapshots require separate batches.
 Finite defaults: time_limit=30 seconds, max_tasks=1000000 logical tasks, max_nodes=4096 compiled execution nodes, max_work=100000000, memory_mb=128. Explicit finite increases are supported; time/work limits cannot be disabled. ProofBudgetExceeded reports the phase and limit; unfinished work is never PROVED or mathematically REFUTED.

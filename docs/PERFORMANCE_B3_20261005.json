@@ -1,0 +1,106 @@
+{
+  "date": "2026-10-05",
+  "python": "3.14.7 | packaged by conda-forge | (main, Sep  2 2026, 21:04:32) [Clang 20.1.8 ]",
+  "workload": "test34-mf-B3, generic linear + cases, Frame-derived targets, separate first-group parent",
+  "input": "/Users/bhz/Code/reform_test/runs/test34-mf-B3/input/model.mps",
+  "command": "PYTHONPATH=src python scripts/benchmark_check_graph.py MODEL --strategy branches --indexed --memory-mb 512",
+  "performance_decision": {
+    "user_accepted_current_performance": true,
+    "further_performance_tuning_stopped": true,
+    "original_30_second_core_gate_met": false,
+    "three_process_acceptance_completed": false
+  },
+  "complete_workload": {
+    "strategy": "branches",
+    "indexed": true,
+    "memory_mb": 512,
+    "timings": {
+      "read": 5.765763000003062,
+      "indexed": 13.13712666707579,
+      "structure": 0.46621495904400945,
+      "forward": 10.285643000039272,
+      "add": 0.5475394579116255,
+      "reverse": 3.266273666988127,
+      "drop": 0.39550266694277525,
+      "uniform_witness": 1.131088791997172,
+      "relaxed_witness": 0.70172412507236,
+      "integer_points": 1.18639662489295,
+      "integrity": 0.2528368339408189,
+      "write_readback": 6.506305500050075,
+      "audit": 13.75409133406356
+    },
+    "core_seconds": 31.247763959225267,
+    "total_seconds": 57.3965066280216,
+    "accepted": false,
+    "statistics": {
+      "tasks": 106491,
+      "nodes": 233,
+      "work": 14243923,
+      "memory": 109611040,
+      "expressions": 106724,
+      "query_seconds": 0.8127790495054796,
+      "registration_seconds": 3.9686836670152843,
+      "compile_seconds": 1.7178470834624022,
+      "kernel_seconds": 3.588679580250755,
+      "dependency_seconds": 0.05660208407789469,
+      "publication_seconds": 0.00039549998473376036,
+      "query_staged_rows": 371681,
+      "query_cache_hits": 229,
+      "query_memory_bytes": 125322025,
+      "query_disk_bytes": 0,
+      "condition_memory_bytes": 30346296,
+      "execution_seconds": 5.381741582998075,
+      "total_seconds": 9.35042529203929
+    },
+    "audit_statistics": {
+      "replay_seconds": 7.299959582975134,
+      "edit_seconds": 1.2328902509761974,
+      "comparison_seconds": 0.7514381250366569,
+      "readback_seconds": 4.220455792034045,
+      "total_seconds": 13.749471874907613,
+      "serialization_seconds": 0.2447234169812873
+    }
+  },
+  "preserved_checks": [
+    "231 aggregate proofs",
+    "53130 reverse row proofs and zero lower-bound proofs",
+    "two exact fractional witnesses",
+    "complete integer point on both models",
+    "edit commits",
+    "integrity",
+    "write with readback",
+    "independent audit including artifact readback"
+  ],
+  "final_model": {
+    "rows": 53824,
+    "variables": 53593,
+    "nonzeros": 213675,
+    "semantic": "LP SUBSET / MIP SAME / objective SAME"
+  },
+  "separate_timing_probes": {
+    "aggregation_before_seconds": 117.8668088,
+    "aggregation_after_seconds": 9.35042529203929,
+    "matrix_activity_before_seconds": 10.3127,
+    "matrix_activity_after_seconds": 1.3667,
+    "overlay_point_frame_and_check_before_seconds": 7.2556,
+    "overlay_point_frame_and_check_after_seconds": 1.6503
+  },
+  "notes": [
+    "Separate timing probes are not additive phases of the complete workload.",
+    "memory_mb=512 matches the B3 caller budget; defaults remain finite and unchanged.",
+    "Performance measurements precede 1.5.0 release packaging; release verification is recorded in dist/VERIFICATION-1.5.0.json."
+  ],
+  "validation": {
+    "pytest": {
+      "passed": 686,
+      "skipped": 8,
+      "failed": 1,
+      "seconds": 144.44,
+      "existing_failure": "tests/test_linear_checks.py::test_high_degree_sparse_source: 16 KiB budget rejects 96,256-byte expression registration; also failed before this iteration"
+    },
+    "help_consistency": "passed (446 topics, 398 public bindings)",
+    "skill_validation": "passed",
+    "git_diff_check": "passed"
+  },
+  "release_version": "1.5.0"
+}

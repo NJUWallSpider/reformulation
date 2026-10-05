@@ -19,7 +19,7 @@ from mipframe.check.report import Report
 from mipframe.check.report import CardinalityError
 from mipframe.check.report import ValidationError
 
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 __all__ = [
     "read",
     "load",

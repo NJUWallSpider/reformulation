@@ -1,30 +1,42 @@
-# Internal release: 1.4.0
+# Internal release: 1.5.0
 
-This is the 1.4.0 internal release for Python 3.11 or later. It is not intended
+This is the 1.5.0 internal release for Python 3.11 or later. It is not intended
 for PyPI. Package metadata includes
 `Private :: Do Not Upload`. This release does not assign an open-source license.
 
-## Changes in 1.4.0
+## Changes in 1.5.0
 
-- Add `m.check.batch()` with deferred task handles, shared expressions, exact
-  numerical execution and target-local proof conditions. Named results retain
-  their mathematical, point-validation or diagnostic permissions.
-- Add compact v3 certificates and typed audit replay, with a bounded v2 adapter.
-  Existing compact linear entry points use the common graph engine.
-- Help and SKILL prioritize batch execution; loops should register tasks rather
-  than execute scalar checkers repeatedly.
-- On Python 3.14.7, three fresh-process test34 runs measured core computations
-  at 28.52 / 28.51 / 28.60 seconds and total computations at
-  46.45 / 46.72 / 46.52 seconds, including witnesses, edits, readback and audit.
+- Defer Frame-derived linear expressions within `check.batch()`. Share parent
+  queries and exact equality indexes, then release query scratch before kernels.
+- Replace overlay reference membership scans and per-nonzero point searches
+  with validated model ID indexes. Matrix activity validates coverage in the
+  same pass as exact multiply-accumulate.
+- Share component-local condition sets and schedule common-source tasks together.
+  Wide integer residuals retain exact arithmetic without Fraction-tree expansion.
+- Replay multi-node v3 graphs directly through the typed engine. Audit receipts
+  expose serialization, replay, edit, comparison and readback timings.
+- Support complete exact LP point checks through
+  `check.solution(..., domain="relaxation")`, including batch registration,
+  explicit scope and saved-point replay. Point reports cannot authorize edits.
+- Update help and SKILL with deferred query boundaries and batch-first guidance.
+- A fresh-process B3-style full workload measured 57.40 seconds, including cold
+  indexed discovery, both fractional witnesses, both integer point checks,
+  edits, integrity, write/readback and independent audit. The aggregate batch
+  took 9.35 seconds compared with 117.87 seconds in the preceding replay.
+  These are measured workload results, not universal runtime guarantees.
 
 ### Known validation limitations
 
-The last complete pre-release regression recorded 680 passed, 8 skipped and
-one failure: `test_high_degree_sparse_source` exceeds the new check memory
-budget at 16 KiB. This internal release does not claim completion of the entire
-unified-check architecture plan: the general rule protocol, comprehensive
-resource accounting and phase statistics still need further work. Release
-verification results are recorded alongside the artifacts in `dist`.
+The complete checkout regression recorded 686 passed, 8 skipped and one existing
+failure: `test_high_degree_sparse_source` exceeds the check memory budget at
+16 KiB. The original 30-second core performance gate measured 31.25 seconds;
+three-process acceptance was not completed after the user accepted the current
+performance and requested that further tuning stop. The 60-second total gate
+was met in the recorded run, using the B3 caller's 512 MiB finite budget.
+
+This internal release does not claim completion of the entire unified-check
+architecture plan. Distribution-specific verification results, including the
+known failure, are recorded alongside the artifacts in `dist`.
 
 ### Indexed improvements carried forward
 
@@ -45,14 +57,14 @@ Use an isolated environment and a wheel supplied by the project:
 ```sh
 python -m venv .venv
 . .venv/bin/activate
-python -m pip install /path/to/mipframe-1.4.0-py3-none-any.whl
+python -m pip install /path/to/mipframe-1.5.0-py3-none-any.whl
 python -m mipframe help
 python -m mipframe help "recover coordinates" --detail full
 ```
 
 NumPy is the only core dependency. For optional exports, install the same wheel
 with extras, for example
-`python -m pip install '/path/to/mipframe-1.4.0-py3-none-any.whl[scipy]'`.
+`python -m pip install '/path/to/mipframe-1.5.0-py3-none-any.whl[scipy]'`.
 The `parquet` extra provides PyArrow. For offline installation, prepare a wheel
 folder containing NumPy and any required optional dependencies, then pass
 `--no-index --find-links /path/to/wheels` to pip. The mipframe wheel alone does
@@ -68,8 +80,8 @@ python scripts/build_help.py --check
 python -m pytest -q -rs
 python -m build
 python scripts/verify_release.py \
-  --wheel dist/mipframe-1.4.0-py3-none-any.whl \
-  --sdist dist/mipframe-1.4.0.tar.gz
+  --wheel dist/mipframe-1.5.0-py3-none-any.whl \
+  --sdist dist/mipframe-1.5.0.tar.gz
 ```
 
 The verifier checks wheel contents and private-release metadata, exercises

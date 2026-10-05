@@ -153,6 +153,56 @@ class IntegerBlock:
             finally:budget.counts['memory']-=scratch
         return output
 
+    def wide_residual(self,pairs,intervals,bounds):
+        """Reuse exact denominators when intermediate products exceed int64.
+
+        Python integers handle only the wide tile; no per-coordinate Fraction
+        arithmetic or persistent tree construction is needed for this case.
+        """
+        if not self.available:return None
+        combined={}
+        for i,w in pairs:
+            if i not in self.norms:return None
+            combined[i]=combined.get(i,0)+w
+        weights={i:self.scale(w,self.denominators[i]) for i,w in combined.items() if w and self.norms[i]}
+        denom=lcm(*(w.denominator for w in weights.values()))
+        factors={i:w.numerator*(denom//w.denominator) for i,w in weights.items()}
+        local=[]
+        for v,(lo,hi) in intervals.items():
+            if lo!=hi or integer(lo) is None:return None
+            local.append((self.tree.coordinates[v],integer(lo)))
+        norm=sum(abs(w)*self.norms[i] for i,w in factors.items())
+        n=len(self.tree.variables);budget=self.tree.budget
+        scratch=n*(48+(norm.bit_length()+7)//8)
+        budget.charge('memory',scratch)
+        try:
+            vector=[0]*n
+            for i,w in factors.items():
+                if i in self.sparse:
+                    for position,value in self.sparse[i]:vector[position]+=w*int(value)
+                    budget.charge(count=len(self.sparse[i]))
+                else:
+                    for position,value in enumerate(self.vectors[i]):
+                        if position%256==0:budget.poll()
+                        vector[position]+=w*int(value)
+                    budget.charge(count=n)
+            total=0
+            for position,value in local:
+                total+=vector[position]*value;vector[position]=0
+            zero=not any(vector)
+            if not bounds:return Fraction(total,denom),zero,()
+            lower=upper=0
+            for position,value in enumerate(vector):
+                if not value:continue
+                side=int(value>0)
+                if not self.finite[side,position]:return inf,False,()
+                total+=value*int(self.limits[side,position])
+                if side:upper |= 1<<position
+                else:lower |= 1<<position
+            budget.charge(count=n)
+            return Fraction(total,denom),zero,(('dense',lower,upper),) if lower or upper else ()
+        finally:budget.counts['memory']-=scratch
+
     def residual(self,pairs,intervals,bounds):
         if not self.available:return None
         combined={}

@@ -150,12 +150,18 @@ class ExactPoint:
     def __init__(self,storage,facts):
         self.storage,self.facts=storage,facts
         self.big=storage.bigpath.open('rb')
+        self.positions=storage.work.array(facts.var_capacity,'<i8')
+        self.positions[:]=-1
+        block=max(1,storage.work.memory//128)
+        for start in range(0,len(storage.ids),block):
+            stop=min(len(storage.ids),start+block)
+            self.positions[storage.ids[start:stop]]=np.arange(start,stop)
     def guard(self):self.storage.guard()
     def __getitem__(self,ident):
         self.storage.guard()
-        ids=self.storage.ids
-        p=int(np.searchsorted(ids,np.uint64(ident)))
-        if p==len(ids) or ids[p]!=ident:return 0
+        if not 0<=ident<len(self.positions):return 0
+        p=int(self.positions[ident])
+        if p<0:return 0
         row=self.storage.values[p];d=int(row['d'])
         if d==1:return int(row['n'])
         if d:return Fraction(int(row['n']),d)

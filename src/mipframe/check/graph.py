@@ -164,7 +164,7 @@ class GraphProof(BatchProof):
                         emitted.add(item);yield item
 
     def graph_record(self):
-        return dict(expressions=self._graph.pool.nodes, tasks=self._graph.tasks,
+        return dict(expressions=self._graph.pool.nodes.snapshot(), tasks=self._graph.tasks,
                     roots=self._roots)
 
 
@@ -229,7 +229,10 @@ class CheckBatch:
         MIPFRAME HELP END
         """
         self.closed = True
-        if self.pool is not None:self.pool.finished = True
+        if self.pool is not None:
+            self.pool.close_queries()
+            self.pool.nodes.abandon_pending()
+            self.pool.finished = True
         self.pool = None
         self.diagnostics = []
         # Issued results own the graph; the builder retains no unpublished data.
@@ -512,6 +515,7 @@ class CheckBatch:
             many_outputs = {key:i[1] for key,i in self.outputs.items() if isinstance(i,tuple) and i[0]=='many'}
             roots = tuple(dict.fromkeys((*math_outputs.values(),*(j for pairs in many_outputs.values() for _,j in pairs))))
             state.execute(roots)
+            published=perf_counter()
             self.budget.phase = 'publication'
             self.budget.poll()
             proof = GraphProof(self.owner, state, tuple(math_outputs.values()))
@@ -547,6 +551,17 @@ class CheckBatch:
                     if hasattr(report,'close'):report.close()
                 raise
             statistics = dict(self.budget.counts, expressions=len(self.pool.nodes),
+                              query_seconds=self.pool.query_seconds,
+                              registration_seconds=start-self.budget.started,
+                              compile_seconds=state.compile_seconds,
+                              kernel_seconds=state.kernel_seconds,
+                              dependency_seconds=state.dependency_seconds,
+                              publication_seconds=perf_counter()-published,
+                              query_staged_rows=self.pool.query_statistics['staged_rows'],
+                              query_cache_hits=self.pool.query_statistics['cache_hits'],
+                              query_memory_bytes=self.pool.query_statistics['memory_bytes'],
+                              query_disk_bytes=self.pool.query_statistics['disk_bytes'],
+                              condition_memory_bytes=state.condition_bytes,
                               execution_seconds=perf_counter()-start,
                               total_seconds=perf_counter()-self.budget.started)
             return CheckResults(values, statistics)
@@ -575,9 +590,10 @@ class GraphExecution:
         self.source_cache = {}
         self.terms_cache = {}
         self.current_records = {}
-        self.condition_intern = {(): ()}
         self.details = {}
         self.counterexamples = {}
+        self.compile_seconds=self.kernel_seconds=self.dependency_seconds=0.0
+        self.condition_bytes=0
 
     def task(self, index):
         record=self.current_records.get(index)
@@ -614,7 +630,7 @@ class GraphExecution:
             if type(ref[1]) is not int or not 0<=ref[1]<len(self.parents):
                 raise ValueError('Invalid external parent reference')
             p, i = self.parents[ref[1]], ref[2]
-            if p not in _issued or p._facts is not self.f or not 0 <= i < len(p._status) or p._status[i] != 1:
+            if p not in _issued or p._facts is not self.f or not 0 <= i < len(p._status):
                 raise InvalidCertificateError('Invalid external proof')
             return self.import_data(p._targets.claim(self.f, i)), tuple(self.import_data(a) for a in p.assumptions(i)), p.domain_at(i) == 'integer'
         if kind == 'assumption':
@@ -628,6 +644,7 @@ class GraphExecution:
 
     @batch_operation
     def execute(self, roots):
+        compile_started=perf_counter()
         required, stack = set(), list(roots)
         while stack:
             i = stack.pop()
@@ -643,6 +660,15 @@ class GraphExecution:
             self.external[i] = external
             stack.extend(edges)
         self.active = required
+        if self.pool.nodes.pending:
+            expressions=set()
+            for i in required:
+                expressions.add(int(self.tasks.target[i]))
+                lo,hi=self.tasks.condition_offsets[i:i+2]
+                expressions.update(map(int,self.tasks.condition_expr[lo:hi]))
+                lo,hi=self.tasks.source_offsets[i:i+2]
+                expressions.update(int(self.tasks.source0[j]) for j in range(lo,hi) if self.tasks.source_kind[j]==3)
+            self.pool.resolve_queries(expressions)
         # Pack dependency components into bounded workspaces. Released numeric
         # scratch is not retained by proof artifacts or by exported dependencies.
         leaders = {i:i for i in required}
@@ -655,15 +681,35 @@ class GraphExecution:
                 leaders[find(i)]=find(parent)
         components={}
         for i in sorted(required):components.setdefault(find(i),[]).append(i)
-        packs=[];pack=[]
+        # Independent targets with a common source belong in the same numerical
+        # tile even when input order interleaves thousands of different sources.
+        # Dependency components stay intact; this changes scheduling, not logic.
+        common={};other=[]
         for component in components.values():
-            if pack and len(pack)+len(component)>256:
-                packs.append(pack);pack=[]
-            pack.extend(component)
-        if pack:packs.append(pack)
+            if len(component)==1:
+                rule,_,sources,_,config=self.tasks[component[0]]
+                if rule in ('linear','identity') and sources and all(s[0] in ('model','external') for s in sources):
+                    key=(rule,tuple(s[:-1] for s in sources),config[:2])
+                    common.setdefault(key,[]).append(component)
+                    continue
+            other.append(component)
+        ordered=[]
+        for group in common.values():
+            if len(group)>1:ordered.append(group)
+            else:other.extend(group)
+        ordered.append(other)
+        packs=[];pack=[]
+        for group in ordered:
+            for component in group:
+                if pack and len(pack)+len(component)>256:
+                    packs.append(pack);pack=[]
+                pack.extend(component)
+            if pack:packs.append(pack);pack=[]
         roots=set(roots)
         from mipframe.check.sparse_tree import SparseTree
+        self.compile_seconds+=perf_counter()-compile_started
         for pack in packs:
+            compile_started=perf_counter()
             self.current_records={i:self.tasks[i] for i in pack}
             expressions=[]
             for i in pack:
@@ -674,11 +720,18 @@ class GraphExecution:
                         claim,conditions,_=self.source(ref)
                         expressions.append(claim[0]);expressions.extend(a[0] for a in conditions)
             before=self.budget.counts['memory']
+            retained_before=self.pool.retained_bytes
             self.tree=SparseTree(self.f,self.pool,self.budget,expressions)
             try:
+                from mipframe.check.conditions import ConditionPool
+                self.condition_pool=ConditionPool(self.condition_terms,self.budget)
+                self.compile_seconds+=perf_counter()-compile_started
+                kernel_started=perf_counter()
                 self.pending_checks=[]
                 self._execute_nodes(sorted(pack))
                 self._finish_linear(sorted(pack))
+                self.kernel_seconds+=perf_counter()-kernel_started
+                dependency_started=perf_counter()
                 for root in roots.intersection(pack):
                     seen,tree_seen,deps,stack=set(),set(),set(),[root]
                     dense_lo=dense_hi=0
@@ -698,12 +751,15 @@ class GraphExecution:
                         deps.add(('mask',len(self.universes),dense_lo,dense_hi))
                     self.final_dependencies[root]=tuple(sorted(deps))
                 self.universes.append(self.tree.variables)
+                self.dependency_seconds+=perf_counter()-dependency_started
             finally:
+                self.condition_pool.finish()
                 self.tree=None
                 self.current_records={}
                 self.terms_cache={}
                 for i in pack:self.dependencies[i]=()
-                self.budget.counts['memory']=before
+                self.budget.counts['memory']=before+self.pool.retained_bytes-retained_before+self.condition_pool.retained_bytes
+                self.condition_bytes+=self.condition_pool.retained_bytes
             self.budget.charge('memory',sum(len(self.final_dependencies[r])*80 for r in roots.intersection(pack)))
 
     def _execute_nodes(self, required):
@@ -716,13 +772,17 @@ class GraphExecution:
             if group not in groups:
                 groups.add(group);self.budget.charge('nodes')
             self.budget.charge()
-            if any(self.status[parent]!=1 for parent in self.edges[i]):
+            if (any(self.status[parent]!=1 for parent in self.edges[i]) or
+                any(self.parents[parent]._status[position]!=1 for parent,position in self.external[i])):
                 self.status[i]=0
-                self.conditions[i]=tuple(dict.fromkeys((*assumptions,*(a for parent in self.edges[i] for a in self.conditions[parent]))))
-                self.integer[i]=any(self.integer[parent] for parent in self.edges[i])
+                inherited=[self.source(ref) for ref in sources if ref[0]=='external']
+                self.conditions[i]=self.condition_pool.union(assumptions,*(self.conditions[parent] for parent in self.edges[i]),*(cs for _,cs,_ in inherited))
+                self.integer[i]=any(self.integer[parent] for parent in self.edges[i]) or any(integer for _,_,integer in inherited)
                 continue
             parents = [self.source(ref) for ref in sources]
-            conditions = tuple(dict.fromkeys((*assumptions, *(a for _, cs, _ in parents for a in cs))))
+            # cases consumes branch-local sets directly; constructing their
+            # union first retains a large temporary scope that is never used.
+            conditions = () if rule=='cases' else self.condition_pool.union(assumptions,*(cs for _,cs,_ in parents))
             integer = any(p[2] for p in parents)
             deps = []
             if rule in ('linear','identity'):
@@ -751,17 +811,8 @@ class GraphExecution:
                 for value, (claim, cs, _) in zip(values, parents):
                     if not self.equal_claim(claim, target):
                         raise InvalidCertificateError('Branch conclusion differs')
-                    matched = False
-                    for assumption in cs:
-                        expr, rhs, rel = assumption
-                        terms = self.condition_terms(expr)
-                        if rel == '==' and len(terms) == 1 and var in terms and Fraction(rhs, terms[var]) == value:
-                            matched = True
-                        else:
-                            remaining.append(assumption)
-                    if not matched:
-                        raise InvalidCertificateError('Missing matching case assumption')
-                conditions = tuple(dict.fromkeys(remaining))
+                    remaining.append(self.condition_pool.discharge(cs,var,value))
+                conditions = self.condition_pool.union(*remaining)
                 deps = [('integer', var, 'kind'), ('var', var, 'lb'), ('var', var, 'ub')]
                 integer, ok = True, True
             elif rule == 'bound':
@@ -835,7 +886,7 @@ class GraphExecution:
                 raise InvalidCertificateError(f'Unknown check rule: {rule}')
             self.status[i] = status if rule=='enumerate' else 2 if rule=='identity' and not ok and not sources and not conditions else int(ok)
             self.integer[i] = integer
-            self.conditions[i] = self.condition_intern.setdefault(conditions, conditions)
+            self.conditions[i] = conditions
             self.dependencies[i] = tuple(deps)
 
     def _finish_linear(self, required):
@@ -907,7 +958,8 @@ class GraphExecution:
         if prepared is not None:
             self.pending_checks.append((self.current_task,prepared,constant,contradiction,rel,residual))
             return True,deps
-        value, zero, bound_deps = self.tree.residual(pairs, intervals, rel != '==' and residual == 'bounds')
+        wide=self.tree.block.wide_residual(pairs,intervals,rel!='==' and residual=='bounds')
+        value, zero, bound_deps = wide if wide is not None else self.tree.residual(pairs, intervals, rel != '==' and residual == 'bounds')
         deps.extend(bound_deps)
         constant += value
         return contradiction or ((zero or rel != '==' and residual == 'bounds') and (constant == 0 if rel == '==' else constant <= 0)), deps

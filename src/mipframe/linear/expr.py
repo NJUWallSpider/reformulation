@@ -587,12 +587,16 @@ def linexpr(
     name = 'var' if T is None else var
     if name not in source.schema or not ref_type(owner,'var').compatible(source.schema[name]):
         raise SchemaError('Expression requires a variable Ref column')
+    from mipframe.check.expressions import active_pool
+    pool=active_pool(owner)
     if T is None:
         if getattr(vars,'_entity_axis',None)!='var':raise SchemaError('vars requires a VarFrame')
         a = q(1 if coef=='coef' else coef)
+        if pool is not None:return pool.frame(source,name,None,constant,scale=a)
         records = ((r[name],a) for r in source._iterate((name,),memory_mb))
     else:
         if coef not in T.schema:raise SchemaError('Missing coefficient column')
         if T.schema[coef].kind not in ('number','int'):raise SchemaError('Coefficients must have an exact numeric type')
+        if pool is not None:return pool.frame(source,name,coef,constant)
         records = ((r[name],r[coef]) for r in source._iterate((name,coef),memory_mb))
     return materialize(owner,records,constant,models=models,memory_mb=memory_mb,disk_mb=disk_mb)

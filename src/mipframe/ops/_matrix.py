@@ -36,23 +36,35 @@ def compute(ctx, selection, values, value, missing, transpose):
                     yield {input_axis:ident,value:number}
     bad=build(ctx.work,schema,invalid())
     if len(bad):ctx.invalid('Invalid or duplicate vector ID, missing value, or nonfinite value',schema,bad.records())
+    # Align once to the model's ID address space. WorkContext spills the index
+    # when necessary; exact numeric columns are never converted to float arrays.
+    positions=ctx.work.array(m.capacity(input_axis),'<i8')
+    positions[:]=-1
+    for i,ident in enumerate(columns[input_axis]):
+        if i%256==0:ctx.guard()
+        positions[int(ident)]=i
     def lookup(ident,default=0):
-        lo,hi=search_range(vector,order,(input_axis,),(ident,))
-        return default if lo==hi else scalar(columns[value][int(order[lo])])
+        at=int(positions[ident])
+        return default if at<0 else scalar(columns[value][at])
     ids=read_columns(selection,(axis,),ctx).columns[axis]
     adjacent=m.iter_column if transpose else m.iter_terms
-    if missing=='error':
-        absent=IDSet((target for source in ids for target,_ in adjacent(int(source)) if lookup(target,None) is None),work=ctx.work)
-        if len(absent):ctx.invalid('Missing required vector values; use missing="zero" for a sparse vector',
-            {input_axis:ref_type(owner,input_axis)},({input_axis:i} for i in absent))
+    from mipframe.data.buffers import Buffer
+    absent=Buffer(ctx.work,'<u8')
     output='value' if transpose else 'activity'
     def records():
         for source in ids:
+            ctx.guard()
             total=0
             for target,coefficient in adjacent(int(source)):
-                total += coefficient*lookup(target)
+                number=lookup(target,None)
+                if number is None:
+                    if missing=='error':absent.append(target)
+                else:total += coefficient*number
                 ctx.check_size(total)
             yield {axis:int(source),output:total}
+        missing_ids=IDSet(absent.finish(),work=ctx.work)
+        if len(missing_ids):ctx.invalid('Missing required vector values; use missing="zero" for a sparse vector',
+            {input_axis:ref_type(owner,input_axis)},({input_axis:i} for i in missing_ids))
     ctx.paths.add('CSC exact multiply-accumulate' if transpose else 'CSR exact multiply-accumulate')
     return ctx.publish({axis:ref_type(owner,axis),output:DType('number')},records(),
                        key=(axis,),domains={axis:selection})

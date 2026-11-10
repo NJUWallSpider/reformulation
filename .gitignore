@@ -12,6 +12,7 @@ benchmarks/
 .ruff_cache/
 evaluation/
 practice/
+literature/
 
 !examples/data/
 !examples/data/**
